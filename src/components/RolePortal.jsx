@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Search, ShieldAlert, Wrench, Lock, UserCheck, ArrowRight, Shield, Smartphone, Globe, KeyRound } from 'lucide-react';
+import { Search, Wrench, Lock, UserCheck, ArrowRight, Shield, Smartphone, Globe, KeyRound, User } from 'lucide-react';
 
 export default function RolePortal({ onSelectRole, adminUsers, workerAccounts, onAdminLogin, onWorkerLogin }) {
   const [activeTab, setActiveTab] = useState('public'); // 'public', 'admin', 'worker'
   
-  // State สำหรับฟอร์ม Login Admin
+  // State สำหรับฟอร์ม Login Admin (เพิ่ม adminUsername)
+  const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
 
@@ -13,18 +14,23 @@ export default function RolePortal({ onSelectRole, adminUsers, workerAccounts, o
   const [workerPassword, setWorkerPassword] = useState('');
   const [workerError, setWorkerError] = useState('');
 
-  // จัดการ Login แอดมิน (รหัสเริ่มต้น 1234 หรือรหัสที่เพิ่มในระบบ)
+  // จัดการ Login แอดมิน (ตรวจสอบทั้ง Username/Password จาก Firebase หรือ Default)
   const handleAdminSubmit = (e) => {
     e.preventDefault();
     setAdminError('');
 
-    // ตรวจสอบรหัสผ่าน (ค่าเริ่มต้น 1234 หรือตรวจสอบจากรายชื่อแอดมินที่บันทึกไว้)
-    const isValid = adminPassword === '12348' || adminUsers.some(a => a.password === adminPassword);
+    // กรณีใช้ Default Admin (รหัส 1234 หรือระบุ username เป็น admin/root)
+    const isDefaultAdmin = adminPassword === '1234' && (!adminUsername.trim() || adminUsername === 'admin' || adminUsername === 'root');
     
-    if (isValid) {
+    // ตรวจสอบจากรายชื่อแอดมินที่บันทึกไว้ใน Firebase
+    const foundAdmin = adminUsers.find(
+      a => (a.username === adminUsername.trim() || a.name === adminUsername.trim()) && a.password === adminPassword
+    );
+
+    if (isDefaultAdmin || foundAdmin) {
       onAdminLogin();
     } else {
-      setAdminError('รหัสผ่านแอดมินไม่ถูกต้อง (รหัสเริ่มต้น: 1234)');
+      setAdminError('ชื่อผู้ใช้หรือรหัสผ่านแอดมินไม่ถูกต้อง (รหัสตั้งต้น: 1234)');
     }
   };
 
@@ -34,7 +40,7 @@ export default function RolePortal({ onSelectRole, adminUsers, workerAccounts, o
     setWorkerError('');
 
     const foundWorker = workerAccounts.find(
-      w => w.username === workerUsername && w.password === workerPassword
+      w => w.username === workerUsername.trim() && w.password === workerPassword
     );
 
     if (foundWorker) {
@@ -136,7 +142,7 @@ export default function RolePortal({ onSelectRole, adminUsers, workerAccounts, o
                   <Lock className="w-6 h-6" />
                 </div>
                 <h3 className="font-bold text-base text-white">เข้าสู่ระบบผู้ดูแลระบบ (Admin)</h3>
-                <p className="text-xs text-slate-400">กรุณากรอกรหัสผ่าน</p>
+                <p className="text-xs text-slate-400">กรุณากรอก Username และ Password</p>
               </div>
 
               {adminError && (
@@ -145,20 +151,38 @@ export default function RolePortal({ onSelectRole, adminUsers, workerAccounts, o
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-300">รหัสผ่านแอดมิน *</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                    <KeyRound className="w-4 h-4" />
-                  </span>
-                  <input
-                    type="password"
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    placeholder="•••• (รหัสเริ่มต้น: 1234)"
-                    required
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-widest"
-                  />
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-300">ชื่อผู้ใช้งาน (Username)</label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                      <User className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="text"
+                      value={adminUsername}
+                      onChange={(e) => setAdminUsername(e.target.value)}
+                      placeholder="เช่น admin (หรือเว้นว่างไว้สำหรับรหัสตั้งต้น)"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-300">รหัสผ่าน (Password) *</label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                      <KeyRound className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="password"
+                      value={adminPassword}
+                      onChange={(e) => setAdminPassword(e.target.value)}
+                      placeholder="•••• (รหัสเริ่มต้น: 1234)"
+                      required
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-widest"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -180,7 +204,7 @@ export default function RolePortal({ onSelectRole, adminUsers, workerAccounts, o
                   <UserCheck className="w-6 h-6" />
                 </div>
                 <h3 className="font-bold text-base text-white">เข้าสู่ระบบเจ้าหน้าที่ภาคสนาม</h3>
-                <p className="text-xs text-slate-400">กรุณาใช้ Username และ Password ที่ได้รับจาก Admin</p>
+                <p className="text-xs text-slate-400">กรุณาใช้ Username และ Password ที่กำหนดจากระบบ</p>
               </div>
 
               {workerError && (
@@ -192,26 +216,36 @@ export default function RolePortal({ onSelectRole, adminUsers, workerAccounts, o
               <div className="space-y-3">
                 <div className="space-y-1">
                   <label className="block text-xs font-bold text-slate-300">ชื่อผู้ใช้งาน (Username)</label>
-                  <input
-                    type="text"
-                    value={workerUsername}
-                    onChange={(e) => setWorkerUsername(e.target.value)}
-                    placeholder="เช่น team1"
-                    required
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                      <User className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="text"
+                      value={workerUsername}
+                      onChange={(e) => setWorkerUsername(e.target.value)}
+                      placeholder="เช่น team1"
+                      required
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1">
                   <label className="block text-xs font-bold text-slate-300">รหัสผ่าน (Password)</label>
-                  <input
-                    type="password"
-                    value={workerPassword}
-                    onChange={(e) => setWorkerPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                      <KeyRound className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="password"
+                      value={workerPassword}
+                      onChange={(e) => setWorkerPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
                 </div>
               </div>
 
