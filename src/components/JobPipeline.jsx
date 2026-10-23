@@ -67,7 +67,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-3">
         <h3 className="font-bold text-slate-800 text-base flex items-center gap-2 shrink-0">
           <Wrench className="w-5 h-5 text-blue-600" />
-          กระดานติดตามสถานะงานซ่อม (Pipeline)
+          กระดานติดตามสถานะงานซ่อม
         </h3>
 
         {/* 🔍 เท็กซ์บ็อกซ์ค้นหางานซ่อมบนหัวกระดาน */}
