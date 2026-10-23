@@ -1,5 +1,14 @@
 import React, { useState } from 'react';
-import { Shield, Smartphone, Plus, Trash2, Edit2, X, KeyRound, UserCheck, ShieldAlert, User } from 'lucide-react';
+import { 
+  Shield, 
+  Smartphone, 
+  Trash2, 
+  Edit2, 
+  X, 
+  KeyRound, 
+  UserCheck, 
+  ShieldAlert 
+} from 'lucide-react';
 
 export default function AdminManagementModal({ 
   isOpen, 
@@ -13,15 +22,16 @@ export default function AdminManagementModal({
   onEditWorkerAccount,
   onDeleteWorkerAccount
 }) {
-  const [activeTab, setActiveTab] = useState('admins'); // 'admins' หรือ 'workers'
+  // Navigation State ('admins' สำหรับจัดการแอดมิน, 'workers' สำหรับจัดการช่างภาคสนาม)
+  const [activeTab, setActiveTab] = useState('admins');
 
-  // Form State - Admin
+  // Form State: Admin Account
   const [adminUsernameInput, setAdminUsernameInput] = useState('');
   const [adminNameInput, setAdminNameInput] = useState('');
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [editingAdminId, setEditingAdminId] = useState(null);
 
-  // Form State - Worker (ช่องกรอกชื่อหัวหน้าทีม/ทีมช่าง + Username + Password)
+  // Form State: Worker Account
   const [workerTeamNameInput, setWorkerTeamNameInput] = useState('');
   const [workerUsernameInput, setWorkerUsernameInput] = useState('');
   const [workerPasswordInput, setWorkerPasswordInput] = useState('');
@@ -29,7 +39,7 @@ export default function AdminManagementModal({
 
   if (!isOpen) return null;
 
-  // บันทึก/แก้ไข Admin
+  // --- Handlers: Admin Management ---
   const handleSaveAdmin = (e) => {
     e.preventDefault();
     if (!adminUsernameInput.trim() || !adminNameInput.trim() || !adminPasswordInput.trim()) return;
@@ -50,12 +60,24 @@ export default function AdminManagementModal({
       });
     }
 
+    resetAdminForm();
+  };
+
+  const handleEditAdminClick = (admin) => {
+    setEditingAdminId(admin.id);
+    setAdminUsernameInput(admin.username || '');
+    setAdminNameInput(admin.name);
+    setAdminPasswordInput(admin.password);
+  };
+
+  const resetAdminForm = () => {
+    setEditingAdminId(null);
     setAdminUsernameInput('');
     setAdminNameInput('');
     setAdminPasswordInput('');
   };
 
-  // บันทึก/แก้ไข ช่างภาคสนาม
+  // --- Handlers: Worker Management ---
   const handleSaveWorker = (e) => {
     e.preventDefault();
     if (!workerTeamNameInput.trim() || !workerUsernameInput.trim() || !workerPasswordInput.trim()) return;
@@ -76,6 +98,18 @@ export default function AdminManagementModal({
       });
     }
 
+    resetWorkerForm();
+  };
+
+  const handleEditWorkerClick = (worker) => {
+    setEditingWorkerId(worker.id);
+    setWorkerTeamNameInput(worker.teamName);
+    setWorkerUsernameInput(worker.username);
+    setWorkerPasswordInput(worker.password);
+  };
+
+  const resetWorkerForm = () => {
+    setEditingWorkerId(null);
     setWorkerTeamNameInput('');
     setWorkerUsernameInput('');
     setWorkerPasswordInput('');
@@ -85,7 +119,7 @@ export default function AdminManagementModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 font-sans">
       <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         
-        {/* Header Modal */}
+        {/* Modal Header */}
         <div className="bg-slate-900 text-white p-5 flex justify-between items-center shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400">
@@ -124,10 +158,10 @@ export default function AdminManagementModal({
           </button>
         </div>
 
-        {/* Content Body */}
+        {/* Modal Content Body */}
         <div className="p-6 overflow-y-auto space-y-6">
           
-          {/* TAB 1: บัญชีผู้ดูแลระบบ (Admin) */}
+          {/* TAB 1: Admin Management */}
           {activeTab === 'admins' && (
             <div className="space-y-5">
               <form onSubmit={handleSaveAdmin} className="bg-indigo-50/60 border border-indigo-100 p-4 rounded-2xl space-y-3">
@@ -178,12 +212,7 @@ export default function AdminManagementModal({
                   {editingAdminId && (
                     <button
                       type="button"
-                      onClick={() => { 
-                        setEditingAdminId(null); 
-                        setAdminUsernameInput('');
-                        setAdminNameInput(''); 
-                        setAdminPasswordInput(''); 
-                      }}
+                      onClick={resetAdminForm}
                       className="bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl cursor-pointer"
                     >
                       ยกเลิก
@@ -198,7 +227,7 @@ export default function AdminManagementModal({
               <div className="space-y-2">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">รายชื่อแอดมินในระบบ ({adminUsers.length + 1})</p>
                 
-                {/* รหัสผ่านแอดมินหลักเริ่มต้น */}
+                {/* Default System Admin Card */}
                 <div className="flex justify-between items-center bg-slate-50 border border-slate-200 px-4 py-3 rounded-2xl text-xs">
                   <div>
                     <p className="font-bold text-slate-800 flex items-center gap-1.5">
@@ -211,6 +240,7 @@ export default function AdminManagementModal({
                   </span>
                 </div>
 
+                {/* Custom Admin List */}
                 {adminUsers.map((a) => (
                   <div key={a.id} className="flex justify-between items-center bg-white border border-slate-200 px-4 py-3 rounded-2xl text-xs shadow-xs">
                     <div>
@@ -219,12 +249,7 @@ export default function AdminManagementModal({
                     </div>
                     <div className="flex items-center gap-1">
                       <button 
-                        onClick={() => { 
-                          setEditingAdminId(a.id); 
-                          setAdminUsernameInput(a.username || '');
-                          setAdminNameInput(a.name); 
-                          setAdminPasswordInput(a.password); 
-                        }} 
+                        onClick={() => handleEditAdminClick(a)} 
                         className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
                         title="แก้ไข"
                       >
@@ -244,7 +269,7 @@ export default function AdminManagementModal({
             </div>
           )}
 
-          {/* TAB 2: กำหนด Username/Password ให้ช่างภาคสนาม */}
+          {/* TAB 2: Field Worker Management */}
           {activeTab === 'workers' && (
             <div className="space-y-5">
               <form onSubmit={handleSaveWorker} className="bg-emerald-50/60 border border-emerald-100 p-4 rounded-2xl space-y-3">
@@ -295,12 +320,7 @@ export default function AdminManagementModal({
                   {editingWorkerId && (
                     <button
                       type="button"
-                      onClick={() => { 
-                        setEditingWorkerId(null); 
-                        setWorkerTeamNameInput('');
-                        setWorkerUsernameInput(''); 
-                        setWorkerPasswordInput(''); 
-                      }}
+                      onClick={resetWorkerForm}
                       className="bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl cursor-pointer"
                     >
                       ยกเลิก
@@ -327,12 +347,7 @@ export default function AdminManagementModal({
                       </div>
                       <div className="flex items-center gap-1">
                         <button 
-                          onClick={() => { 
-                            setEditingWorkerId(w.id); 
-                            setWorkerTeamNameInput(w.teamName);
-                            setWorkerUsernameInput(w.username); 
-                            setWorkerPasswordInput(w.password);
-                          }} 
+                          onClick={() => handleEditWorkerClick(w)} 
                           className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer"
                           title="แก้ไข"
                         >
