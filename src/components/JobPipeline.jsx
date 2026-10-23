@@ -1,17 +1,12 @@
 import React, { useState } from 'react';
-import { Clock, Truck, Wrench, CheckCircle2, User, Phone, MapPin, AlertCircle, Users, Plus, Trash2, Edit2, X, AlertTriangle } from 'lucide-react';
+import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle } from 'lucide-react';
 
-export default function JobPipeline({ jobs, onStatusChange, teams, onAddTeam, onEditTeam, onDeleteTeam }) {
+export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] }) {
   const [selectedJobForDispatch, setSelectedJobForDispatch] = useState(null);
   const [selectedTeam, setSelectedTeam] = useState('');
   
-  // 🔴 เพิ่ม State สำหรับเลือกระดับความเร่งด่วน
+  // State สำหรับเลือกระดับความเร่งด่วน
   const [urgencyLevel, setUrgencyLevel] = useState('ปกติ');
-
-  const [isManageTeamsOpen, setIsManageTeamsOpen] = useState(false);
-  const [teamNameInput, setTeamNameInput] = useState('');
-  const [teamPhoneInput, setTeamPhoneInput] = useState('');
-  const [editingTeamOriginalName, setEditingTeamOriginalName] = useState(null);
 
   const columns = [
     { id: 'PENDING', title: 'รอรับเรื่อง / มอบหมาย', color: 'bg-amber-500', bgLight: 'bg-amber-50/50', border: 'border-amber-200' },
@@ -26,42 +21,21 @@ export default function JobPipeline({ jobs, onStatusChange, teams, onAddTeam, on
       alert("กรุณาเลือกทีมช่างก่อนทำการจ่ายงาน");
       return;
     }
-    const teamObj = teams.find(t => t.name === selectedTeam);
-    const techDetails = teamObj ? `${teamObj.name} (${teamObj.phone || 'ไม่มีเบอร์'})` : selectedTeam;
+    const workerObj = workerAccounts.find(w => w.teamName === selectedTeam);
+    const techDetails = workerObj ? `${workerObj.teamName} (${workerObj.phone || '-'})` : selectedTeam;
     
     const currentDateTime = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
     onStatusChange(selectedJobForDispatch.id, 'DISPATCHED', { 
       technician: techDetails,
-      techName: teamObj?.name || selectedTeam,
-      techPhone: teamObj?.phone || '-',
+      techName: workerObj?.teamName || selectedTeam,
+      techPhone: workerObj?.phone || '-',
       dispatchedAt: currentDateTime,
-      urgency: urgencyLevel // 🔴 ส่งค่าระดับความเร่งด่วน
+      urgency: urgencyLevel // ส่งค่าระดับความเร่งด่วน
     });
     setSelectedJobForDispatch(null);
     setSelectedTeam('');
     setUrgencyLevel('ปกติ');
-  };
-
-  const handleSaveTeamForm = (e) => {
-    e.preventDefault();
-    if (!teamNameInput.trim()) return;
-
-    if (editingTeamOriginalName) {
-      onEditTeam(editingTeamOriginalName, { name: teamNameInput.trim(), phone: teamPhoneInput.trim() });
-      setEditingTeamOriginalName(null);
-    } else {
-      onAddTeam({ name: teamNameInput.trim(), phone: teamPhoneInput.trim() });
-    }
-
-    setTeamNameInput('');
-    setTeamPhoneInput('');
-  };
-
-  const handleStartEditTeam = (team) => {
-    setEditingTeamOriginalName(team.name);
-    setTeamNameInput(team.name);
-    setTeamPhoneInput(team.phone || '');
   };
 
   return (
@@ -71,19 +45,6 @@ export default function JobPipeline({ jobs, onStatusChange, teams, onAddTeam, on
           <Wrench className="w-5 h-5 text-blue-600" />
           กระดานติดตามสถานะงานซ่อม (Pipeline)
         </h3>
-        
-        <button
-          onClick={() => {
-            setIsManageTeamsOpen(true);
-            setEditingTeamOriginalName(null);
-            setTeamNameInput('');
-            setTeamPhoneInput('');
-          }}
-          className="bg-slate-800 hover:bg-slate-900 text-white text-xs px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
-        >
-          <Users className="w-4 h-4 text-cyan-400" />
-          จัดการทีมช่าง ({teams.length} ทีม)
-        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -173,7 +134,7 @@ export default function JobPipeline({ jobs, onStatusChange, teams, onAddTeam, on
                             <button
                               onClick={() => {
                                 setSelectedJobForDispatch(job);
-                                setSelectedTeam(teams[0]?.name || '');
+                                setSelectedTeam(workerAccounts[0]?.teamName || '');
                                 setUrgencyLevel('ปกติ');
                               }}
                               className="bg-cyan-600 hover:bg-cyan-700 text-white px-2.5 py-1 rounded-lg font-bold transition shadow-sm cursor-pointer"
@@ -208,7 +169,7 @@ export default function JobPipeline({ jobs, onStatusChange, teams, onAddTeam, on
         })}
       </div>
 
-      {/* Modal จ่ายงานซ่อม พร้อมตัวเลือกระดับความเร่งด่วน */}
+      {/* Modal จ่ายงานซ่อม พร้อมดึงรายชื่อช่างจาก workerAccounts */}
       {selectedJobForDispatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
@@ -249,12 +210,12 @@ export default function JobPipeline({ jobs, onStatusChange, teams, onAddTeam, on
                   onChange={(e) => setSelectedTeam(e.target.value)}
                   className="w-full border border-slate-200 rounded-xl p-3 text-xs bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
                 >
-                  {teams.length === 0 ? (
-                    <option value="">ไม่มีทีมช่าง (กรุณาเพิ่มทีมช่างก่อน)</option>
+                  {workerAccounts.length === 0 ? (
+                    <option value="">ไม่มีบัญชีช่าง (กรุณาเพิ่มบัญชีช่างในตั้งค่าแอดมินก่อน)</option>
                   ) : (
-                    teams.map((t) => (
-                      <option key={t.name} value={t.name}>
-                        {t.name} {t.phone ? `(โทร: ${t.phone})` : ''}
+                    workerAccounts.map((worker) => (
+                      <option key={worker.id || worker.teamName} value={worker.teamName}>
+                        {worker.teamName} {worker.phone && worker.phone !== '-' ? `(โทร: ${worker.phone})` : ''}
                       </option>
                     ))
                   )}
@@ -271,85 +232,11 @@ export default function JobPipeline({ jobs, onStatusChange, teams, onAddTeam, on
               </button>
               <button
                 onClick={handleConfirmDispatch}
-                disabled={teams.length === 0}
+                disabled={workerAccounts.length === 0}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md disabled:opacity-50 cursor-pointer"
               >
                 ยืนยันการจ่ายงาน
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isManageTeamsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-600" /> จัดการรายชื่อและเบอร์ติดต่อทีมช่าง
-              </h4>
-              <button onClick={() => setIsManageTeamsOpen(false)} className="cursor-pointer"><X className="w-5 h-5 text-slate-400" /></button>
-            </div>
-
-            <form onSubmit={handleSaveTeamForm} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-              <p className="text-xs font-bold text-slate-700">
-                {editingTeamOriginalName ? `แก้ไขข้อมูล: ${editingTeamOriginalName}` : 'เพิ่มทีมช่างใหม่'}
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  value={teamNameInput}
-                  onChange={(e) => setTeamNameInput(e.target.value)}
-                  placeholder="ชื่อทีม เช่น ทีมซ่อมท่อเขต 1"
-                  required
-                  className="border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="tel"
-                  value={teamPhoneInput}
-                  onChange={(e) => setTeamPhoneInput(e.target.value)}
-                  placeholder="เบอร์ติดต่อ เช่น 0812345678"
-                  className="border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 font-mono"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                {editingTeamOriginalName && (
-                  <button
-                    type="button"
-                    onClick={() => { setEditingTeamOriginalName(null); setTeamNameInput(''); setTeamPhoneInput(''); }}
-                    className="bg-slate-200 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl cursor-pointer"
-                  >
-                    ยกเลิกแก้ไข
-                  </button>
-                )}
-                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-1.5 rounded-xl shadow-sm cursor-pointer">
-                  {editingTeamOriginalName ? 'บันทึกการแก้ไข' : '+ เพิ่มทีมช่าง'}
-                </button>
-              </div>
-            </form>
-
-            <div className="space-y-2 max-h-60 overflow-y-auto pt-1">
-              <span className="text-[11px] font-bold text-slate-400 uppercase">รายชื่อทีมช่างทั้งหมด ({teams.length})</span>
-              {teams.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-4">ยังไม่มีข้อมูลทีมช่าง</p>
-              ) : (
-                teams.map((t) => (
-                  <div key={t.name} className="flex justify-between items-center bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs shadow-xs">
-                    <div>
-                      <p className="font-bold text-slate-800">{t.name}</p>
-                      <p className="text-slate-500 font-mono text-[11px]">โทร: {t.phone || 'ไม่ระบุเบอร์'}</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => handleStartEditTeam(t)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer" title="แก้ไข">
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => onDeleteTeam(t.name)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer" title="ลบ">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
             </div>
           </div>
         </div>
