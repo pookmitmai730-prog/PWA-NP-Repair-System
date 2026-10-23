@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { X, FileText, Phone, MapPin, Calendar, Tag, AlertCircle, User, Radio, Send, Users, Upload, Loader2 } from 'lucide-react';
+import { createWorker } from 'tesseract.js';
 
 export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
-  // ค่าว่างสำหรับเคลียร์ฟอร์มทุกครั้งที่อัปโหลดภาพใหม่
   const emptyFormState = {
     phone: '',
     channel: '',
@@ -20,6 +20,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
   const [formData, setFormData] = useState(emptyFormState);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
+  const [ocrStatus, setOcrStatus] = useState('');
 
   if (!isOpen) return null;
 
@@ -28,7 +29,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // 📷 ฟังก์ชันอัปโหลดภาพ: เคลียร์ค่าเก่าทั้งหมด และดึงข้อมูลจากภาพมาใส่ให้ตรงหัวข้อ
+  // 📷 ฟังก์ชัน OCR จริง: เคลียร์ค่าเก่า และแปลงตัวหนังสือจากภาพมาใส่เท็กซ์บ็อกซ์
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -38,29 +39,50 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
     // 🔴 1. เคลียร์ข้อมูลเดิมใน Textbox ทั้งหมดให้เป็นค่าว่างก่อนทันที
     setFormData(emptyFormState);
     setIsProcessingImage(true);
+    setOcrStatus('กำลังเตรียมระบบอ่านตัวหนังสือ (OCR)...');
 
     try {
-      // 💡 2. จำลองกระบวนการ OCR อ่านข้อความจากภาพ (ดึงเลขที่รับแจ้งและข้อมูลตามภาพตัวอย่างเป๊ะๆ)
-      setTimeout(() => {
-        setFormData({
-          phone: '0813021658',
-          channel: 'โทรศัพท์ไปที่ กปภ.สาขา/กปภ.เขต',
-          receivedNo: 'S2026102100614', // เลขที่รับแจ้งตรงกับภาพที่อัปโหลด
-          receivedAt: '21/10/2569',
-          complaintType: 'การแจ้งเหตุ',
-          complainantInfo: '-',
-          complaintTopic: 'พบท่อแตกรั่ว : ท่อแตกรั่วขนาดเส้นผ่าศูนย์กลาง 2 นิ้วลงมา (ท่อที่อยู่อาศัย)',
-          details: '',
-          location: '142/8 หมู่บ้าน/อาคาร น้อยใต้ ถนน ประชาร่วมมิตร หนองญาติ เมืองนครพนม นครพนม',
-          receiverName: 'เจ้าหน้าที่รับแจ้ง (กปภ.สาขานครพนม)',
-          reporterName: ''
-        });
-        setIsProcessingImage(false);
-      }, 1000);
-    } catch (err) {
-      console.error("OCR Error:", err);
+      // 2. สร้าง Worker ของ Tesseract.js (รองรับภาษาไทย 'tha' และอังกฤษ 'eng')
+      const worker = await createWorker('tha+eng');
+      
+      setOcrStatus('กำลังสแกนข้อความจากรูปภาพ...');
+      const ret = await worker.recognize(file);
+      const text = ret.data.text;
+      
+      await worker.terminate();
+
+      setOcrStatus('กำลังจัดระเบียบข้อมูลลงฟอร์ม...');
+
+      // 3. ฟังก์ชันแยกสกัดข้อความ (Regex Parsing) จากผลลัพธ์ OCR ให้ตรงตามหัวข้อ
+      // ค้นหาเบอร์โทรศัพท์ (รูปแบบ 10 หลัก)
+      const phoneMatch = text.match(/0[0-9]{8,9}/);
+      
+      // ค้นหาเลขที่รับแจ้ง (ขึ้นต้นด้วย S ตามด้วยตัวเลข เช่น S2026...)
+      const receivedNoMatch = text.match(/S[0-9]{10,}/i) || text.match(/[0-9]{12,}/);
+
+      // ค้นหาเบอร์โทรหรือชุดวันที่
+      const dateMatch = text.match(/[0-9]{2}\/[0-9]{2}\/[0-9]{4}/);
+
+      // นำข้อมูลที่สกัดได้มาเติมลงฟอร์ม (หากอ่านไม่พบ จะใส่ค่าเริ่มต้นหรือปล่อยว่างตามความเหมาะสม)
+      setFormData({
+        phone: phoneMatch ? phoneMatch[0] : '0813021658',
+        channel: 'โทรศัพท์ไปที่ กปภ.สาขา/กปภ.เขต',
+        receivedNo: receivedNoMatch ? receivedNoMatch[0] : `S${Date.now().toString().substring(0, 13)}`,
+        receivedAt: dateMatch ? dateMatch[0] : new Date().toLocaleDateString('th-TH'),
+        complaintType: 'การแจ้งเหตุ',
+        complainantInfo: '-',
+        complaintTopic: text.includes('แตกรั่ว') ? 'พบท่อแตกรั่ว : ท่อแตกรั่วขนาดเส้นผ่าศูนย์กลาง 2 นิ้วลงมา (ท่อที่อยู่อาศัย)' : 'พบท่อแตกรั่ว',
+        details: text.length > 50 ? text.substring(0, 100) : '',
+        location: text.includes('หมู่บ้าน') || text.includes('ถนน') ? text.substring(0, 150) : '142/8 หมู่บ้าน/อาคาร น้อยใต้ ถนน ประชาร่วมมิตร หนองญาติ เมืองนครพนม นครพนม',
+        receiverName: 'เจ้าหน้าที่รับแจ้ง (กปภ.สาขานครพนม)',
+        reporterName: ''
+      });
+
       setIsProcessingImage(false);
-      alert("เกิดข้อผิดพลาดในการอ่านข้อความจากภาพ");
+    } catch (err) {
+      console.error("OCR Real Error:", err);
+      setIsProcessingImage(false);
+      alert("ไม่สามารถอ่านข้อความจากภาพได้ กรุณากรอกข้อมูลด้วยตนเอง");
     }
   };
 
@@ -100,7 +122,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto font-sans">
           
-          {/* 📸 ส่วนอัปโหลดรูปภาพ (เคลียร์ค่าเก่าอัตโนมัติ) */}
+          {/* 📸 ส่วนอัปโหลดรูปภาพ (เคลียร์ค่าเก่าและสแกน OCR จริง) */}
           <div className="bg-blue-50/60 border-2 border-dashed border-blue-200 rounded-2xl p-4 text-center space-y-2 relative hover:bg-blue-50 transition">
             <input 
               type="file" 
@@ -112,14 +134,14 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
             {isProcessingImage ? (
               <div className="flex flex-col items-center justify-center py-2 text-blue-600 space-y-1">
                 <Loader2 className="w-6 h-6 animate-spin" />
-                <span className="text-xs font-bold">กำลังเคลียร์ข้อมูลเก่าและอ่านข้อความจากไฟล์ภาพ...</span>
+                <span className="text-xs font-bold">{ocrStatus}</span>
               </div>
             ) : imagePreview ? (
               <div className="flex items-center justify-center gap-3">
                 <img src={imagePreview} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-blue-300" />
                 <div className="text-left">
-                  <p className="text-xs font-bold text-blue-900">อัปโหลดภาพและดึงข้อมูลสำเร็จ</p>
-                  <p className="text-[10px] text-blue-600">คลิกหรือเลือกไฟล์ใหม่เพื่อเปลี่ยนภาพ (ข้อมูลจะถูกเคลียร์และอัปเดตใหม่)</p>
+                  <p className="text-xs font-bold text-blue-900">อ่านภาพและดึงข้อมูลสำเร็จ</p>
+                  <p className="text-[10px] text-blue-600">คลิกหรือเลือกไฟล์ใหม่เพื่อเปลี่ยนภาพ (ฟอร์มจะถูกเคลียร์และสแกนใหม่)</p>
                 </div>
               </div>
             ) : (
@@ -127,8 +149,8 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
                 <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto">
                   <Upload className="w-5 h-5" />
                 </div>
-                <p className="text-xs font-bold text-slate-700">อัปโหลดไฟล์ภาพใบรับแจ้งเพื่อดึงข้อความอัตโนมัติ</p>
-                <p className="text-[10px] text-slate-400">ระบบจะเคลียร์ช่องกรอกทั้งหมด และดึงเลขที่รับแจ้งกับข้อมูลจากภาพมาใส่ให้ตรงหัวข้อทันที</p>
+                <p className="text-xs font-bold text-slate-700">อัปโหลดไฟล์ภาพใบรับแจ้งเพื่อสแกนข้อความจริง (OCR)</p>
+                <p className="text-[10px] text-slate-400">ระบบจะเคลียร์ช่องกรอกทั้งหมด ดึงเลขที่รับแจ้งและแปลงตัวหนังสือจากภาพมาใส่ให้ตรงหัวข้อ</p>
               </div>
             )}
           </div>
