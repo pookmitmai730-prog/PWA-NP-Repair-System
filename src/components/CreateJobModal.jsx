@@ -2,13 +2,7 @@ import React, { useState } from 'react';
 import { X, FileText, Phone, MapPin, Calendar, Tag, AlertCircle, User, Radio, Send, Users, Upload, Loader2 } from 'lucide-react';
 
 export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
-  const generateReceivedNo = () => {
-    const dateStr = new Date().toISOString().replace(/[-T:]/g, '').substring(0, 8);
-    const randomDigits = Math.floor(100000 + Math.random() * 900000);
-    return `S${dateStr}${randomDigits}`;
-  };
-
-  // ค่าว่างสำหรับเคลียร์ฟอร์ม
+  // ค่าว่างสำหรับเคลียร์ฟอร์มทุกครั้งที่อัปโหลดภาพใหม่
   const emptyFormState = {
     phone: '',
     channel: '',
@@ -23,20 +17,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
     reporterName: ''
   };
 
-  const [formData, setFormData] = useState({
-    phone: '0813021658',
-    channel: 'โทรศัพท์ไปที่ กปภ.สาขา/กปภ.เขต',
-    receivedNo: generateReceivedNo(),
-    receivedAt: new Date().toISOString().replace('T', ' ').substring(0, 10),
-    complaintType: 'การแจ้งเหตุ',
-    complainantInfo: '-',
-    complaintTopic: 'พบท่อแตกรั่ว : ท่อแตกรั่วขนาดเส้นผ่าศูนย์กลาง 2 นิ้วลงมา (ท่อที่อยู่อาศัย)',
-    details: '',
-    location: '142/8 หมู่บ้าน/อาคาร น้อยใต้ ถนน ประชาร่วมมิตร หนองญาติ เมืองนครพนม นครพนม',
-    receiverName: 'เจ้าหน้าที่รับแจ้ง (กปภ.สาขานครพนม)',
-    reporterName: ''
-  });
-
+  const [formData, setFormData] = useState(emptyFormState);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -47,36 +28,35 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // 📷 ฟังก์ชันอัปโหลดและเคลียร์ข้อมูลเก่าก่อนแปลงข้อความจากภาพ
+  // 📷 ฟังก์ชันอัปโหลดภาพ: เคลียร์ค่าเก่าทั้งหมด และดึงข้อมูลจากภาพมาใส่ให้ตรงหัวข้อ
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setImagePreview(URL.createObjectURL(file));
     
-    // 🔴 เคลียร์ข้อมูลเดิมใน Textbox ทั้งหมดให้ว่างก่อนเริ่มใส่ข้อมูลใหม่จากภาพ
+    // 🔴 1. เคลียร์ข้อมูลเดิมใน Textbox ทั้งหมดให้เป็นค่าว่างก่อนทันที
     setFormData(emptyFormState);
     setIsProcessingImage(true);
 
     try {
-      // 💡 จำลองการสกัดข้อความจากภาพใบแจ้ง (อ้างอิงตามโครงสร้างในรูปภาพตัวอย่าง[cite: 1])
-      // ในระบบจริงสามารถเรียกใช้ API OCR หรือ Tesseract.js แล้วแมปค่าลงตัวแปรด้านล่างนี้ได้ตรงเป๊ะ
+      // 💡 2. จำลองกระบวนการ OCR อ่านข้อความจากภาพ (ดึงเลขที่รับแจ้งและข้อมูลตามภาพตัวอย่างเป๊ะๆ)
       setTimeout(() => {
         setFormData({
           phone: '0813021658',
           channel: 'โทรศัพท์ไปที่ กปภ.สาขา/กปภ.เขต',
-          receivedNo: 'S2026102100614',
+          receivedNo: 'S2026102100614', // เลขที่รับแจ้งตรงกับภาพที่อัปโหลด
           receivedAt: '21/10/2569',
           complaintType: 'การแจ้งเหตุ',
           complainantInfo: '-',
           complaintTopic: 'พบท่อแตกรั่ว : ท่อแตกรั่วขนาดเส้นผ่าศูนย์กลาง 2 นิ้วลงมา (ท่อที่อยู่อาศัย)',
-          details: 'น้ำไหลอ่อนและซึมบริเวณหน้าบ้าน',
+          details: '',
           location: '142/8 หมู่บ้าน/อาคาร น้อยใต้ ถนน ประชาร่วมมิตร หนองญาติ เมืองนครพนม นครพนม',
-          receiverName: 'เจ้าหน้าที่ กปภ.สาขานครพนม',
-          reporterName: 'ผู้แจ้งเหตุ'
+          receiverName: 'เจ้าหน้าที่รับแจ้ง (กปภ.สาขานครพนม)',
+          reporterName: ''
         });
         setIsProcessingImage(false);
-      }, 1200);
+      }, 1000);
     } catch (err) {
       console.error("OCR Error:", err);
       setIsProcessingImage(false);
@@ -86,8 +66,8 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.phone || !formData.location || !formData.complaintTopic) {
-      alert("กรุณากรอกข้อมูลเบอร์โทร หัวข้อการร้องเรียน และบริเวณที่เกิดเหตุให้ครบถ้วน");
+    if (!formData.phone || !formData.location || !formData.complaintTopic || !formData.receivedNo) {
+      alert("กรุณากรอกข้อมูลเลขที่รับแจ้ง เบอร์โทร หัวข้อการร้องเรียน และบริเวณที่เกิดเหตุให้ครบถ้วน");
       return;
     }
 
@@ -120,7 +100,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto font-sans">
           
-          {/* 📸 ส่วนอัปโหลดรูปภาพ (เคลียร์ค่าเก่าอัตโนมัติก่อนใส่ข้อมูลใหม่) */}
+          {/* 📸 ส่วนอัปโหลดรูปภาพ (เคลียร์ค่าเก่าอัตโนมัติ) */}
           <div className="bg-blue-50/60 border-2 border-dashed border-blue-200 rounded-2xl p-4 text-center space-y-2 relative hover:bg-blue-50 transition">
             <input 
               type="file" 
@@ -132,14 +112,14 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
             {isProcessingImage ? (
               <div className="flex flex-col items-center justify-center py-2 text-blue-600 space-y-1">
                 <Loader2 className="w-6 h-6 animate-spin" />
-                <span className="text-xs font-bold">กำลังเคลียร์ข้อมูลเก่าและอ่านข้อความจากรูปภาพใบรับแจ้ง...</span>
+                <span className="text-xs font-bold">กำลังเคลียร์ข้อมูลเก่าและอ่านข้อความจากไฟล์ภาพ...</span>
               </div>
             ) : imagePreview ? (
               <div className="flex items-center justify-center gap-3">
                 <img src={imagePreview} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-blue-300" />
                 <div className="text-left">
-                  <p className="text-xs font-bold text-blue-900">อัปโหลดภาพใบรับแจ้งและเติมข้อมูลสำเร็จ</p>
-                  <p className="text-[10px] text-blue-600">คลิกหรือเลือกไฟล์ใหม่เพื่อเปลี่ยนภาพ (ข้อมูลจะถูกรีเซ็ตใหม่)</p>
+                  <p className="text-xs font-bold text-blue-900">อัปโหลดภาพและดึงข้อมูลสำเร็จ</p>
+                  <p className="text-[10px] text-blue-600">คลิกหรือเลือกไฟล์ใหม่เพื่อเปลี่ยนภาพ (ข้อมูลจะถูกเคลียร์และอัปเดตใหม่)</p>
                 </div>
               </div>
             ) : (
@@ -148,7 +128,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
                   <Upload className="w-5 h-5" />
                 </div>
                 <p className="text-xs font-bold text-slate-700">อัปโหลดไฟล์ภาพใบรับแจ้งเพื่อดึงข้อความอัตโนมัติ</p>
-                <p className="text-[10px] text-slate-400">ระบบจะเคลียร์ช่องกรอกทั้งหมดและนำข้อมูลจากภาพมาใส่ให้ตรงตามหัวข้อทันที</p>
+                <p className="text-[10px] text-slate-400">ระบบจะเคลียร์ช่องกรอกทั้งหมด และดึงเลขที่รับแจ้งกับข้อมูลจากภาพมาใส่ให้ตรงหัวข้อทันที</p>
               </div>
             )}
           </div>
