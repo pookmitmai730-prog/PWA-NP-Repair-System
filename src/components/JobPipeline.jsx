@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
-import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle } from 'lucide-react';
+import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3 } from 'lucide-react';
 
 export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] }) {
   const [selectedJobForDispatch, setSelectedJobForDispatch] = useState(null);
   const [selectedTeam, setSelectedTeam] = useState('');
-  
-  // State สำหรับเลือกระดับความเร่งด่วน
   const [urgencyLevel, setUrgencyLevel] = useState('ปกติ');
+
+  // 🔴 State สำหรับช่องค้นหางานซ่อมบนหัวกระดาน Pipeline
+  const [pipelineSearch, setPipelineSearch] = useState('');
+
+  // 🔴 State สำหรับ Modal แก้ไข/เปลี่ยนทีมช่างในเคสที่จ่ายงานแล้วหรือกำลังซ่อม
+  const [editingTeamJob, setEditingTeamJob] = useState(null);
+  const [newSelectedTeam, setNewSelectedTeam] = useState('');
 
   const columns = [
     { id: 'PENDING', title: 'รอรับเรื่อง / มอบหมาย', color: 'bg-amber-500', bgLight: 'bg-amber-50/50', border: 'border-amber-200' },
@@ -15,7 +20,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     { id: 'COMPLETED', title: 'ซ่อมเสร็จสิ้น (ปิดงาน)', color: 'bg-emerald-600', bgLight: 'bg-emerald-50/50', border: 'border-emerald-200' },
   ];
 
-  // ยืนยันการจ่ายงาน พร้อมบันทึกความเร่งด่วน
+  // ยืนยันการจ่ายงาน
   const handleConfirmDispatch = () => {
     if (!selectedTeam) {
       alert("กรุณาเลือกทีมช่างก่อนทำการจ่ายงาน");
@@ -31,25 +36,81 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       techName: workerObj?.teamName || selectedTeam,
       techPhone: workerObj?.phone || '-',
       dispatchedAt: currentDateTime,
-      urgency: urgencyLevel // ส่งค่าระดับความเร่งด่วน
+      urgency: urgencyLevel
     });
     setSelectedJobForDispatch(null);
     setSelectedTeam('');
     setUrgencyLevel('ปกติ');
   };
 
+  // 🔴 ยืนยันการเปลี่ยนทีมช่างสำหรับงานที่กำลังดำเนินการอยู่
+  const handleConfirmChangeTeam = () => {
+    if (!newSelectedTeam || !editingTeamJob) return;
+
+    const workerObj = workerAccounts.find(w => w.teamName === newSelectedTeam);
+    const techDetails = workerObj ? `${workerObj.teamName} (${workerObj.phone || '-'})` : newSelectedTeam;
+
+    onStatusChange(editingTeamJob.id, editingTeamJob.status, {
+      technician: techDetails,
+      techName: workerObj?.teamName || newSelectedTeam,
+      techPhone: workerObj?.phone || '-'
+    });
+
+    setEditingTeamJob(null);
+    setNewSelectedTeam('');
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
+      
+      {/* หัวข้อกระดาน และ Textbox ค้นหางานซ่อม */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-3">
+        <h3 className="font-bold text-slate-800 text-base flex items-center gap-2 shrink-0">
           <Wrench className="w-5 h-5 text-blue-600" />
           กระดานติดตามสถานะงานซ่อม (Pipeline)
         </h3>
+
+        {/* 🔍 เท็กซ์บ็อกซ์ค้นหางานซ่อมบนหัวกระดาน */}
+        <div className="relative w-full sm:w-72">
+          <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <Search className="w-4 h-4" />
+          </span>
+          <input
+            type="text"
+            value={pipelineSearch}
+            onChange={(e) => setPipelineSearch(e.target.value)}
+            placeholder="ค้นหาเลขรับแจ้ง, ชื่อ, สถานที่..."
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+          />
+          {pipelineSearch && (
+            <button
+              onClick={() => setPipelineSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* คอลัมน์ Pipeline */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {columns.map((col) => {
-          const colJobs = jobs.filter(j => j.status === col.id);
+          // กรองงานตามสถานะ และกรองตามคำค้นหา (Pipeline Search)
+          const colJobs = jobs.filter(j => {
+            const matchStatus = j.status === col.id;
+            if (!matchStatus) return false;
+
+            if (!pipelineSearch.trim()) return true;
+            const q = pipelineSearch.trim().toLowerCase();
+            const receivedNo = String(j.receivedNo || j.id || '').toLowerCase();
+            const reporterName = String(j.reporterName || '').toLowerCase();
+            const phone = String(j.phone || '').toLowerCase();
+            const location = String(j.location || '').toLowerCase();
+            const issue = String(j.complaintTopic || j.issueType || '').toLowerCase();
+
+            return receivedNo.includes(q) || reporterName.includes(q) || phone.includes(q) || location.includes(q) || issue.includes(q);
+          });
 
           return (
             <div key={col.id} className={`rounded-3xl border ${col.border} ${col.bgLight} p-4 flex flex-col min-h-[500px]`}>
@@ -77,7 +138,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                           <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
                             {job.receivedNo || job.id}
                           </span>
-                          {/* Badge แสดงระดับความเร่งด่วน */}
                           {job.urgency && job.urgency !== 'ปกติ' && (
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 ${
                               job.urgency === 'ด่วนมาก' 
@@ -114,11 +174,29 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                         </p>
                       </div>
 
+                      {/* แสดงชื่อทีมช่าง พร้อมปุ่มแก้ไขทีมช่าง (ยกเว้นเคสที่ปิดงาน COMPLETED แล้ว) */}
                       {job.status !== 'PENDING' && (
-                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 text-[11px] space-y-0.5">
-                          <p className="font-bold text-blue-700 flex items-center gap-1">
-                            <Users className="w-3 h-3" /> ทีมรับงาน: {job.techName || job.technician}
-                          </p>
+                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] space-y-1 relative group">
+                          <div className="flex justify-between items-center">
+                            <p className="font-bold text-blue-700 flex items-center gap-1">
+                              <Users className="w-3 h-3" /> ทีมรับงาน: {job.techName || job.technician}
+                            </p>
+                            
+                            {/* 🛠️ ปุ่มแก้ไข/เปลี่ยนทีมช่าง (แสดงเฉพาะงานที่ยังไม่ปิดงาน COMPLETED) */}
+                            {job.status !== 'COMPLETED' && (
+                              <button
+                                onClick={() => {
+                                  setEditingTeamJob(job);
+                                  setNewSelectedTeam(job.techName || workerAccounts[0]?.teamName || '');
+                                }}
+                                className="text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-800 px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition cursor-pointer"
+                                title="เปลี่ยนทีมช่าง"
+                              >
+                                <Edit3 className="w-3 h-3" /> เปลี่ยนทีม
+                              </button>
+                            )}
+                          </div>
+                          
                           {job.techPhone && job.techPhone !== '-' && (
                             <p className="text-slate-600 flex items-center gap-1 font-mono">
                               <Phone className="w-3 h-3 text-emerald-600" /> โทร: {job.techPhone}
@@ -169,7 +247,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         })}
       </div>
 
-      {/* Modal จ่ายงานซ่อม พร้อมดึงรายชื่อช่างจาก workerAccounts */}
+      {/* Modal จ่ายงานซ่อม */}
       {selectedJobForDispatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
@@ -241,6 +319,55 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
           </div>
         </div>
       )}
+
+      {/* 🛠️ Modal สำหรับแก้ไข / เปลี่ยนทีมช่าง (กรณีเปลี่ยนใจเปลี่ยนทีมระหว่างดำเนินงาน) */}
+      {editingTeamJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h4 className="font-bold text-slate-800 text-sm">เปลี่ยนทีมช่าง: {editingTeamJob.receivedNo || editingTeamJob.id}</h4>
+              <button onClick={() => setEditingTeamJob(null)} className="cursor-pointer"><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600">
+                ทีมช่างปัจจุบัน: <span className="font-bold text-slate-800">{editingTeamJob.techName || editingTeamJob.technician}</span>
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">เลือกทีมช่างใหม่ *</label>
+                <select
+                  value={newSelectedTeam}
+                  onChange={(e) => setNewSelectedTeam(e.target.value)}
+                  className="w-full border border-slate-200 rounded-xl p-3 text-xs bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                >
+                  {workerAccounts.map((worker) => (
+                    <option key={worker.id || worker.teamName} value={worker.teamName}>
+                      {worker.teamName} {worker.phone && worker.phone !== '-' ? `(โทร: ${worker.phone})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setEditingTeamJob(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleConfirmChangeTeam}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer"
+              >
+                บันทึกการเปลี่ยนทีม
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
