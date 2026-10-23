@@ -235,7 +235,7 @@ export default function App() {
     }, 1000);
   };
 
-  // 1. หน้า Portal เลือกสิทธิ์
+  // 1. หน้า Portal เลือกสิทธิ์ (ส่ง jobs={jobs} เพื่อให้ค้นหาจากหน้าแรกได้ทันที)
   if (userRole === 'portal') {
     return (
       <RolePortal 
@@ -244,6 +244,7 @@ export default function App() {
         workerAccounts={workerAccounts}
         onAdminLogin={handleAdminLogin}
         onWorkerLogin={handleWorkerLogin}
+        jobs={jobs}
       />
     );
   }
