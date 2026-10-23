@@ -37,7 +37,6 @@ export async function updateJobStatusInFirebase(jobId, updatedData) {
   if (!db) return console.warn("Firebase ยังไม่ได้ตั้งค่า");
   const jobRef = ref(db, 'repairs/' + jobId);
   
-  // อัปเดตข้อมูลทั้งหมดลง Firebase ทันที
   await update(jobRef, {
     ...updatedData,
     updatedAt: new Date().toLocaleString("th-TH")
@@ -59,4 +58,25 @@ export function subscribeToJobs(callback) {
       callback([]);
     }
   });
+}
+
+/**
+ * [ใหม่] ฟังข้อมูลการตั้งค่าระบบ (Admin, Workers, Teams) แบบ Real-time
+ */
+export function subscribeToSystemConfig(callback) {
+  if (!db) return () => {};
+  const configRef = ref(db, 'pwa_system_config');
+  return onValue(configRef, (snapshot) => {
+    const data = snapshot.val();
+    callback(data || null);
+  });
+}
+
+/**
+ * [ใหม่] บันทึกข้อมูลการตั้งค่าระบบลง Firebase ทันที
+ */
+export async function saveSystemConfigToFirebase(configData) {
+  if (!db) return console.warn("Firebase ยังไม่ได้ตั้งค่า");
+  const configRef = ref(db, 'pwa_system_config');
+  await set(configRef, configData);
 }
