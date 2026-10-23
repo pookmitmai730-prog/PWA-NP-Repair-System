@@ -7,7 +7,8 @@ import {
   X, 
   KeyRound, 
   UserCheck, 
-  ShieldAlert 
+  ShieldAlert,
+  Phone
 } from 'lucide-react';
 
 export default function AdminManagementModal({ 
@@ -31,8 +32,9 @@ export default function AdminManagementModal({
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [editingAdminId, setEditingAdminId] = useState(null);
 
-  // Form State: Field Worker Account Management
+  // Form State: Field Worker Account Management (เพิ่มช่องเบอร์โทรศัพท์ และเอาส่วนทีมช่างออก)
   const [workerTeamNameInput, setWorkerTeamNameInput] = useState('');
+  const [workerPhoneInput, setWorkerPhoneInput] = useState('');
   const [workerUsernameInput, setWorkerUsernameInput] = useState('');
   const [workerPasswordInput, setWorkerPasswordInput] = useState('');
   const [editingWorkerId, setEditingWorkerId] = useState(null);
@@ -77,24 +79,25 @@ export default function AdminManagementModal({
     setAdminPasswordInput('');
   };
 
-  // --- Handlers: Field Worker Actions ---
+  // --- Handlers: Field Worker Actions (บันทึกทีมช่าง + เบอร์โทร + Username/Password) ---
   const handleSaveWorker = (e) => {
     e.preventDefault();
     if (!workerTeamNameInput.trim() || !workerUsernameInput.trim() || !workerPasswordInput.trim()) return;
 
+    const workerData = {
+      teamName: workerTeamNameInput.trim(),
+      phone: workerPhoneInput.trim() || '-',
+      username: workerUsernameInput.trim(),
+      password: workerPasswordInput.trim()
+    };
+
     if (editingWorkerId) {
-      onEditWorkerAccount(editingWorkerId, { 
-        teamName: workerTeamNameInput.trim(), 
-        username: workerUsernameInput.trim(), 
-        password: workerPasswordInput.trim() 
-      });
+      onEditWorkerAccount(editingWorkerId, workerData);
       setEditingWorkerId(null);
     } else {
       onAddWorkerAccount({ 
         id: `worker_${Date.now()}`, 
-        teamName: workerTeamNameInput.trim(), 
-        username: workerUsernameInput.trim(), 
-        password: workerPasswordInput.trim() 
+        ...workerData 
       });
     }
 
@@ -103,14 +106,16 @@ export default function AdminManagementModal({
 
   const handleEditWorkerClick = (worker) => {
     setEditingWorkerId(worker.id);
-    setWorkerTeamNameInput(worker.teamName);
-    setWorkerUsernameInput(worker.username);
-    setWorkerPasswordInput(worker.password);
+    setWorkerTeamNameInput(worker.teamName || '');
+    setWorkerPhoneInput(worker.phone && worker.phone !== '-' ? worker.phone : '');
+    setWorkerUsernameInput(worker.username || '');
+    setWorkerPasswordInput(worker.password || '');
   };
 
   const resetWorkerForm = () => {
     setEditingWorkerId(null);
     setWorkerTeamNameInput('');
+    setWorkerPhoneInput('');
     setWorkerUsernameInput('');
     setWorkerPasswordInput('');
   };
@@ -269,30 +274,41 @@ export default function AdminManagementModal({
             </div>
           )}
 
-          {/* TAB 2: Field Worker Management */}
+          {/* TAB 2: Field Worker Management (เพิ่มช่องเบอร์โทรศัพท์เรียบร้อย) */}
           {activeTab === 'workers' && (
             <div className="space-y-5">
               <form onSubmit={handleSaveWorker} className="bg-emerald-50/60 border border-emerald-100 p-4 rounded-2xl space-y-3">
                 <p className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
                   <UserCheck className="w-4 h-4 text-emerald-600" />
-                  {editingWorkerId ? 'แก้ไขบัญชีช่างภาคสนาม' : 'เพิ่มชื่อหัวหน้าทีมและสร้าง Username/Password'}
+                  {editingWorkerId ? 'แก้ไขบัญชีช่างภาคสนาม' : 'เพิ่มชื่อทีม, เบอร์โทร และสร้าง Username/Password'}
                 </p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ชื่อหัวหน้าทีม / ทีมช่าง *</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ชื่อทีมช่าง / หัวหน้าทีม *</label>
                     <input
                       type="text"
                       value={workerTeamNameInput}
                       onChange={(e) => setWorkerTeamNameInput(e.target.value)}
-                      placeholder="เช่น ทีมช่างซ่อม 1 (หัวหน้าสมชาย)"
+                      placeholder="เช่น ทีมช่างซ่อม 1"
                       required
                       className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 font-bold"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ชื่อผู้ใช้งาน (Username) *</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">เบอร์โทรศัพท์</label>
+                    <input
+                      type="text"
+                      value={workerPhoneInput}
+                      onChange={(e) => setWorkerPhoneInput(e.target.value)}
+                      placeholder="เช่น 0811111111"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Username *</label>
                     <input
                       type="text"
                       value={workerUsernameInput}
@@ -304,7 +320,7 @@ export default function AdminManagementModal({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">รหัสผ่าน (Password) *</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Password *</label>
                     <input
                       type="text"
                       value={workerPasswordInput}
@@ -340,7 +356,14 @@ export default function AdminManagementModal({
                   workerAccounts.map((w) => (
                     <div key={w.id} className="flex justify-between items-center bg-white border border-slate-200 px-4 py-3 rounded-2xl text-xs shadow-xs">
                       <div>
-                        <p className="font-bold text-slate-800">{w.teamName}</p>
+                        <p className="font-bold text-slate-800 flex items-center gap-2">
+                          <span>{w.teamName}</span>
+                          {w.phone && w.phone !== '-' && (
+                            <span className="text-[11px] font-normal text-slate-500 flex items-center gap-1">
+                              <Phone className="w-3 h-3 text-emerald-600" /> {w.phone}
+                            </span>
+                          )}
+                        </p>
                         <p className="text-slate-500 font-mono text-[11px]">
                           Username: <span className="text-emerald-700 font-bold">{w.username}</span> | Password: <span className="text-slate-700 font-bold">{w.password}</span>
                         </p>
