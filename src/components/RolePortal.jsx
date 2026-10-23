@@ -7,7 +7,7 @@ export default function RolePortal({
   workerAccounts = [], 
   onAdminLogin, 
   onWorkerLogin,
-  jobs = [] // 🔴 เพิ่ม props รับรายการ jobs เพื่อส่งต่อให้ TrackingSearch ค้นหาได้ทันที
+  jobs = [] 
 }) {
   const [activeTab, setActiveTab] = useState('public'); // 'public', 'admin', 'worker'
   
@@ -21,20 +21,19 @@ export default function RolePortal({
   const [workerPassword, setWorkerPassword] = useState('');
   const [workerError, setWorkerError] = useState('');
 
-  // จัดการ Login แอดมิน
+  // จัดการ Login แอดมิน (ตรวจสอบเฉพาะจากรายชื่อ adminUsers ในฐานข้อมูลเท่านั้น ไม่มีรหัส 1234)
   const handleAdminSubmit = (e) => {
     e.preventDefault();
     setAdminError('');
 
-    const isDefaultAdmin = adminPassword === '1234' && (!adminUsername.trim() || adminUsername === 'admin' || adminUsername === 'root');
     const foundAdmin = adminUsers.find(
-      a => (a.username === adminUsername.trim() || a.name === adminUsername.trim()) && a.password === adminPassword
+      a => a.username === adminUsername.trim() && a.password === adminPassword
     );
 
-    if (isDefaultAdmin || foundAdmin) {
+    if (foundAdmin) {
       onAdminLogin();
     } else {
-      setAdminError('ชื่อผู้ใช้หรือรหัสผ่านแอดมินไม่ถูกต้อง (รหัสตั้งต้น: 1234)');
+      setAdminError('ชื่อผู้ใช้หรือรหัสผ่านผู้ดูแลระบบไม่ถูกต้อง');
     }
   };
 
@@ -115,7 +114,7 @@ export default function RolePortal({
         {/* Tab Content */}
         <div className="p-5 sm:p-6">
           
-          {/* 1. ส่วนประชาชนทั่วไป: ยกช่องค้นหา Tracking มาไว้หน้าแรกทันที */}
+          {/* 1. ส่วนประชาชนทั่วไป: ค้นหา Tracking ได้ทันทีหน้าแรก */}
           {activeTab === 'public' && (
             <div className="space-y-4">
               <div className="text-center space-y-1">
@@ -125,14 +124,13 @@ export default function RolePortal({
                 </p>
               </div>
 
-              {/* 🔍 ช่องค้นหา Tracking ค้นหาได้ในหน้าแรกทันที */}
               <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
                 <TrackingSearch jobs={jobs} />
               </div>
             </div>
           )}
 
-          {/* 2. ส่วนของ Admin */}
+          {/* 2. ส่วนของ Admin (ไม่มีรหัสตั้งต้น 1234 และเปลี่ยนข้อความคำแนะนำใหม่) */}
           {activeTab === 'admin' && (
             <form onSubmit={handleAdminSubmit} className="space-y-4">
               <div className="text-center space-y-1 mb-4">
@@ -140,7 +138,7 @@ export default function RolePortal({
                   <Lock className="w-6 h-6" />
                 </div>
                 <h3 className="font-bold text-base text-white">เข้าสู่ระบบผู้ดูแลระบบ (Admin)</h3>
-                <p className="text-xs text-slate-400">กรุณากรอก Username และ Password</p>
+                <p className="text-xs text-slate-400">กรุณาใช้ Username และ Password ที่กำหนดไว้ในระบบ</p>
               </div>
 
               {adminError && (
@@ -160,14 +158,15 @@ export default function RolePortal({
                       type="text"
                       value={adminUsername}
                       onChange={(e) => setAdminUsername(e.target.value)}
-                      placeholder="เช่น admin (หรือเว้นว่างไว้สำหรับรหัสตั้งต้น)"
+                      placeholder="กรอกชื่อผู้ใช้งานแอดมิน"
+                      required
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-300">รหัสผ่าน (Password) *</label>
+                  <label className="block text-xs font-bold text-slate-300">รหัสผ่าน (Password)</label>
                   <div className="relative">
                     <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
                       <KeyRound className="w-4 h-4" />
@@ -176,7 +175,7 @@ export default function RolePortal({
                       type="password"
                       value={adminPassword}
                       onChange={(e) => setAdminPassword(e.target.value)}
-                      placeholder="•••• (รหัสเริ่มต้น: 1234)"
+                      placeholder="กรอกรหัสผ่าน"
                       required
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-widest"
                     />
@@ -260,7 +259,7 @@ export default function RolePortal({
 
       {/* Footer info */}
       <div className="mt-6 text-center text-[11px] text-slate-500 space-y-1">
-        <p>พัฒนาโดย งานบริการและควบคุมน้ำสูญเสีย  โทรศัพท์ 042-511409</p>
+        <p>พัฒนาโดย งานบริการและควบคุมน้ำสูญเสีย โทรศัพท์ 042-511409</p>
         <p className="font-mono">การประปาส่วนภูมิภาคสาขานครพนม v1.0</p>
       </div>
 
