@@ -97,13 +97,28 @@ export default function App() {
   const handleAddWorkerAccount = (newWorker) => {
     const updated = [...workerAccounts, newWorker];
     setWorkerAccounts(updated);
-    updateFirebaseConfig(adminUsers, updated, teams);
+    
+    // ซิงค์ชื่อทีมกับรายการทีมอัตโนมัติถ้ายังไม่มี
+    let updatedTeams = [...teams];
+    if (newWorker.teamName && !teams.some(t => t.name === newWorker.teamName)) {
+      updatedTeams = [...teams, { name: newWorker.teamName, phone: '-' }];
+      setTeams(updatedTeams);
+    }
+
+    updateFirebaseConfig(adminUsers, updated, updatedTeams);
   };
 
   const handleEditWorkerAccount = (id, updatedWorker) => {
     const updated = workerAccounts.map(w => w.id === id ? { ...w, ...updatedWorker } : w);
     setWorkerAccounts(updated);
-    updateFirebaseConfig(adminUsers, updated, teams);
+    
+    let updatedTeams = [...teams];
+    if (updatedWorker.teamName && !teams.some(t => t.name === updatedWorker.teamName)) {
+      updatedTeams = [...teams, { name: updatedWorker.teamName, phone: '-' }];
+      setTeams(updatedTeams);
+    }
+
+    updateFirebaseConfig(adminUsers, updated, updatedTeams);
   };
 
   const handleDeleteWorkerAccount = (id) => {
@@ -398,7 +413,6 @@ export default function App() {
         onAddWorkerAccount={handleAddWorkerAccount}
         onEditWorkerAccount={handleEditWorkerAccount}
         onDeleteWorkerAccount={handleDeleteWorkerAccount}
-        teams={teams}
       />
     </div>
   );
