@@ -31,13 +31,12 @@ export default function App() {
   // ☁️ ข้อมูลการตั้งค่าระบบ (ซิงค์ผ่าน Firebase Realtime Database)
   const [adminUsers, setAdminUsers] = useState([]);
   const [workerAccounts, setWorkerAccounts] = useState([
-    { id: 'w1', teamName: 'ทีมช่างซ่อม 1', username: 'team1', password: '123' },
-    { id: 'w2', teamName: 'ทีมช่างซ่อม 2', username: 'team2', password: '123' },
+    { id: 'w1', teamName: 'ทีมช่างซ่อม 1', phone: '0811111111', username: 'team1', password: '123' },
+    { id: 'w2', teamName: 'ทีมช่างซ่อม 2', phone: '0822222222', username: 'team2', password: '123' },
   ]);
   const [teams, setTeams] = useState([
     { name: 'ทีมช่างซ่อม 1', phone: '0811111111' },
     { name: 'ทีมช่างซ่อม 2', phone: '0822222222' },
-    { name: 'ทีมช่างซ่อม 3', phone: '0833333333' }
   ]);
 
   // 1. ดึงข้อมูลงานซ่อมและ Config จาก Firebase แบบ Real-time
@@ -100,7 +99,7 @@ export default function App() {
     
     let updatedTeams = [...teams];
     if (newWorker.teamName && !teams.some(t => t.name === newWorker.teamName)) {
-      updatedTeams = [...teams, { name: newWorker.teamName, phone: '-' }];
+      updatedTeams = [...teams, { name: newWorker.teamName, phone: newWorker.phone || '-' }];
       setTeams(updatedTeams);
     }
 
@@ -113,7 +112,7 @@ export default function App() {
     
     let updatedTeams = [...teams];
     if (updatedWorker.teamName && !teams.some(t => t.name === updatedWorker.teamName)) {
-      updatedTeams = [...teams, { name: updatedWorker.teamName, phone: '-' }];
+      updatedTeams = [...teams, { name: updatedWorker.teamName, phone: updatedWorker.phone || '-' }];
       setTeams(updatedTeams);
     }
 
@@ -124,29 +123,6 @@ export default function App() {
     const updated = workerAccounts.filter(w => w.id !== id);
     setWorkerAccounts(updated);
     updateFirebaseConfig(adminUsers, updated, teams);
-  };
-
-  // จัดการทีมช่าง
-  const handleAddTeam = (newTeam) => {
-    if (teams.some(t => t.name === newTeam.name)) {
-      alert("มีชื่อทีมนี้ในระบบแล้ว");
-      return;
-    }
-    const updated = [...teams, newTeam];
-    setTeams(updated);
-    updateFirebaseConfig(adminUsers, workerAccounts, updated);
-  };
-
-  const handleEditTeam = (oldName, updatedTeam) => {
-    const updated = teams.map(t => t.name === oldName ? updatedTeam : t);
-    setTeams(updated);
-    updateFirebaseConfig(adminUsers, workerAccounts, updated);
-  };
-
-  const handleDeleteTeam = (teamName) => {
-    const updated = teams.filter(t => t.name !== teamName);
-    setTeams(updated);
-    updateFirebaseConfig(adminUsers, workerAccounts, updated);
   };
 
   // Login & Logout
@@ -206,7 +182,7 @@ export default function App() {
     const assignedTechnician = extraData.technician || (newStatus !== 'PENDING' 
       ? (currentJob.technician && !currentJob.technician.includes('ยังไม่ระบุ') 
           ? currentJob.technician 
-          : (teams[0] ? `${teams[0].name} (${teams[0].phone})` : 'ทีมช่าง กปภ.')) 
+          : (workerAccounts[0] ? `${workerAccounts[0].teamName} (${workerAccounts[0].phone || '-'})` : 'ทีมช่าง กปภ.')) 
       : currentJob.technician);
 
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
@@ -298,7 +274,7 @@ export default function App() {
         <FieldWorkerPortal 
           jobs={jobs} 
           onUpdateJobStatus={handleStatusChange} 
-          teams={teams.map(t => t.name)}
+          teams={workerAccounts.map(w => w.teamName)}
         />
       </div>
     );
@@ -374,10 +350,7 @@ export default function App() {
             <JobList 
               jobs={jobs} 
               onStatusChange={handleStatusChange} 
-              teams={teams}
-              onAddTeam={handleAddTeam}
-              onEditTeam={handleEditTeam}
-              onDeleteTeam={handleDeleteTeam}
+              workerAccounts={workerAccounts}
             />
           </main>
         </>
@@ -391,7 +364,7 @@ export default function App() {
         <FieldWorkerPortal 
           jobs={jobs} 
           onUpdateJobStatus={handleStatusChange} 
-          teams={teams.map(t => t.name)}
+          teams={workerAccounts.map(w => w.teamName)}
         />
       )}
 
