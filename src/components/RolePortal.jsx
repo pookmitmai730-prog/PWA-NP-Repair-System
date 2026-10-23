@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
-import { Search, Wrench, Lock, UserCheck, ArrowRight, Shield, Smartphone, Globe, KeyRound, User } from 'lucide-react';
+import { Wrench, Lock, UserCheck, Shield, Smartphone, Globe, KeyRound, User } from 'lucide-react';
+import TrackingSearch from './TrackingSearch';
 
-export default function RolePortal({ onSelectRole, adminUsers = [], workerAccounts = [], onAdminLogin, onWorkerLogin }) {
+export default function RolePortal({ 
+  adminUsers = [], 
+  workerAccounts = [], 
+  onAdminLogin, 
+  onWorkerLogin,
+  jobs = [] // 🔴 เพิ่ม props รับรายการ jobs เพื่อส่งต่อให้ TrackingSearch ค้นหาได้ทันที
+}) {
   const [activeTab, setActiveTab] = useState('public'); // 'public', 'admin', 'worker'
   
   // State สำหรับฟอร์ม Login Admin
@@ -14,15 +21,12 @@ export default function RolePortal({ onSelectRole, adminUsers = [], workerAccoun
   const [workerPassword, setWorkerPassword] = useState('');
   const [workerError, setWorkerError] = useState('');
 
-  // จัดการ Login แอดมิน (ตรวจสอบทั้ง Username/Password จาก Firebase หรือ Default Admin)
+  // จัดการ Login แอดมิน
   const handleAdminSubmit = (e) => {
     e.preventDefault();
     setAdminError('');
 
-    // กรณีใช้ Default Admin (รหัส 1234)
     const isDefaultAdmin = adminPassword === '1234' && (!adminUsername.trim() || adminUsername === 'admin' || adminUsername === 'root');
-    
-    // ตรวจสอบจากรายชื่อแอดมินที่บันทึกไว้ใน Firebase
     const foundAdmin = adminUsers.find(
       a => (a.username === adminUsername.trim() || a.name === adminUsername.trim()) && a.password === adminPassword
     );
@@ -54,7 +58,7 @@ export default function RolePortal({ onSelectRole, adminUsers = [], workerAccoun
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-slate-100 flex flex-col justify-center items-center p-4 sm:p-6 font-sans">
       
       {/* Header Logo & Title */}
-      <div className="text-center space-y-2 mb-8">
+      <div className="text-center space-y-2 mb-6">
         <div className="w-16 h-16 bg-blue-600/20 border border-blue-500/40 rounded-3xl flex items-center justify-center mx-auto shadow-xl shadow-blue-500/10 backdrop-blur-md">
           <Wrench className="w-8 h-8 text-cyan-400" />
         </div>
@@ -67,7 +71,7 @@ export default function RolePortal({ onSelectRole, adminUsers = [], workerAccoun
       </div>
 
       {/* Main Container */}
-      <div className="w-full max-w-md bg-slate-900/80 border border-slate-800 rounded-3xl shadow-2xl backdrop-blur-xl overflow-hidden">
+      <div className="w-full max-w-xl bg-slate-900/80 border border-slate-800 rounded-3xl shadow-2xl backdrop-blur-xl overflow-hidden">
         
         {/* Navigation Tabs (เลือกส่วนใช้งาน) */}
         <div className="grid grid-cols-3 bg-slate-950/60 p-1.5 border-b border-slate-800 text-xs font-bold">
@@ -109,28 +113,22 @@ export default function RolePortal({ onSelectRole, adminUsers = [], workerAccoun
         </div>
 
         {/* Tab Content */}
-        <div className="p-6 sm:p-8">
+        <div className="p-5 sm:p-6">
           
-          {/* 1. ส่วนประชาชนทั่วไป */}
+          {/* 1. ส่วนประชาชนทั่วไป: ยกช่องค้นหา Tracking มาไว้หน้าแรกทันที */}
           {activeTab === 'public' && (
-            <div className="space-y-6 text-center">
-              <div className="space-y-2">
-                <div className="w-12 h-12 bg-blue-500/10 border border-blue-500/20 text-cyan-400 rounded-2xl flex items-center justify-center mx-auto">
-                  <Search className="w-6 h-6" />
-                </div>
+            <div className="space-y-4">
+              <div className="text-center space-y-1">
                 <h3 className="font-bold text-base text-white">ตรวจสอบสถานะการแจ้งซ่อม</h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  สำหรับประชาชนทั่วไปหรือผู้ใช้น้ำ สามารถเข้ามาตรวจสอบขั้นตอนการดำเนินงานซ่อมท่อประปาได้ทันทีโดยไม่ต้องเข้าสู่ระบบ
+                <p className="text-xs text-slate-400">
+                  กรอกเลขที่ใบรับแจ้ง เบอร์โทรศัพท์ หรือชื่อผู้แจ้ง เพื่อค้นหาติดตามสถานะได้ทันที
                 </p>
               </div>
 
-              <button
-                onClick={() => onSelectRole('public')}
-                className="w-full bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition active:scale-95 cursor-pointer"
-              >
-                <span>เข้าสู่หน้าค้นหา Tracking (ไม่ต้อง Login)</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+              {/* 🔍 ช่องค้นหา Tracking ค้นหาได้ในหน้าแรกทันที */}
+              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
+                <TrackingSearch jobs={jobs} />
+              </div>
             </div>
           )}
 
@@ -191,7 +189,6 @@ export default function RolePortal({ onSelectRole, adminUsers = [], workerAccoun
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition active:scale-95 cursor-pointer mt-2"
               >
                 <span>เข้าสู่ระบบ Admin Dashboard</span>
-                <ArrowRight className="w-4 h-4" />
               </button>
             </form>
           )}
@@ -254,7 +251,6 @@ export default function RolePortal({ onSelectRole, adminUsers = [], workerAccoun
                 className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition active:scale-95 cursor-pointer mt-2"
               >
                 <span>เข้าสู่ระบบหน้าช่างภาคสนาม</span>
-                <ArrowRight className="w-4 h-4" />
               </button>
             </form>
           )}
@@ -263,7 +259,7 @@ export default function RolePortal({ onSelectRole, adminUsers = [], workerAccoun
       </div>
 
       {/* Footer info */}
-      <div className="mt-8 text-center text-[11px] text-slate-500 space-y-1">
+      <div className="mt-6 text-center text-[11px] text-slate-500 space-y-1">
         <p>พัฒนาโดย งานบริการและควบคุมน้ำสูญเสีย</p>
         <p className="font-mono">การประปาส่วนภูมิภาคสาขานครพนม v1.0</p>
       </div>
