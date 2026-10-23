@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Search, Wrench, Lock, UserCheck, ArrowRight, Shield, Smartphone, Globe, KeyRound, User } from 'lucide-react';
 
-export default function RolePortal({ onSelectRole, adminUsers, workerAccounts, onAdminLogin, onWorkerLogin }) {
+export default function RolePortal({ onSelectRole, adminUsers = [], workerAccounts = [], onAdminLogin, onWorkerLogin }) {
   const [activeTab, setActiveTab] = useState('public'); // 'public', 'admin', 'worker'
   
-  // State สำหรับฟอร์ม Login Admin (เพิ่ม adminUsername)
+  // State สำหรับฟอร์ม Login Admin
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
@@ -14,12 +14,12 @@ export default function RolePortal({ onSelectRole, adminUsers, workerAccounts, o
   const [workerPassword, setWorkerPassword] = useState('');
   const [workerError, setWorkerError] = useState('');
 
-  // จัดการ Login แอดมิน (ตรวจสอบทั้ง Username/Password จาก Firebase หรือ Default)
+  // จัดการ Login แอดมิน (ตรวจสอบทั้ง Username/Password จาก Firebase หรือ Default Admin)
   const handleAdminSubmit = (e) => {
     e.preventDefault();
     setAdminError('');
 
-    // กรณีใช้ Default Admin (รหัส 1234 หรือระบุ username เป็น admin/root)
+    // กรณีใช้ Default Admin (รหัส 1234)
     const isDefaultAdmin = adminPassword === '1234' && (!adminUsername.trim() || adminUsername === 'admin' || adminUsername === 'root');
     
     // ตรวจสอบจากรายชื่อแอดมินที่บันทึกไว้ใน Firebase
