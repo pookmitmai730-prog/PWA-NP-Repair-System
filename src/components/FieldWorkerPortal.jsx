@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 
-export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams }) {
+export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLogout }) {
   const [currentTeam, setCurrentTeam] = useState(localStorage.getItem('pwa_worker_team') || '');
   const [selectedJob, setSelectedJob] = useState(null);
   const [images, setImages] = useState({ before: [], inProgress: [], after: [] });
@@ -17,10 +17,14 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams }) {
     localStorage.setItem('pwa_worker_team', teamName);
   };
 
-  const handleLogout = () => {
+  // 🔴 ปรับปรุงฟังก์ชัน Logout ให้เรียกใช้ onLogout() จาก App.jsx เพื่อกลับไปหน้าหลัก (RolePortal)
+  const handleLogoutAction = () => {
     setCurrentTeam('');
     localStorage.removeItem('pwa_worker_team');
     setSelectedJob(null);
+    if (onLogout) {
+      onLogout(); // ส่งสัญญาณกลับไปยัง App.jsx ให้เปลี่ยน userRole เป็น 'portal'
+    }
   };
 
   // ฟังก์ชันช่วยแปลงระดับความเร่งด่วนเป็นคะแนนสำหรับจัดลำดับ
@@ -33,7 +37,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams }) {
     }
   };
 
-  // 🔴 ปรับปรุงเงื่อนไขการกรองงานให้แม่นยำยิ่งขึ้น รองรับทั้ง techName และ technician
+  // กรองและเรียงลำดับงานตามความเร่งด่วนและเวลาแจ้งซ่อม
   const activeJobs = jobs
     .filter(j => {
       const matchTechName = j.techName && j.techName.trim() === currentTeam.trim();
@@ -159,6 +163,14 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams }) {
             })
           )}
         </div>
+
+        {/* ปุ่มกลับหน้าหลักกรณีที่ยังไม่ได้เลือกทีม */}
+        <button
+          onClick={handleLogoutAction}
+          className="w-full text-xs text-slate-400 hover:text-white py-2 flex items-center justify-center gap-1 cursor-pointer"
+        >
+          <LogOut className="w-3 h-3" /> กลับหน้าหลักเลือกสิทธิ์
+        </button>
       </div>
     );
   }
@@ -180,7 +192,11 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams }) {
           <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2.5 py-1 rounded-full font-bold">
             {activeJobs.length} งาน
           </span>
-          <button onClick={handleLogout} className="p-1.5 bg-slate-800 hover:bg-rose-600 rounded-lg text-slate-300 hover:text-white transition cursor-pointer" title="ออกจากระบบ">
+          <button 
+            onClick={handleLogoutAction} 
+            className="p-1.5 bg-slate-800 hover:bg-rose-600 rounded-lg text-slate-300 hover:text-white transition cursor-pointer" 
+            title="ออกจากระบบไปหน้าหลัก"
+          >
             <LogOut className="w-4 h-4" />
           </button>
         </div>
