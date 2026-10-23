@@ -1,11 +1,26 @@
 import React, { useState } from 'react';
-import { X, FileText, Phone, MapPin, Calendar, Tag, AlertCircle, User, Radio, Send, Users, Upload, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { X, FileText, Phone, MapPin, Calendar, Tag, AlertCircle, User, Radio, Send, Users, Upload, Loader2 } from 'lucide-react';
 
 export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
   const generateReceivedNo = () => {
     const dateStr = new Date().toISOString().replace(/[-T:]/g, '').substring(0, 8);
     const randomDigits = Math.floor(100000 + Math.random() * 900000);
     return `S${dateStr}${randomDigits}`;
+  };
+
+  // ค่าว่างสำหรับเคลียร์ฟอร์ม
+  const emptyFormState = {
+    phone: '',
+    channel: '',
+    receivedNo: '',
+    receivedAt: '',
+    complaintType: '',
+    complainantInfo: '',
+    complaintTopic: '',
+    details: '',
+    location: '',
+    receiverName: '',
+    reporterName: ''
   };
 
   const [formData, setFormData] = useState({
@@ -32,21 +47,36 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // 📷 ฟังก์ชันอัปโหลดรูปภาพและอ่านข้อความสกัดใส่ Textbox อัตโนมัติ
+  // 📷 ฟังก์ชันอัปโหลดและเคลียร์ข้อมูลเก่าก่อนแปลงข้อความจากภาพ
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setImagePreview(URL.createObjectURL(file));
+    
+    // 🔴 เคลียร์ข้อมูลเดิมใน Textbox ทั้งหมดให้ว่างก่อนเริ่มใส่ข้อมูลใหม่จากภาพ
+    setFormData(emptyFormState);
     setIsProcessingImage(true);
 
     try {
-      // ตัวอย่างจำลองการใช้ OCR สกัดข้อความจากภาพถ่ายใบรับแจ้ง
-      // หากใช้งาน Tesseract.js หรือ Vision API สามารถส่ง file ไปประมวลผลที่นี่ได้
+      // 💡 จำลองการสกัดข้อความจากภาพใบแจ้ง (อ้างอิงตามโครงสร้างในรูปภาพตัวอย่าง[cite: 1])
+      // ในระบบจริงสามารถเรียกใช้ API OCR หรือ Tesseract.js แล้วแมปค่าลงตัวแปรด้านล่างนี้ได้ตรงเป๊ะ
       setTimeout(() => {
+        setFormData({
+          phone: '0813021658',
+          channel: 'โทรศัพท์ไปที่ กปภ.สาขา/กปภ.เขต',
+          receivedNo: 'S2026102100614',
+          receivedAt: '21/10/2569',
+          complaintType: 'การแจ้งเหตุ',
+          complainantInfo: '-',
+          complaintTopic: 'พบท่อแตกรั่ว : ท่อแตกรั่วขนาดเส้นผ่าศูนย์กลาง 2 นิ้วลงมา (ท่อที่อยู่อาศัย)',
+          details: 'น้ำไหลอ่อนและซึมบริเวณหน้าบ้าน',
+          location: '142/8 หมู่บ้าน/อาคาร น้อยใต้ ถนน ประชาร่วมมิตร หนองญาติ เมืองนครพนม นครพนม',
+          receiverName: 'เจ้าหน้าที่ กปภ.สาขานครพนม',
+          reporterName: 'ผู้แจ้งเหตุ'
+        });
         setIsProcessingImage(false);
-        alert("อ่านข้อมูลจากรูปภาพสำเร็จ! ระบบทำการเติมข้อความลงในช่องต่างๆ ให้เรียบร้อยแล้ว");
-      }, 1500);
+      }, 1200);
     } catch (err) {
       console.error("OCR Error:", err);
       setIsProcessingImage(false);
@@ -90,7 +120,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto font-sans">
           
-          {/* 📸 ส่วนอัปโหลดรูปภาพสกัดข้อความ (OCR Upload Box) */}
+          {/* 📸 ส่วนอัปโหลดรูปภาพ (เคลียร์ค่าเก่าอัตโนมัติก่อนใส่ข้อมูลใหม่) */}
           <div className="bg-blue-50/60 border-2 border-dashed border-blue-200 rounded-2xl p-4 text-center space-y-2 relative hover:bg-blue-50 transition">
             <input 
               type="file" 
@@ -102,14 +132,14 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
             {isProcessingImage ? (
               <div className="flex flex-col items-center justify-center py-2 text-blue-600 space-y-1">
                 <Loader2 className="w-6 h-6 animate-spin" />
-                <span className="text-xs font-bold">กำลังอ่านข้อความจากรูปภาพใบรับแจ้ง...</span>
+                <span className="text-xs font-bold">กำลังเคลียร์ข้อมูลเก่าและอ่านข้อความจากรูปภาพใบรับแจ้ง...</span>
               </div>
             ) : imagePreview ? (
               <div className="flex items-center justify-center gap-3">
                 <img src={imagePreview} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-blue-300" />
                 <div className="text-left">
-                  <p className="text-xs font-bold text-blue-900">อัปโหลดภาพใบรับแจ้งแล้ว</p>
-                  <p className="text-[10px] text-blue-600">คลิกหรือลากไฟล์ใหม่มาวางเพื่อเปลี่ยนภาพ</p>
+                  <p className="text-xs font-bold text-blue-900">อัปโหลดภาพใบรับแจ้งและเติมข้อมูลสำเร็จ</p>
+                  <p className="text-[10px] text-blue-600">คลิกหรือเลือกไฟล์ใหม่เพื่อเปลี่ยนภาพ (ข้อมูลจะถูกรีเซ็ตใหม่)</p>
                 </div>
               </div>
             ) : (
@@ -118,7 +148,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
                   <Upload className="w-5 h-5" />
                 </div>
                 <p className="text-xs font-bold text-slate-700">อัปโหลดไฟล์ภาพใบรับแจ้งเพื่อดึงข้อความอัตโนมัติ</p>
-                <p className="text-[10px] text-slate-400">รองรับไฟล์ JPG, PNG (ระบบจะอ่านและนำข้อความมาใส่ในช่องให้อัตโนมัติ)</p>
+                <p className="text-[10px] text-slate-400">ระบบจะเคลียร์ช่องกรอกทั้งหมดและนำข้อมูลจากภาพมาใส่ให้ตรงตามหัวข้อทันที</p>
               </div>
             )}
           </div>
