@@ -9,83 +9,110 @@ import ReportsView from './components/ReportsView';
 import RolePortal from './components/RolePortal';
 import AdminManagementModal from './components/AdminManagementModal';
 import { archiveCompletedJobToSheets } from './services/sheetsApi';
-import { subscribeToJobs, saveJobToFirebase, updateJobStatusInFirebase } from './services/firebase';
+import { 
+  subscribeToJobs, 
+  saveJobToFirebase, 
+  updateJobStatusInFirebase, 
+  subscribeToSystemConfig, 
+  saveSystemConfigToFirebase 
+} from './services/firebase';
 import { LayoutDashboard, Smartphone, BarChart3, LogOut, Shield, UserCheck } from 'lucide-react';
 
 export default function App() {
-  // 🔒 State การล็อกอินและเลือกสิทธิ์ (Role)
-  // 'portal' | 'public' | 'admin' | 'worker'
   const [userRole, setUserRole] = useState(localStorage.getItem('pwa_user_role') || 'portal');
   const [activeWorkerTeam, setActiveWorkerTeam] = useState(localStorage.getItem('pwa_worker_team') || '');
 
-  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard', 'reports', 'field'
+  const [currentView, setCurrentView] = useState('dashboard');
   const [jobs, setJobs] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAdminManageOpen, setIsAdminManageOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // บัญชีแอดมินในระบบ
-  const [adminUsers, setAdminUsers] = useState(() => {
-    const saved = localStorage.getItem('pwa_admin_users');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // ☁️ ข้อมูลการตั้งค่าระบบ (ซิงค์ผ่าน Firebase Realtime Database)
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [workerAccounts, setWorkerAccounts] = useState([
+    { id: 'w1', teamName: 'ทีมช่างซ่อม 1', username: 'team1', password: '123' },
+    { id: 'w2', teamName: 'ทีมช่างซ่อม 2', username: 'team2', password: '123' },
+  ]);
+  const [teams, setTeams] = useState([
+    { name: 'ทีมช่างซ่อม 1', phone: '0811111111' },
+    { name: 'ทีมช่างซ่อม 2', phone: '0822222222' },
+    { name: 'ทีมช่างซ่อม 3', phone: '0833333333' }
+  ]);
 
-  // บัญชีช่างภาคสนามในระบบ
-  const [workerAccounts, setWorkerAccounts] = useState(() => {
-    const saved = localStorage.getItem('pwa_worker_accounts');
-    return saved ? JSON.parse(saved) : [
-      { id: 'w1', teamName: 'ทีมช่างซ่อม 1', username: 'team1', password: '123' },
-      { id: 'w2', teamName: 'ทีมช่างซ่อม 2', username: 'team2', password: '123' },
-    ];
-  });
+  // 1. ดึงข้อมูลงานซ่อมและ Config จาก Firebase แบบ Real-time ข้ามเครื่องได้ทันที
+  useEffect(() => {
+    const unsubscribeJobs = subscribeToJobs((jobList) => {
+      setJobs(jobList);
+    });
 
-  // รายชื่อทีมช่าง
-  const [teams, setTeams] = useState(() => {
-    const saved = localStorage.getItem('pwa_repair_teams');
-    return saved ? JSON.parse(saved) : [
-      { name: 'ทีมช่างซ่อม 1', phone: '0811111111' },
-      { name: 'ทีมช่างซ่อม 2', phone: '0822222222' },
-      { name: 'ทีมช่างซ่อม 3', phone: '0833333333' }
-    ];
-  });
+    const unsubscribeConfig = subscribeToSystemConfig((config) => {
+      if (config) {
+        if (config.adminUsers) setAdminUsers(config.adminUsers);
+        if (config.workerAccounts) setWorkerAccounts(config.workerAccounts);
+        if (config.teams) setTeams(config.teams);
+      }
+    });
 
-  // ฟังก์ชันจัดการ Admin / Worker Accounts
+    return () => {
+      unsubscribeJobs();
+      unsubscribeConfig();
+    };
+  }, []);
+
+  // ฟังก์ชันกลางบันทึก Config ทั้งหมดขึ้น Firebase
+  const updateFirebaseConfig = async (newAdmins, newWorkers, newTeams) => {
+    const configPayload = {
+      adminUsers: newAdmins,
+      workerAccounts: newWorkers,
+      teams: newTeams
+    };
+    try {
+      await saveSystemConfigToFirebase(configPayload);
+    } catch (err) {
+      console.error("Error saving config to Firebase:", err);
+    }
+  };
+
+  // จัดการ Admin
   const handleAddAdmin = (newAdmin) => {
     const updated = [...adminUsers, newAdmin];
     setAdminUsers(updated);
-    localStorage.setItem('pwa_admin_users', JSON.stringify(updated));
+    updateFirebaseConfig(updated, workerAccounts, teams);
   };
 
   const handleEditAdmin = (id, updatedAdmin) => {
     const updated = adminUsers.map(a => a.id === id ? { ...a, ...updatedAdmin } : a);
     setAdminUsers(updated);
-    localStorage.setItem('pwa_admin_users', JSON.stringify(updated));
+    updateFirebaseConfig(updated, workerAccounts, teams);
   };
 
   const handleDeleteAdmin = (id) => {
     const updated = adminUsers.filter(a => a.id !== id);
     setAdminUsers(updated);
-    localStorage.setItem('pwa_admin_users', JSON.stringify(updated));
+    updateFirebaseConfig(updated, workerAccounts, teams);
   };
 
+  // จัดการบัญชีช่าง
   const handleAddWorkerAccount = (newWorker) => {
     const updated = [...workerAccounts, newWorker];
     setWorkerAccounts(updated);
-    localStorage.setItem('pwa_worker_accounts', JSON.stringify(updated));
+    updateFirebaseConfig(adminUsers, updated, teams);
   };
 
   const handleEditWorkerAccount = (id, updatedWorker) => {
     const updated = workerAccounts.map(w => w.id === id ? { ...w, ...updatedWorker } : w);
     setWorkerAccounts(updated);
-    localStorage.setItem('pwa_worker_accounts', JSON.stringify(updated));
+    updateFirebaseConfig(adminUsers, updated, teams);
   };
 
   const handleDeleteWorkerAccount = (id) => {
     const updated = workerAccounts.filter(w => w.id !== id);
     setWorkerAccounts(updated);
-    localStorage.setItem('pwa_worker_accounts', JSON.stringify(updated));
+    updateFirebaseConfig(adminUsers, updated, teams);
   };
 
+  // จัดการทีมช่าง
   const handleAddTeam = (newTeam) => {
     if (teams.some(t => t.name === newTeam.name)) {
       alert("มีชื่อทีมนี้ในระบบแล้ว");
@@ -93,22 +120,22 @@ export default function App() {
     }
     const updated = [...teams, newTeam];
     setTeams(updated);
-    localStorage.setItem('pwa_repair_teams', JSON.stringify(updated));
+    updateFirebaseConfig(adminUsers, workerAccounts, updated);
   };
 
   const handleEditTeam = (oldName, updatedTeam) => {
     const updated = teams.map(t => t.name === oldName ? updatedTeam : t);
     setTeams(updated);
-    localStorage.setItem('pwa_repair_teams', JSON.stringify(updated));
+    updateFirebaseConfig(adminUsers, workerAccounts, updated);
   };
 
   const handleDeleteTeam = (teamName) => {
     const updated = teams.filter(t => t.name !== teamName);
     setTeams(updated);
-    localStorage.setItem('pwa_repair_teams', JSON.stringify(updated));
+    updateFirebaseConfig(adminUsers, workerAccounts, updated);
   };
 
-  // ล็อกอินและออกจากระบบ
+  // Login & Logout
   const handleAdminLogin = () => {
     setUserRole('admin');
     localStorage.setItem('pwa_user_role', 'admin');
@@ -129,14 +156,6 @@ export default function App() {
     localStorage.removeItem('pwa_worker_team');
   };
 
-  // ดึงข้อมูล Real-time จาก Firebase
-  useEffect(() => {
-    const unsubscribe = subscribeToJobs((jobList) => {
-      setJobs(jobList);
-    });
-    return () => unsubscribe();
-  }, []);
-
   const stats = {
     total: jobs.length,
     pending: jobs.filter(j => j.status === 'PENDING').length,
@@ -146,7 +165,6 @@ export default function App() {
 
   const handleCreateJob = async (newJobData) => {
     const jobId = newJobData.receivedNo || `S${Date.now()}`;
-    
     const fullJob = {
       id: jobId,
       ...newJobData,
@@ -217,7 +235,7 @@ export default function App() {
     }, 1000);
   };
 
-  // 1. ถ้ายังไม่ได้เลือกสิทธิ์ ให้แสดงหน้า Role Portal
+  // 1. หน้า Portal เลือกสิทธิ์
   if (userRole === 'portal') {
     return (
       <RolePortal 
@@ -230,7 +248,7 @@ export default function App() {
     );
   }
 
-  // 2. ถ้าเป็นประชาชนทั่วไป (Public Track Only)
+  // 2. หน้าประชาชนทั่วไป
   if (userRole === 'public') {
     return (
       <div className="min-h-screen bg-slate-950 text-white font-sans">
@@ -253,7 +271,7 @@ export default function App() {
     );
   }
 
-  // 3. ถ้าเป็นช่างภาคสนาม (Worker Only)
+  // 3. หน้าช่างภาคสนาม
   if (userRole === 'worker') {
     return (
       <div className="min-h-screen bg-slate-100 font-sans">
@@ -272,11 +290,9 @@ export default function App() {
     );
   }
 
-  // 4. ถ้าเป็น Admin (เข้าถึงได้ทั้งหมดทั้ง 3 ส่วน)
+  // 4. หน้า Admin หลัก
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
-      
-      {/* Switcher Bar สิทธิ์ Admin */}
       <div className="bg-slate-900 text-white py-2 px-4 text-xs flex flex-wrap justify-between items-center border-b border-slate-800 sticky top-0 z-40">
         <div className="flex items-center space-x-2">
           <span className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
