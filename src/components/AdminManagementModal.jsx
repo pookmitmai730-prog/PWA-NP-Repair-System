@@ -25,13 +25,13 @@ export default function AdminManagementModal({
   // Navigation State ('admins' สำหรับจัดการแอดมิน, 'workers' สำหรับจัดการช่างภาคสนาม)
   const [activeTab, setActiveTab] = useState('admins');
 
-  // Form State: Admin Account
+  // Form State: Admin Account Management
   const [adminUsernameInput, setAdminUsernameInput] = useState('');
   const [adminNameInput, setAdminNameInput] = useState('');
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [editingAdminId, setEditingAdminId] = useState(null);
 
-  // Form State: Worker Account
+  // Form State: Field Worker Account Management
   const [workerTeamNameInput, setWorkerTeamNameInput] = useState('');
   const [workerUsernameInput, setWorkerUsernameInput] = useState('');
   const [workerPasswordInput, setWorkerPasswordInput] = useState('');
@@ -39,7 +39,7 @@ export default function AdminManagementModal({
 
   if (!isOpen) return null;
 
-  // --- Handlers: Admin Management ---
+  // --- Handlers: Admin Actions ---
   const handleSaveAdmin = (e) => {
     e.preventDefault();
     if (!adminUsernameInput.trim() || !adminNameInput.trim() || !adminPasswordInput.trim()) return;
@@ -77,7 +77,7 @@ export default function AdminManagementModal({
     setAdminPasswordInput('');
   };
 
-  // --- Handlers: Worker Management ---
+  // --- Handlers: Field Worker Actions ---
   const handleSaveWorker = (e) => {
     e.preventDefault();
     if (!workerTeamNameInput.trim() || !workerUsernameInput.trim() || !workerPasswordInput.trim()) return;
