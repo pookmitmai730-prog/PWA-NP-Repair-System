@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, Smartphone, Plus, Trash2, Edit2, X, KeyRound, UserCheck, ShieldAlert } from 'lucide-react';
+import { Shield, Smartphone, Plus, Trash2, Edit2, X, KeyRound, UserCheck, ShieldAlert, User } from 'lucide-react';
 
 export default function AdminManagementModal({ 
   isOpen, 
@@ -15,13 +15,13 @@ export default function AdminManagementModal({
 }) {
   const [activeTab, setActiveTab] = useState('admins'); // 'admins' หรือ 'workers'
 
-  // Form State - Admin (เพิ่มช่อง usernameInput)
+  // Form State - Admin
   const [adminUsernameInput, setAdminUsernameInput] = useState('');
   const [adminNameInput, setAdminNameInput] = useState('');
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [editingAdminId, setEditingAdminId] = useState(null);
 
-  // Form State - Worker (เปลี่ยนเป็นกรอกชื่อหัวหน้าทีม/ทีมช่างแทน Dropdown)
+  // Form State - Worker (ช่องกรอกชื่อหัวหน้าทีม/ทีมช่าง + Username + Password)
   const [workerTeamNameInput, setWorkerTeamNameInput] = useState('');
   const [workerUsernameInput, setWorkerUsernameInput] = useState('');
   const [workerPasswordInput, setWorkerPasswordInput] = useState('');
@@ -55,7 +55,7 @@ export default function AdminManagementModal({
     setAdminPasswordInput('');
   };
 
-  // บันทึก/แก้ไข ช่างภาคสนาม (ชื่อหัวหน้าทีม + Username + Password)
+  // บันทึก/แก้ไข ช่างภาคสนาม
   const handleSaveWorker = (e) => {
     e.preventDefault();
     if (!workerTeamNameInput.trim() || !workerUsernameInput.trim() || !workerPasswordInput.trim()) return;
