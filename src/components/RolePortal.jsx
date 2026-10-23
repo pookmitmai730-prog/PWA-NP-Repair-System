@@ -260,7 +260,7 @@ export default function RolePortal({
 
       {/* Footer info */}
       <div className="mt-6 text-center text-[11px] text-slate-500 space-y-1">
-        <p>พัฒนาโดย งานบริการและควบคุมน้ำสูญเสีย</p>
+        <p>พัฒนาโดย งานบริการและควบคุมน้ำสูญเสีย  โทรศัพท์ 042-511409</p>
         <p className="font-mono">การประปาส่วนภูมิภาคสาขานครพนม v1.0</p>
       </div>
 
