@@ -125,7 +125,7 @@ export default function App() {
     updateFirebaseConfig(adminUsers, updated, teams);
   };
 
-  // Login & Logout
+  // Login & Logout Handlers
   const handleAdminLogin = () => {
     setUserRole('admin');
     localStorage.setItem('pwa_user_role', 'admin');
@@ -139,9 +139,19 @@ export default function App() {
     localStorage.setItem('pwa_worker_team', teamName);
   };
 
+  // Logout หลักสำหรับปุ่มส่วนบน
   const handleLogout = () => {
     setUserRole('portal');
     setActiveWorkerTeam('');
+    localStorage.removeItem('pwa_user_role');
+    localStorage.removeItem('pwa_worker_team');
+    setCurrentView('dashboard');
+  };
+
+  // Logout เฉพาะสำหรับหน้าช่างภาคสนาม
+  const handleWorkerLogout = () => {
+    setActiveWorkerTeam('');
+    setUserRole('portal');
     localStorage.removeItem('pwa_user_role');
     localStorage.removeItem('pwa_worker_team');
   };
@@ -265,16 +275,11 @@ export default function App() {
   if (userRole === 'worker') {
     return (
       <div className="min-h-screen bg-slate-100 font-sans">
-        <div className="bg-slate-900 text-white p-2 text-xs flex justify-between items-center px-4">
-          <span className="font-bold text-emerald-400">ระบบเจ้าหน้าที่ภาคสนาม: {activeWorkerTeam}</span>
-          <button onClick={handleLogout} className="text-slate-300 hover:text-white flex items-center gap-1 cursor-pointer">
-            <LogOut className="w-3.5 h-3.5" /> ออกจากระบบ
-          </button>
-        </div>
         <FieldWorkerPortal 
           jobs={jobs} 
           onUpdateJobStatus={handleStatusChange} 
           teams={workerAccounts.map(w => w.teamName)}
+          onLogout={handleWorkerLogout}
         />
       </div>
     );
@@ -365,6 +370,7 @@ export default function App() {
           jobs={jobs} 
           onUpdateJobStatus={handleStatusChange} 
           teams={workerAccounts.map(w => w.teamName)}
+          onLogout={handleWorkerLogout}
         />
       )}
 
