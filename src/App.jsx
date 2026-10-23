@@ -40,7 +40,7 @@ export default function App() {
     { name: 'ทีมช่างซ่อม 3', phone: '0833333333' }
   ]);
 
-  // 1. ดึงข้อมูลงานซ่อมและ Config จาก Firebase แบบ Real-time ข้ามเครื่องได้ทันที
+  // 1. ดึงข้อมูลงานซ่อมและ Config จาก Firebase แบบ Real-time
   useEffect(() => {
     const unsubscribeJobs = subscribeToJobs((jobList) => {
       setJobs(jobList);
@@ -98,7 +98,6 @@ export default function App() {
     const updated = [...workerAccounts, newWorker];
     setWorkerAccounts(updated);
     
-    // ซิงค์ชื่อทีมกับรายการทีมอัตโนมัติถ้ายังไม่มี
     let updatedTeams = [...teams];
     if (newWorker.teamName && !teams.some(t => t.name === newWorker.teamName)) {
       updatedTeams = [...teams, { name: newWorker.teamName, phone: '-' }];
