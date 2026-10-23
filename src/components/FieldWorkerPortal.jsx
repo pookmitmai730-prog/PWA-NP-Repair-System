@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogIn, LogOut, Lock, Navigation, AlertTriangle } from 'lucide-react';
+import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 
 export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams }) {
@@ -23,7 +23,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams }) {
     setSelectedJob(null);
   };
 
-  // 🔴 ฟังก์ชันช่วยแปลงระดับความเร่งด่วนเป็นคะแนนสำหรับจัดลำดับ
+  // ฟังก์ชันช่วยแปลงระดับความเร่งด่วนเป็นคะแนนสำหรับจัดลำดับ
   const getUrgencyWeight = (urgency) => {
     switch (urgency) {
       case 'ด่วนมาก': return 3;
@@ -33,12 +33,13 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams }) {
     }
   };
 
-  // 🔴 กรองและเรียงลำดับงานตามโจทย์:
-  // 1. เรียงความเร่งด่วน ด่วนมาก -> ด่วน -> ปกติ
-  // 2. ถ้าความเร่งด่วนเท่ากัน ให้เรียงงานที่แจ้งก่อนไปหาหลัง (เวลาเก่า -> ใหม่)
+  // 🔴 ปรับปรุงเงื่อนไขการกรองงานให้แม่นยำยิ่งขึ้น รองรับทั้ง techName และ technician
   const activeJobs = jobs
     .filter(j => {
-      const isMyTeam = j.technician && j.technician.includes(currentTeam);
+      const matchTechName = j.techName && j.techName.trim() === currentTeam.trim();
+      const matchTechnicianStr = j.technician && j.technician.includes(currentTeam);
+      const isMyTeam = matchTechName || matchTechnicianStr;
+      
       const isValidStatus = j.status === 'DISPATCHED' || j.status === 'IN_PROGRESS';
       return isMyTeam && isValidStatus;
     })
@@ -46,12 +47,10 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams }) {
       const weightA = getUrgencyWeight(a.urgency);
       const weightB = getUrgencyWeight(b.urgency);
 
-      // ถ้าความเร่งด่วนไม่เท่ากัน ให้เอาเร่งด่วนมากกว่าขึ้นก่อน
       if (weightA !== weightB) {
         return weightB - weightA;
       }
 
-      // ถ้าความเร่งด่วนเท่ากัน ให้เรียงงานที่รับแจ้งก่อนไปรับแจ้งหลัง
       const timeA = new Date(a.receivedAt || a.createdAt || 0).getTime();
       const timeB = new Date(b.receivedAt || b.createdAt || 0).getTime();
       return timeA - timeB;
@@ -142,19 +141,22 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams }) {
 
         <div className="bg-slate-800/80 border border-slate-700/80 p-5 rounded-3xl space-y-3 shadow-xl">
           <label className="block text-xs font-bold text-slate-300">เลือกทีมช่างของคุณ *</label>
-          {teams.length === 0 ? (
-            <p className="text-xs text-rose-400">ยังไม่มีการเพิ่มทีมช่างในระบบ</p>
+          {!teams || teams.length === 0 ? (
+            <p className="text-xs text-rose-400">ยังไม่มีการเพิ่มบัญชีช่างในระบบ</p>
           ) : (
-            teams.map((t) => (
-              <button
-                key={t}
-                onClick={() => handleLogin(t)}
-                className="w-full bg-slate-700 hover:bg-blue-600 text-white font-bold p-3.5 rounded-2xl text-xs flex justify-between items-center transition shadow-sm active:scale-95 cursor-pointer"
-              >
-                <span>{t}</span>
-                <LogIn className="w-4 h-4 text-cyan-300" />
-              </button>
-            ))
+            teams.map((t) => {
+              const teamName = typeof t === 'string' ? t : t.teamName;
+              return (
+                <button
+                  key={teamName}
+                  onClick={() => handleLogin(teamName)}
+                  className="w-full bg-slate-700 hover:bg-blue-600 text-white font-bold p-3.5 rounded-2xl text-xs flex justify-between items-center transition shadow-sm active:scale-95 cursor-pointer"
+                >
+                  <span>{teamName}</span>
+                  <span className="text-[10px] text-cyan-300 bg-blue-950 px-2 py-1 rounded-lg">เลือกทีมนี้</span>
+                </button>
+              );
+            })
           )}
         </div>
       </div>
@@ -178,7 +180,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams }) {
           <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2.5 py-1 rounded-full font-bold">
             {activeJobs.length} งาน
           </span>
-          <button onClick={handleLogout} className="p-1.5 bg-slate-800 hover:bg-rose-600 rounded-lg text-slate-300 hover:text-white transition cursor-pointer">
+          <button onClick={handleLogout} className="p-1.5 bg-slate-800 hover:bg-rose-600 rounded-lg text-slate-300 hover:text-white transition cursor-pointer" title="ออกจากระบบ">
             <LogOut className="w-4 h-4" />
           </button>
         </div>
