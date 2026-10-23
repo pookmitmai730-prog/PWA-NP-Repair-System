@@ -61,7 +61,7 @@ export function subscribeToJobs(callback) {
 }
 
 /**
- * ฟังข้อมูลการตั้งค่าระบบ (Admin, Workers, Teams) แบบ Real-time
+ * [ใหม่] ฟังข้อมูลการตั้งค่าระบบ (Admin, Workers, Teams) แบบ Real-time
  */
 export function subscribeToSystemConfig(callback) {
   if (!db) return () => {};
@@ -73,7 +73,7 @@ export function subscribeToSystemConfig(callback) {
 }
 
 /**
- * บันทึกข้อมูลการตั้งค่าระบบลง Firebase
+ * [ใหม่] บันทึกข้อมูลการตั้งค่าระบบลง Firebase ทันที
  */
 export async function saveSystemConfigToFirebase(configData) {
   if (!db) return console.warn("Firebase ยังไม่ได้ตั้งค่า");
