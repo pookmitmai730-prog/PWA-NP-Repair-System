@@ -179,7 +179,7 @@ export default function ReportsView({ jobs }) {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>รายงาน A4 - ${job.receivedNo || job.id}</title>
+        <title>ตัวอย่างก่อนพิมพ์</title>
         <meta charset="UTF-8">
         <style>
           @page {
