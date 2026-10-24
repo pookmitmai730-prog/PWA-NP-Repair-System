@@ -1,27 +1,36 @@
-module.exports = async function handler(req, res) {
-  // บังคับให้ Response เป็น JSON เสมอ ป้องกันปัญหา SyntaxError บน Frontend
+module.exports = async (req, res) => {
+  // ตั้งค่า Header ป้องกัน CORS และบังคับตอบกลับเป็น JSON เสมอ
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
   res.setHeader('Content-Type', 'application/json');
 
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
   if (req.method !== 'POST') {
-    res.setHeader('Allow', ['POST']);
-    return res.status(405).json({ success: false, error: `Method ${req.method} Not Allowed` });
+    return res.status(405).json({ success: false, error: 'Method Not Allowed' });
   }
 
   try {
     let body = req.body;
-    
-    // จัดการแปลง body หาก Vercel ส่งมาเป็น String
     if (typeof body === 'string') {
       try {
         body = JSON.parse(body);
       } catch (e) {
-        // ignore parse error
+        // ignore
       }
     }
 
     const image = body?.image;
     if (!image) {
-      return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลรูปภาพใน Request Body' });
+      return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลรูปภาพ' });
     }
 
     const base64Data = image.includes(',') ? image.split(',')[1] : image;
@@ -29,12 +38,11 @@ module.exports = async function handler(req, res) {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ success: false, error: 'ยังไม่ได้ตั้งค่า GEMINI_API_KEY ใน Vercel Environment Variables' });
+      return res.status(500).json({ success: false, error: 'ยังไม่ได้ตั้งค่า GEMINI_API_KEY ใน Vercel' });
     }
 
-    // เรียกใช้ Gemini 1.5 Flash API
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    const geminiRes = await fetch(geminiUrl, {
+    // เรียก Gemini API ผ่าน Native fetch
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -73,19 +81,15 @@ module.exports = async function handler(req, res) {
       })
     });
 
-    const result = await geminiRes.json();
+    const data = await response.json();
 
-    if (!geminiRes.ok) {
-      console.error('Gemini API Error:', result);
-      return res.status(500).json({ 
-        success: false, 
-        error: result.error?.message || 'Gemini API ปฏิเสธคำขอ' 
-      });
+    if (!response.ok) {
+      return res.status(500).json({ success: false, error: data.error?.message || 'Gemini API Error' });
     }
 
-    const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!textResponse) {
-      return res.status(500).json({ success: false, error: 'AI ไม่สามารถสกัดข้อความจากภาพนี้ได้' });
+      return res.status(500).json({ success: false, error: 'AI ไม่สามารถอ่านข้อมูลจากภาพนี้ได้' });
     }
 
     const cleanedText = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -97,10 +101,7 @@ module.exports = async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Serverless Catch Error:', error);
-    return res.status(500).json({ 
-      success: false, 
-      error: error.message || 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์' 
-    });
+    console.error('OCR Serverless Error:', error);
+    return res.status(500).json({ success: false, error: error.message || 'Server Error' });
   }
 };
