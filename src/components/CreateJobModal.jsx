@@ -4,15 +4,22 @@ import { saveJobToFirebase } from '../services/firebase';
 export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
   if (!isOpen) return null;
 
+  // 🕒 ฟังก์ชันดึง วัน-เวลา ปัจจุบันตามเขตเวลาประเทศไทย (GMT+7) สำหรับ type="datetime-local"
+  const getThaiNowForInput = () => {
+    const now = new Date();
+    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    return thaiTime.toISOString().slice(0, 16); // รูปแบบ YYYY-MM-DDTHH:mm
+  };
+
   const [loading, setLoading] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // กำหนดค่าเริ่มต้นของฟอร์ม (ตั้ง status เป็น 'PENDING' ให้ตรงกับกระดาน Pipeline)
+  // กำหนดค่าเริ่มต้นของฟอร์ม (ตั้ง receivedAt เป็น วัน-เวลา ปัจจุบัน)
   const [formData, setFormData] = useState({
     id: 'JOB-' + Date.now().toString().slice(-6),
     receivedNo: '',
-    receivedAt: new Date().toISOString().split('T')[0],
+    receivedAt: getThaiNowForInput(), // 🕒 ใส่ทั้งวันและเวลาปัจจุบัน
     channel: 'รับแจ้งทางโทรศัพท์',
     complaintType: 'ท่อแตก/รั่ว',
     complainantInfo: '',
@@ -48,7 +55,7 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-        const maxDim = 1024; // จำกัดขนาดไม่เกิน 1024px เพื่อไม่ให้เกิน Payload limit ของ Vercel
+        const maxDim = 1024;
 
         if (width > height && width > maxDim) {
           height = Math.round((height * maxDim) / width);
@@ -88,7 +95,7 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
           setFormData(prev => ({
             ...prev,
             receivedNo: data.receivedNo || prev.receivedNo,
-            receivedAt: data.receivedAt || prev.receivedAt,
+            receivedAt: data.receivedAt ? data.receivedAt.replace(' ', 'T') : prev.receivedAt,
             channel: data.channel || prev.channel,
             complaintType: data.complaintType || prev.complaintType,
             complainantInfo: data.complainantInfo || prev.complainantInfo,
@@ -114,9 +121,15 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
     setLoading(true);
     setError(null);
 
+    // ปรับแต่งรูปแบบเวลาให้อ่านง่ายก่อนบันทึก เช่น "2026-10-24 16:15"
+    const formattedData = {
+      ...formData,
+      receivedAt: formData.receivedAt ? formData.receivedAt.replace('T', ' ') : getThaiNowForInput().replace('T', ' ')
+    };
+
     try {
-      await saveJobToFirebase(formData);
-      if (onJobCreated) onJobCreated(formData);
+      await saveJobToFirebase(formattedData);
+      if (onJobCreated) onJobCreated(formattedData);
       onClose();
     } catch (err) {
       console.error('Firebase Save Error:', err);
@@ -165,8 +178,15 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
               <input type="text" name="receivedNo" value={formData.receivedNo} onChange={handleChange} className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm" placeholder="เช่น S67-00123" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">วันที่รับแจ้ง</label>
-              <input type="date" name="receivedAt" value={formData.receivedAt} onChange={handleChange} className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm" />
+              {/* 🕒 ปรับให้เลือกระบุวันและเวลาได้ */}
+              <label className="block text-sm font-medium text-gray-700">วัน-เวลาที่รับแจ้ง</label>
+              <input 
+                type="datetime-local" 
+                name="receivedAt" 
+                value={formData.receivedAt} 
+                onChange={handleChange} 
+                className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm focus:border-blue-500 focus:ring-blue-500" 
+              />
             </div>
           </div>
 
