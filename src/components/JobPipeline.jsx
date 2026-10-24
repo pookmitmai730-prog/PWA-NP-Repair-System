@@ -20,6 +20,23 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     { id: 'COMPLETED', title: 'ซ่อมเสร็จสิ้น (ปิดงาน)', color: 'bg-emerald-600', bgLight: 'bg-emerald-50/50', border: 'border-emerald-200' },
   ];
 
+  // 🕒 ฟังก์ชันดึงเวลาปัจจุบันตามเขตเวลาประเทศไทย (GMT+7)
+  const getThaiTimestamp = () => {
+    const now = new Date();
+    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    return thaiTime.toISOString().replace('T', ' ').substring(0, 16);
+  };
+
+  // 🔄 ฟังก์ชันแปลงสถานะให้เป็นมาตรฐานเดียวกัน (รองรับทั้งภาษาไทยและอังกฤษ)
+  const normalizeStatus = (status) => {
+    if (!status) return 'PENDING';
+    if (status === 'รอดำเนินการ' || status === 'PENDING') return 'PENDING';
+    if (status === 'มอบหมายช่างแล้ว' || status === 'DISPATCHED') return 'DISPATCHED';
+    if (status === 'กำลังดำเนินการซ่อม' || status === 'IN_PROGRESS') return 'IN_PROGRESS';
+    if (status === 'ซ่อมเสร็จสิ้น (ปิดงาน)' || status === 'COMPLETED') return 'COMPLETED';
+    return status;
+  };
+
   // ยืนยันการจ่ายงาน
   const handleConfirmDispatch = () => {
     if (!selectedTeam) {
@@ -29,7 +46,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     const workerObj = workerAccounts.find(w => w.teamName === selectedTeam);
     const techDetails = workerObj ? `${workerObj.teamName} (${workerObj.phone || '-'})` : selectedTeam;
     
-    const currentDateTime = new Date().toISOString().replace('T', ' ').substring(0, 16);
+    // ใช้เวลาไทยปัจจุบัน
+    const currentDateTime = getThaiTimestamp();
 
     onStatusChange(selectedJobForDispatch.id, 'DISPATCHED', { 
       technician: techDetails,
@@ -85,7 +103,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
           {pipelineSearch && (
             <button
               onClick={() => setPipelineSearch('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
             >
               ✕
             </button>
@@ -96,9 +114,10 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       {/* คอลัมน์ Pipeline */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {columns.map((col) => {
-          // กรองงานตามสถานะ และกรองตามคำค้นหา (Pipeline Search)
+          // กรองงานตามสถานะ (รองรับ normalizeStatus) และคำค้นหา
           const colJobs = jobs.filter(j => {
-            const matchStatus = j.status === col.id;
+            const normalizedStatus = normalizeStatus(j.status);
+            const matchStatus = normalizedStatus === col.id;
             if (!matchStatus) return false;
 
             if (!pipelineSearch.trim()) return true;
@@ -174,16 +193,15 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                         </p>
                       </div>
 
-                      {/* แสดงชื่อทีมช่าง พร้อมปุ่มแก้ไขทีมช่าง (ยกเว้นเคสที่ปิดงาน COMPLETED แล้ว) */}
-                      {job.status !== 'PENDING' && (
+                      {/* แสดงชื่อทีมช่าง พร้อมปุ่มแก้ไขทีมช่าง */}
+                      {normalizeStatus(job.status) !== 'PENDING' && (
                         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] space-y-1 relative group">
                           <div className="flex justify-between items-center">
                             <p className="font-bold text-blue-700 flex items-center gap-1">
                               <Users className="w-3 h-3" /> ทีมรับงาน: {job.techName || job.technician}
                             </p>
                             
-                            {/* 🛠️ ปุ่มแก้ไข/เปลี่ยนทีมช่าง (แสดงเฉพาะงานที่ยังไม่ปิดงาน COMPLETED) */}
-                            {job.status !== 'COMPLETED' && (
+                            {normalizeStatus(job.status) !== 'COMPLETED' && (
                               <button
                                 onClick={() => {
                                   setEditingTeamJob(job);
@@ -222,7 +240,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                           )}
                           {col.id === 'DISPATCHED' && (
                             <button
-                              onClick={() => onStatusChange(job.id, 'IN_PROGRESS')}
+                              onClick={() => onStatusChange(job.id, 'IN_PROGRESS', { inProgressAt: getThaiTimestamp() })}
                               className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg font-bold transition shadow-sm cursor-pointer"
                             >
                               เริ่มซ่อม
@@ -230,7 +248,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                           )}
                           {col.id === 'IN_PROGRESS' && (
                             <button
-                              onClick={() => onStatusChange(job.id, 'COMPLETED')}
+                              onClick={() => onStatusChange(job.id, 'COMPLETED', { completedAt: getThaiTimestamp() })}
                               className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg font-bold transition shadow-sm cursor-pointer"
                             >
                               ปิดงาน
@@ -320,7 +338,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         </div>
       )}
 
-      {/* 🛠️ Modal สำหรับแก้ไข / เปลี่ยนทีมช่าง (กรณีเปลี่ยนใจเปลี่ยนทีมระหว่างดำเนินงาน) */}
+      {/* Modal สำหรับแก้ไข / เปลี่ยนทีมช่าง */}
       {editingTeamJob && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
