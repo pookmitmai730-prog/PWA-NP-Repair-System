@@ -43,8 +43,8 @@ export default async function handler(req, res) {
                 }`
               },
               {
-                inline_data: {
-                  mime_type: mimeType,
+                inlineData: {
+                  mimeType: mimeType,
                   data: base64Data
                 }
               }
@@ -52,19 +52,26 @@ export default async function handler(req, res) {
           }
         ],
         generationConfig: {
-          response_mime_type: "application/json"
+          responseMimeType: "application/json"
         }
       })
     });
 
     const result = await geminiRes.json();
+
+    if (!geminiRes.ok) {
+      throw new Error(result.error?.message || 'Gemini API Error');
+    }
+
     const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!textResponse) {
       throw new Error('AI ไม่สามารถอ่านข้อมูลจากภาพนี้ได้');
     }
 
-    const parsedData = JSON.parse(textResponse);
+    // ทำความสะอาดข้อความเผื่อกรณี AI ติด Markdown code blocks มาด้วย
+    const cleanedText = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+    const parsedData = JSON.parse(cleanedText);
 
     return res.status(200).json({
       success: true,
