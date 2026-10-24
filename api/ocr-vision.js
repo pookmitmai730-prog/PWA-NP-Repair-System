@@ -10,14 +10,16 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลรูปภาพ' });
     }
 
+    // จัดเตรียม Base64 และ MimeType
     const base64Data = image.split(',')[1] || image;
     const mimeType = image.match(/data:(.*?);base64/)?.[1] || 'image/jpeg';
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ success: false, error: 'ยังไม่ได้ตั้งค่า GEMINI_API_KEY ใน Vercel' });
+      return res.status(500).json({ success: false, error: 'ยังไม่ได้ตั้งค่า GEMINI_API_KEY บน Vercel Environment Variables' });
     }
 
+    // เรียกใช้งาน Gemini API (ใช้โมเดล gemini-1.5-flash ที่เสถียรที่สุดสำหรับการทำ OCR)
     const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -26,19 +28,19 @@ export default async function handler(req, res) {
           {
             parts: [
               {
-                text: `คุณคือ AI ผู้ช่วยอัจฉริยะสำหรับอ่านและสกัดข้อมูลจากใบรับแจ้งซ่อมของ กปภ. จงวิเคราะห์รูปภาพนี้ แล้วตอบกลับเป็น JSON Object ล้วนๆ (ห้ามมีข้อความอื่นห่อหุ้ม) ตามคีย์เหล่านี้:
+                text: `คุณคือ AI ผู้ช่วยอัจฉริยะสำหรับอ่านและสกัดข้อมูลจากใบรับแจ้งซ่อมของ กปภ. (การประปาส่วนภูมิภาค) จงวิเคราะห์รูปภาพนี้ แล้วส่งผลลัพธ์กลับมาเป็น JSON Object ล้วนๆ ห้ามมีข้อความอื่นห่อหุ้มเด็ดขาด โดยใช้คีย์ภาษาอังกฤษตามโครงสร้างนี้ (หากข้อมูลส่วนไหนไม่มีให้ใส่ค่าเป็น string ว่าง ""):
                 {
-                  "phone": "เบอร์โทรศัพท์",
-                  "channel": "ช่องทางการรับแจ้ง",
-                  "receivedNo": "เลขที่รับแจ้ง",
-                  "receivedAt": "วันที่รับแจ้ง",
-                  "complaintType": "ประเภทการร้องเรียน",
-                  "complainantInfo": "ข้อมูลผู้ร้องเรียน",
-                  "complaintTopic": "หัวข้อการร้องเรียน",
-                  "details": "รายละเอียดการรับแจ้ง",
-                  "location": "บริเวณที่เกิดเหตุ",
-                  "receiverName": "ผู้รับแจ้ง",
-                  "reporterName": "ชื่อผู้แจ้ง"
+                  "phone": "",
+                  "channel": "",
+                  "receivedNo": "",
+                  "receivedAt": "",
+                  "complaintType": "",
+                  "complainantInfo": "",
+                  "complaintTopic": "",
+                  "details": "",
+                  "location": "",
+                  "receiverName": "",
+                  "reporterName": ""
                 }`
               },
               {
@@ -51,7 +53,8 @@ export default async function handler(req, res) {
           }
         ],
         generationConfig: {
-          responseMimeType: "application/json"
+          responseMimeType: "application/json",
+          temperature: 0.1
         }
       })
     });
@@ -59,17 +62,25 @@ export default async function handler(req, res) {
     const result = await geminiRes.json();
 
     if (!geminiRes.ok) {
-      console.error('Gemini API Error Response:', JSON.stringify(result));
-      throw new Error(result.error?.message || 'เกิดข้อผิดพลาดจาก Gemini API');
+      console.error('Gemini API Error Detail:', JSON.stringify(result));
+      const errorMsg = result.error?.message || 'เกิดข้อผิดพลาดจาก Google Gemini API';
+      return res.status(500).json({ success: false, error: errorMsg });
     }
 
     const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!textResponse) {
-      throw new Error('AI ไม่สามารถอ่านข้อมูลจากภาพนี้ได้');
+      throw new Error('AI ไม่สามารถอ่านข้อมูลหรือแปลงภาพนี้ได้');
     }
 
-    const cleanedText = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-    const parsedData = JSON.parse(cleanedText);
+    // ทำความสะอาดข้อความ JSON
+    let parsedData;
+    try {
+      const cleanedText = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+      parsedData = JSON.parse(cleanedText);
+    } catch (parseErr) {
+      console.error('JSON Parse Error. Raw text:', textResponse);
+      throw new Error('รูปแบบข้อมูลที่ AI ตอบกลับมาไม่ถูกต้อง');
+    }
 
     return res.status(200).json({
       success: true,
@@ -77,7 +88,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Serverless Function Error:', error.message);
+    console.error('Serverless Function Catch Error:', error.message);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
