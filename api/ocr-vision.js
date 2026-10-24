@@ -1,4 +1,5 @@
 module.exports = async function handler(req, res) {
+  // บังคับให้ Response เป็น JSON เสมอ ป้องกันปัญหา SyntaxError บน Frontend
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method !== 'POST') {
@@ -8,17 +9,19 @@ module.exports = async function handler(req, res) {
 
   try {
     let body = req.body;
+    
+    // จัดการแปลง body หาก Vercel ส่งมาเป็น String
     if (typeof body === 'string') {
       try {
         body = JSON.parse(body);
       } catch (e) {
-        // ignore
+        // ignore parse error
       }
     }
 
     const image = body?.image;
     if (!image) {
-      return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลรูปภาพ' });
+      return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลรูปภาพใน Request Body' });
     }
 
     const base64Data = image.includes(',') ? image.split(',')[1] : image;
@@ -26,10 +29,12 @@ module.exports = async function handler(req, res) {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ success: false, error: 'ยังไม่ได้ตั้งค่า GEMINI_API_KEY บน Vercel' });
+      return res.status(500).json({ success: false, error: 'ยังไม่ได้ตั้งค่า GEMINI_API_KEY ใน Vercel Environment Variables' });
     }
 
-    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    // เรียกใช้ Gemini 1.5 Flash API
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const geminiRes = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -71,12 +76,16 @@ module.exports = async function handler(req, res) {
     const result = await geminiRes.json();
 
     if (!geminiRes.ok) {
-      return res.status(500).json({ success: false, error: result.error?.message || 'Gemini API Error' });
+      console.error('Gemini API Error:', result);
+      return res.status(500).json({ 
+        success: false, 
+        error: result.error?.message || 'Gemini API ปฏิเสธคำขอ' 
+      });
     }
 
     const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!textResponse) {
-      return res.status(500).json({ success: false, error: 'AI ไม่สามารถอ่านข้อมูลจากภาพนี้ได้' });
+      return res.status(500).json({ success: false, error: 'AI ไม่สามารถสกัดข้อความจากภาพนี้ได้' });
     }
 
     const cleanedText = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -88,7 +97,10 @@ module.exports = async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Serverless Error:', error);
-    return res.status(500).json({ success: false, error: error.message || 'Server Internal Error' });
+    console.error('Serverless Catch Error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      error: error.message || 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์' 
+    });
   }
 };
