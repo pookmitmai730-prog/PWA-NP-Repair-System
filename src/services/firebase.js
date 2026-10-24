@@ -79,4 +79,8 @@ export async function saveSystemConfigToFirebase(configData) {
   if (!db) return console.warn("Firebase ยังไม่ได้ตั้งค่า");
   const configRef = ref(db, 'pwa_system_config');
   await set(configRef, configData);
+<<<<<<< Updated upstream
 }
+=======
+}
+>>>>>>> Stashed changes
