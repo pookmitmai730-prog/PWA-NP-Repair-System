@@ -359,7 +359,7 @@ export default function ReportsView({ jobs }) {
           </div>
 
           <div class="info-box section-block" style="margin-top: 15px;">
-            <strong>หมายเหตุ / การแก้ไข:</strong> ${job.notes || job.description || '-'}
+            <strong>การแก้ไข / อุปกรณ์:</strong> ${job.notes || job.description || '-'}
           </div>
 
           <div class="signature-section">
