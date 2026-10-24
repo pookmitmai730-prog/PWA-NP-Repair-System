@@ -8,26 +8,32 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const [images, setImages] = useState({ before: [], inProgress: [], after: [] });
   const [notes, setNotes] = useState('');
   
+  // 🔴 State สำหรับชนิดท่อและขนาดท่อ
+  const [pipeType, setPipeType] = useState('HDPE');
+  const [pipeSize, setPipeSize] = useState('110');
+
   const [coords, setCoords] = useState({ lat: null, lng: null });
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // รายการตัวเลือกชนิดท่อและขนาดท่อ
+  const pipeTypes = ['PB', 'PVC', 'AC', 'HDPE', 'GS', 'SP'];
+  const pipeSizes = ['20', '25', '40', '50', '100', '110', '150', '160', '200', '225', '250', '280', '300', '315', '400', '630'];
 
   const handleLogin = (teamName) => {
     setCurrentTeam(teamName);
     localStorage.setItem('pwa_worker_team', teamName);
   };
 
-  // 🔴 ปรับปรุงฟังก์ชัน Logout ให้เรียกใช้ onLogout() จาก App.jsx เพื่อกลับไปหน้าหลัก (RolePortal)
   const handleLogoutAction = () => {
     setCurrentTeam('');
     localStorage.removeItem('pwa_worker_team');
     setSelectedJob(null);
     if (onLogout) {
-      onLogout(); // ส่งสัญญาณกลับไปยัง App.jsx ให้เปลี่ยน userRole เป็น 'portal'
+      onLogout();
     }
   };
 
-  // ฟังก์ชันช่วยแปลงระดับความเร่งด่วนเป็นคะแนนสำหรับจัดลำดับ
   const getUrgencyWeight = (urgency) => {
     switch (urgency) {
       case 'ด่วนมาก': return 3;
@@ -37,7 +43,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // กรองและเรียงลำดับงานตามความเร่งด่วนและเวลาแจ้งซ่อม
   const activeJobs = jobs
     .filter(j => {
       const matchTechName = j.techName && j.techName.trim() === currentTeam.trim();
@@ -109,14 +114,18 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
     setIsSubmitting(true);
 
-    const currentDateTime = new Date().toISOString().replace('T', ' ').substring(0, 16);
+    const now = new Date();
+    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
 
     const updatePayload = {
       status: 'COMPLETED',
+      pipeType: pipeType,
+      pipeSize: pipeSize,
       beforeImgBase64: JSON.stringify(images.before),
       inProgImgBase64: JSON.stringify(images.inProgress),
       afterImgBase64: JSON.stringify(images.after),
-      notes: notes || 'ดำเนินการซ่อมท่อเสร็จสิ้น เปิดจ่ายน้ำปกติ',
+      notes: notes || `ดำเนินการซ่อมท่อเสร็จสิ้น ชนิดท่อ ${pipeType} ขนาด ${pipeSize} มม. เปิดจ่ายน้ำปกติ`,
       completedAt: currentDateTime,
       latitude: coords.lat || selectedJob.latitude || '',
       longitude: coords.lng || selectedJob.longitude || ''
@@ -128,6 +137,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setSelectedJob(null);
     setImages({ before: [], inProgress: [], after: [] });
     setNotes('');
+    setPipeType('HDPE');
+    setPipeSize('110');
     setCoords({ lat: null, lng: null });
     alert(`ปิดงานซ่อม ${selectedJob.receivedNo || selectedJob.id} เรียบร้อยแล้ว!`);
   };
@@ -164,7 +175,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
           )}
         </div>
 
-        {/* ปุ่มกลับหน้าหลักกรณีที่ยังไม่ได้เลือกทีม */}
         <button
           onClick={handleLogoutAction}
           className="w-full text-xs text-slate-400 hover:text-white py-2 flex items-center justify-center gap-1 cursor-pointer"
@@ -219,7 +229,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               activeJobs.map((job) => (
                 <div key={job.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3 relative overflow-hidden">
                   
-                  {/* แถบสีแสดงความเร่งด่วนด้านซ้ายของการ์ด */}
                   <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${
                     job.urgency === 'ด่วนมาก' ? 'bg-rose-600' :
                     job.urgency === 'ด่วน' ? 'bg-amber-500' : 'bg-slate-300'
@@ -231,7 +240,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                         {job.receivedNo || job.id}
                       </span>
 
-                      {/* Badge แสดงระดับความเร่งด่วน */}
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 ${
                         job.urgency === 'ด่วนมาก' 
                           ? 'bg-rose-100 text-rose-700 border border-rose-200 animate-pulse' 
@@ -270,7 +278,9 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     {job.status === 'DISPATCHED' && (
                       <button 
                         onClick={() => {
-                          const currentDateTime = new Date().toISOString().replace('T', ' ').substring(0, 16);
+                          const now = new Date();
+                          const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+                          const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
                           onUpdateJobStatus(job.id, 'IN_PROGRESS', { inProgressAt: currentDateTime });
                         }}
                         className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
@@ -308,6 +318,36 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
             </div>
 
             <form onSubmit={handleSubmitFix} className="space-y-4">
+              
+              {/* 🔴 ส่วนเลือกชนิดท่อและขนาดท่อ */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ชนิดท่อ *</label>
+                  <select
+                    value={pipeType}
+                    onChange={(e) => setPipeType(e.target.value)}
+                    className="w-full border border-slate-200 rounded-xl p-2 text-xs bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                  >
+                    {pipeTypes.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ขนาดท่อ (มม.) *</label>
+                  <select
+                    value={pipeSize}
+                    onChange={(e) => setPipeSize(e.target.value)}
+                    className="w-full border border-slate-200 rounded-xl p-2 text-xs bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                  >
+                    {pipeSizes.map((size) => (
+                      <option key={size} value={size}>{size} มม.</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               <div className="bg-blue-50/60 border border-blue-200 p-3 rounded-2xl space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold text-blue-900 flex items-center gap-1">
@@ -392,7 +432,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   rows="2"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="เช่น ดำเนินการแก้ไขแล้วท่อ PE 20 มม. แตกชำรุด"
+                  placeholder="เช่น เปลี่ยนท่อ HDPE ขนาด 110 มม. แตกชำรุดเรียบร้อย"
                   className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 ></textarea>
               </div>
