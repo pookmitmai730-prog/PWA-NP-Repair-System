@@ -9,6 +9,12 @@ export default function TrackingSearch({ jobs }) {
   const [searchResult, setSearchResult] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
 
+  // 🕒 ฟังก์ชันช่วยแปลงรูปแบบวัน-เวลาให้แสดงผลมีทั้งวันและเวลาครบถ้วน (แปลง 'T' เป็นช่องว่าง)
+  const formatThaiDateTime = (dateTimeStr) => {
+    if (!dateTimeStr) return '-';
+    return String(dateTimeStr).replace('T', ' ');
+  };
+
   const handleSearch = (e) => {
     e.preventDefault();
     if (!searchTerm.trim()) return;
@@ -42,28 +48,28 @@ export default function TrackingSearch({ jobs }) {
       label: 'รับแจ้งเรื่อง', 
       desc: 'บันทึกคำร้องเข้าระบบ', 
       icon: Clock,
-      time: searchResult?.receivedAt || searchResult?.createdAt || '-'
+      time: formatThaiDateTime(searchResult?.receivedAt || searchResult?.createdAt) // 🕒 ใช้ฟังก์ชันแปลงเวลา
     },
     { 
       step: 2, 
       label: 'จ่ายงานช่าง', 
       desc: 'มอบหมายทีมช่างภาคสนาม', 
       icon: ShieldCheck,
-      time: searchResult?.dispatchedAt || (searchResult?.status !== 'PENDING' ? 'จ่ายงานแล้ว' : 'รอจ่ายงาน')
+      time: searchResult?.dispatchedAt ? formatThaiDateTime(searchResult.dispatchedAt) : (searchResult?.status !== 'PENDING' ? 'จ่ายงานแล้ว' : 'รอจ่ายงาน')
     },
     { 
       step: 3, 
       label: 'กำลังซ่อมแซม', 
       desc: 'ทีมช่างเข้าหน้างาน', 
       icon: Truck,
-      time: searchResult?.inProgressAt || (searchResult?.status === 'IN_PROGRESS' || searchResult?.status === 'COMPLETED' ? 'ดำเนินการแล้ว' : 'รอดำเนินการ')
+      time: searchResult?.inProgressAt ? formatThaiDateTime(searchResult.inProgressAt) : (searchResult?.status === 'IN_PROGRESS' || searchResult?.status === 'COMPLETED' ? 'ดำเนินการแล้ว' : 'รอดำเนินการ')
     },
     { 
       step: 4, 
       label: 'ซ่อมเสร็จสิ้น', 
       desc: 'เปิดจ่ายน้ำปกติ / ปิดงาน', 
       icon: CheckCircle2,
-      time: searchResult?.completedAt || (searchResult?.status === 'COMPLETED' ? 'เสร็จสิ้น' : 'รอปิดงาน')
+      time: searchResult?.completedAt ? formatThaiDateTime(searchResult.completedAt) : (searchResult?.status === 'COMPLETED' ? 'เสร็จสิ้น' : 'รอปิดงาน')
     },
   ];
 
@@ -142,7 +148,7 @@ export default function TrackingSearch({ jobs }) {
                 </div>
               </div>
 
-              {/* Express Stepper Timeline พร้อมแสดงวันเวลาใต้แต่ละขั้นตอน */}
+              {/* Express Stepper Timeline */}
               <div className="py-2">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 relative">
                   {steps.map((s) => {
@@ -228,7 +234,7 @@ export default function TrackingSearch({ jobs }) {
                       <Clock className="w-4 h-4 text-slate-400 shrink-0" />
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase font-bold block">วันเวลาที่รับแจ้ง</span>
-                        <p className="font-mono text-slate-400 text-[11px]">{searchResult.receivedAt || searchResult.createdAt}</p>
+                        <p className="font-mono text-slate-400 text-[11px]">{formatThaiDateTime(searchResult.receivedAt || searchResult.createdAt)}</p>
                       </div>
                     </div>
 
@@ -237,7 +243,7 @@ export default function TrackingSearch({ jobs }) {
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                         <div>
                           <span className="text-[10px] text-emerald-500 uppercase font-bold block">วันที่ซ่อมเสร็จสิ้น</span>
-                          <p className="font-mono text-emerald-300 text-[11px]">{searchResult.completedAt}</p>
+                          <p className="font-mono text-emerald-300 text-[11px]">{formatThaiDateTime(searchResult.completedAt)}</p>
                         </div>
                       </div>
                     )}
@@ -253,7 +259,7 @@ export default function TrackingSearch({ jobs }) {
                 <AlertCircle className="w-6 h-6" />
               </div>
               <p className="text-sm font-bold text-slate-200">ไม่พบข้อมูลตามเลขที่หรือเบอร์โทรศัพท์นี้</p>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">โปรดตรวจสอบเลขที่รับแจ้ง (เช่น S2026101900440) หรือเบอร์โทรศัพท์แล้วลองใหม่อีกครั้ง</p>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">โปรดตรวจสอบเลขที่รับแจ้งหรือเบอร์โทรศัพท์แล้วลองใหม่อีกครั้ง</p>
             </div>
           )}
         </div>
