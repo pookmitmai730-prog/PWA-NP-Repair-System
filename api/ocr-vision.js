@@ -1,20 +1,18 @@
 module.exports = async function handler(req, res) {
-  // ตั้งค่า Header ป้องกัน CORS และกำหนดให้ตอบกลับเป็น JSON เสมอ
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
-    return.status(405).json({ success: false, error: `Method ${req.method} Not Allowed` });
+    return res.status(405).json({ success: false, error: `Method ${req.method} Not Allowed` });
   }
 
   try {
-    // ป้องกันกรณี body เป็น string หรือ object
     let body = req.body;
     if (typeof body === 'string') {
       try {
         body = JSON.parse(body);
       } catch (e) {
-        // ถ้า parse ไม่ได้ปล่อยไว้
+        // ignore
       }
     }
 
