@@ -1,390 +1,213 @@
 import React, { useState } from 'react';
-import { X, FileText, Phone, MapPin, Calendar, Tag, AlertCircle, User, Radio, Send, Users, Upload, Loader2, Sparkles } from 'lucide-react';
+import { saveJobToFirebase } from '../services/firebase';
 
-export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
-  // ค่าว่างสำหรับเคลียร์ฟอร์มทุกครั้งก่อนอัปโหลดภาพใหม่
-  const emptyFormState = {
-    phone: '',
-    channel: '',
+export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
+  if (!isOpen) return null;
+
+  const [loading, setLoading] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const [formData, setFormData] = useState({
+    id: 'JOB-' + Date.now().toString().slice(-6),
     receivedNo: '',
-    receivedAt: '',
-    complaintType: '',
+    receivedAt: new Date().toISOString().split('T')[0],
+    channel: 'รับแจ้งทางโทรศัพท์',
+    complaintType: 'ท่อแตก/รั่ว',
     complainantInfo: '',
-    complaintTopic: '',
+    complaintTopic: 'แจ้งท่อประปาชำรุด',
     details: '',
     location: '',
     receiverName: '',
-    reporterName: ''
-  };
-
-  const [formData, setFormData] = useState(emptyFormState);
-  const [isProcessingImage, setIsProcessingImage] = useState(false);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [statusMessage, setStatusMessage] = useState('');
-
-  if (!isOpen) return null;
+    reporterName: '',
+    status: 'รอดำเนินการ'
+  });
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // 📸 ฟังก์ชันอัปโหลดภาพ พร้อมบีบอัดลดขนาดและส่งให้ AI Vision API อ่านเอกสารอย่างรวดเร็ว
+  // ฟังก์ชันย่อขนาดภาพและส่ง OCR
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    setImagePreview(URL.createObjectURL(file));
+    setOcrLoading(true);
+    setError(null);
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
     
-    // 1. เคลียร์ข้อมูลเดิมใน Textbox ทั้งหมดให้เป็นค่าว่างทันทีก่อนตามที่คุณต้องการ
-    setFormData(emptyFormState);
-    setIsProcessingImage(true);
-    setStatusMessage('กำลังเตรียมไฟล์ภาพ...');
+    reader.onload = () => {
+      const img = new Image();
+      img.src = reader.result;
+      
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 1024; // จำกัดขนาดไม่เกิน 1024px เพื่อลด Payload size
 
-    try {
-      // 2. บีบอัดขนาดภาพย่อส่วนเบื้องต้น เพื่อให้ส่งข้อมูลผ่านเน็ตได้เร็วขึ้น
-      const compressedBase64 = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (event) => {
-          const img = new Image();
-          img.src = event.target.result;
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            let width = img.width;
-            let height = img.height;
-            
-            // จำกัดความกว้างสูงสุดไม่เกิน 1200px เพื่อความรวดเร็วในการส่ง API
-            const maxWidth = 1200;
-            if (width > maxWidth) {
-              height = Math.round((height * maxWidth) / width);
-              width = maxWidth;
-            }
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
 
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-            
-            // แปลงเป็น Base64 แบบลดขนาดลงเล็กน้อย (JPEG 85%)
-            resolve(canvas.toDataURL('image/jpeg', 0.85));
-          };
-        };
-      });
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
 
-      setStatusMessage('กำลังส่งภาพให้ AI Vision อ่านข้อมูล (รอสักครู่)...');
+        // แปลงเป็น JPEG คุณภาพ 0.7 (ขนาดไฟล์จะลดลงเหลือหลักร้อย KB ปลอดภัย 100%)
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
 
-      // 3. ตั้งเวลา Timeout ป้องกันค้าง (กำหนด 15 วินาที)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+        try {
+          const response = await fetch('/api/ocr-vision', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: compressedBase64 }),
+          });
 
-      const response = await fetch('/api/ocr-vision', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: compressedBase64 }),
-        signal: controller.signal
-      });
+          const result = await response.json();
 
-      clearTimeout(timeoutId);
-      const result = await response.json();
+          if (!response.ok || !result.success) {
+            throw new Error(result.error || 'ไม่สามารถประมวลผล OCR ได้');
+          }
 
-      if (result.success && result.data) {
-        // 4. นำข้อมูลที่ AI อ่านได้มาหยอดลงเท็กซ์บ็อกซ์ให้ตรงหัวข้อเป๊ะๆ รวมถึงเลขที่รับแจ้ง
-        setFormData({
-          phone: result.data.phone || '',
-          channel: result.data.channel || '',
-          receivedNo: result.data.receivedNo || '',
-          receivedAt: result.data.receivedAt || '',
-          complaintType: result.data.complaintType || '',
-          complainantInfo: result.data.complainantInfo || '-',
-          complaintTopic: result.data.complaintTopic || '',
-          details: result.data.details || '',
-          location: result.data.location || '',
-          receiverName: result.data.receiverName || '',
-          reporterName: result.data.reporterName || ''
-        });
-      } else {
-        alert("AI ไม่สามารถอ่านข้อมูลจากภาพนี้ได้ กรุณากรอกข้อมูลด้วยตนเอง");
-      }
-    } catch (err) {
-      console.error("Vision API Error:", err);
-      if (err.name === 'AbortError') {
-        alert("การเชื่อมต่อใช้เวลานานเกินไป (Timeout) กรุณาลองใหม่อีกครั้ง");
-      } else {
-        alert("เกิดข้อผิดพลาดในการเชื่อมต่อระบบอ่านภาพบน Vercel");
-      }
-    } finally {
-      setIsProcessingImage(false);
-    }
+          const data = result.data;
+
+          setFormData(prev => ({
+            ...prev,
+            receivedNo: data.receivedNo || prev.receivedNo,
+            receivedAt: data.receivedAt || prev.receivedAt,
+            channel: data.channel || prev.channel,
+            complaintType: data.complaintType || prev.complaintType,
+            complainantInfo: data.complainantInfo || prev.complainantInfo,
+            complaintTopic: data.complaintTopic || prev.complaintTopic,
+            details: data.details || prev.details,
+            location: data.location || prev.location,
+            receiverName: data.receiverName || prev.receiverName,
+            reporterName: data.reporterName || prev.reporterName,
+          }));
+
+        } catch (err) {
+          console.error('Vision API Error:', err);
+          setError(err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI OCR');
+        } finally {
+          setOcrLoading(false);
+        }
+      };
+    };
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.phone || !formData.location || !formData.complaintTopic || !formData.receivedNo) {
-      alert("กรุณากรอกข้อมูลเลขที่รับแจ้ง เบอร์โทร หัวข้อการร้องเรียน และบริเวณที่เกิดเหตุให้ครบถ้วน");
-      return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      await saveJobToFirebase(formData);
+      if (onJobCreated) onJobCreated(formData);
+      onClose();
+    } catch (err) {
+      console.error('Firebase Save Error:', err);
+      setError('ไม่สามารถบันทึกข้อมูลลงฐานข้อมูลได้');
+    } finally {
+      setLoading(false);
     }
-
-    onSubmit({
-      ...formData,
-      issueType: formData.complaintTopic,
-    });
-
-    onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden my-8 border border-slate-100">
-        
-        {/* Header Modal */}
-        <div className="bg-gradient-to-r from-blue-900 to-indigo-900 text-white px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <FileText className="w-5 h-5 text-cyan-400" />
-            <h3 className="font-bold text-base">รายละเอียดงานรับแจ้ง</h3>
-          </div>
-          <button 
-            type="button"
-            onClick={onClose}
-            className="text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6 my-8">
+        <div className="flex justify-between items-center pb-4 border-b border-gray-200">
+          <h2 className="text-xl font-bold text-gray-800">เพิ่มใบแจ้งซ่อมใหม่ (ด้วยระบบ AI OCR)</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl font-bold">&times;</button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto font-sans">
-          
-          {/* 📸 ส่วนอัปโหลดรูปภาพ */}
-          <div className="bg-indigo-50/60 border-2 border-dashed border-indigo-300 rounded-2xl p-4 text-center space-y-2 relative hover:bg-indigo-50 transition">
-            <input 
-              type="file" 
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
-            />
-            
-            {isProcessingImage ? (
-              <div className="flex flex-col items-center justify-center py-2 text-indigo-600 space-y-1">
-                <Loader2 className="w-6 h-6 animate-spin" />
-                <span className="text-xs font-bold">{statusMessage}</span>
-              </div>
-            ) : imagePreview ? (
-              <div className="flex items-center justify-center gap-3">
-                <img src={imagePreview} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-indigo-300" />
-                <div className="text-left">
-                  <p className="text-xs font-bold text-indigo-900 flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> ล้างค่าเก่าและอ่านข้อมูลจากภาพสำเร็จ
-                  </p>
-                  <p className="text-[10px] text-indigo-600">คลิกหรือเลือกไฟล์ใหม่เพื่อเปลี่ยนภาพ</p>
-                </div>
-              </div>
-            ) : (
-              <div className="py-2 space-y-1">
-                <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-sm">
-                  <Upload className="w-5 h-5" />
-                </div>
-                <p className="text-xs font-bold text-slate-700">อัปโหลดไฟล์ภาพใบรับแจ้ง เพื่อให้ AI Vision อ่านข้อมูลอัตโนมัติ</p>
-                <p className="text-[10px] text-slate-400">ระบบจะเคลียร์ช่องกรอกทั้งหมด และนำข้อมูลจากภาพมาใส่ให้ตรงหัวข้อทันที</p>
-              </div>
-            )}
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <label className="block text-sm font-medium text-blue-900 mb-2">
+            📸 อัปโหลดรูปภาพใบแจ้งซ่อม เพื่อให้ AI กรอกข้อมูลอัตโนมัติ:
+          </label>
+          <input 
+            type="file" 
+            accept="image/*" 
+            onChange={handleImageUpload}
+            disabled={ocrLoading}
+            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+          />
+          {ocrLoading && (
+            <p className="mt-2 text-sm text-blue-600 font-medium animate-pulse">
+              ⏳ กำลังบีบอัดภาพและให้ AI อ่านข้อมูล กรุณารอสักครู่...
+            </p>
+          )}
+        </div>
+
+        {error && (
+          <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">เลขที่รับแจ้ง</label>
+              <input type="text" name="receivedNo" value={formData.receivedNo} onChange={handleChange} className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">วันที่รับแจ้ง</label>
+              <input type="date" name="receivedAt" value={formData.receivedAt} onChange={handleChange} className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm" />
+            </div>
           </div>
 
-          {/* 1. เบอร์โทร */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">ช่องทางการรับแจ้ง</label>
+              <input type="text" name="channel" value={formData.channel} onChange={handleChange} className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">ประเภทการร้องเรียน</label>
+              <input type="text" name="complaintType" value={formData.complaintType} onChange={handleChange} className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm" />
+            </div>
+          </div>
+
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-              <Phone className="w-3.5 h-3.5 text-blue-600" /> เบอร์โทร *
-            </label>
-            <input
-              type="tel"
-              name="phone"
-              value={formData.phone}
-              onChange={handleChange}
-              placeholder="0813021658"
-              required
-              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-mono font-semibold focus:ring-2 focus:ring-blue-500"
-            />
+            <label className="block text-sm font-medium text-gray-700">บริเวณที่เกิดเหตุ</label>
+            <input type="text" name="location" value={formData.location} onChange={handleChange} className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm" />
           </div>
 
-          {/* 2. ช่องทางการรับแจ้ง */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-              <Radio className="w-3.5 h-3.5 text-blue-600" /> ช่องทางการรับแจ้ง *
-            </label>
-            <input
-              type="text"
-              name="channel"
-              value={formData.channel}
-              onChange={handleChange}
-              placeholder="โทรศัพท์ไปที่ กปภ.สาขา/กปภ.เขต"
-              required
-              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-blue-500 font-medium"
-            />
+            <label className="block text-sm font-medium text-gray-700">รายละเอียดการรับแจ้ง</label>
+            <textarea name="details" rows="3" value={formData.details} onChange={handleChange} className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm"></textarea>
           </div>
 
-          {/* Header ส่วนรายละเอียดการรับแจ้ง */}
-          <div className="bg-slate-100 p-2.5 rounded-xl border-l-4 border-blue-600 font-bold text-xs text-blue-900 mt-2">
-            รายละเอียดการรับแจ้ง
-          </div>
-
-          {/* 3. เลขที่รับแจ้ง และ 4. วันที่รับแจ้ง */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-                <Tag className="w-3.5 h-3.5 text-blue-600" /> เลขที่รับแจ้ง *
-              </label>
-              <input
-                type="text"
-                name="receivedNo"
-                value={formData.receivedNo}
-                onChange={handleChange}
-                placeholder="S2026102100614"
-                className="w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-blue-700"
-                required
-              />
+              <label className="block text-sm font-medium text-gray-700">ชื่อผู้แจ้ง</label>
+              <input type="text" name="reporterName" value={formData.reporterName} onChange={handleChange} className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm" />
             </div>
-
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5 text-blue-600" /> วันที่รับแจ้ง *
-              </label>
-              <input
-                type="text"
-                name="receivedAt"
-                value={formData.receivedAt}
-                onChange={handleChange}
-                placeholder="21/10/2569"
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-mono text-slate-700 focus:ring-2 focus:ring-blue-500"
-                required
-              />
+              <label className="block text-sm font-medium text-gray-700">ข้อมูลผู้ร้องเรียน / เบอร์โทร</label>
+              <input type="text" name="complainantInfo" value={formData.complainantInfo} onChange={handleChange} className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">ผู้รับแจ้ง</label>
+              <input type="text" name="receiverName" value={formData.receiverName} onChange={handleChange} className="mt-1 block w-full rounded-md border border-gray-300 p-2 shadow-sm" />
             </div>
           </div>
 
-          {/* 5. ประเภทการร้องเรียน และ 6. ข้อมูลผู้ร้องเรียน */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-                <AlertCircle className="w-3.5 h-3.5 text-blue-600" /> ประเภทการร้องเรียน *
-              </label>
-              <input
-                type="text"
-                name="complaintType"
-                value={formData.complaintType}
-                onChange={handleChange}
-                placeholder="การแจ้งเหตุ"
-                required
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-blue-500 font-medium"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-                <Users className="w-3.5 h-3.5 text-blue-600" /> ข้อมูลผู้ร้องเรียน
-              </label>
-              <input
-                type="text"
-                name="complainantInfo"
-                value={formData.complainantInfo}
-                onChange={handleChange}
-                placeholder="-"
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          {/* 7. หัวข้อการร้องเรียน */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">หัวข้อการร้องเรียน *</label>
-            <textarea
-              name="complaintTopic"
-              rows="2"
-              value={formData.complaintTopic}
-              onChange={handleChange}
-              placeholder="พบท่อแตกรั่ว : ท่อแตกรั่วขนาดเส้นผ่าศูนย์กลาง 2 นิ้วลงมา (ท่อที่อยู่อาศัย)"
-              required
-              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-rose-600 focus:ring-2 focus:ring-blue-500"
-            ></textarea>
-          </div>
-
-          {/* 8. รายละเอียดการรับแจ้ง */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">รายละเอียดการรับแจ้ง</label>
-            <textarea
-              name="details"
-              rows="2"
-              value={formData.details}
-              onChange={handleChange}
-              placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
-              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500"
-            ></textarea>
-          </div>
-
-          {/* 9. บริเวณที่เกิดเหตุ */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5 text-rose-500" /> บริเวณที่เกิดเหตุ *
-            </label>
-            <textarea
-              name="location"
-              rows="3"
-              value={formData.location}
-              onChange={handleChange}
-              placeholder="142/8 หมู่บ้าน/อาคาร น้อยใต้ ถนน ประชาร่วมมิตร หนองญาติ เมืองนครพนม นครพนม"
-              required
-              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-blue-500"
-            ></textarea>
-          </div>
-
-          {/* 10. ผู้รับแจ้ง และ ผู้แจ้ง */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-                <User className="w-3.5 h-3.5 text-blue-600" /> ผู้รับแจ้ง
-              </label>
-              <input
-                type="text"
-                name="receiverName"
-                value={formData.receiverName}
-                onChange={handleChange}
-                placeholder="เจ้าหน้าที่รับแจ้ง"
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-                <User className="w-3.5 h-3.5 text-blue-600" /> ชื่อผู้แจ้ง / ผู้ร้องเรียน
-              </label>
-              <input
-                type="text"
-                name="reporterName"
-                value={formData.reporterName}
-                onChange={handleChange}
-                placeholder="ชื่อผู้แจ้ง (ถ้ามี)"
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          {/* Buttons Footer */}
-          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
-            >
-              <Send className="w-3.5 h-3.5" /> บันทึกใบรับแจ้ง
+          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+            <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 font-medium">ยกเลิก</button>
+            <button type="submit" disabled={loading} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium disabled:opacity-50">
+              {loading ? 'กำลังบันทึก...' : 'บันทึกใบแจ้งซ่อม'}
             </button>
           </div>
-
         </form>
-
       </div>
     </div>
   );

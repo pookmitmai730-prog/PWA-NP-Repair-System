@@ -1,16 +1,29 @@
 module.exports = async function handler(req, res) {
+  // ตั้งค่า Header ป้องกัน CORS และกำหนดให้ตอบกลับเป็น JSON เสมอ
+  res.setHeader('Content-Type', 'application/json');
+
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
-    return res.status(405).json({ success: false, error: `Method ${req.method} Not Allowed` });
+    return.status(405).json({ success: false, error: `Method ${req.method} Not Allowed` });
   }
 
   try {
-    const { image } = req.body;
+    // ป้องกันกรณี body เป็น string หรือ object
+    let body = req.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch (e) {
+        // ถ้า parse ไม่ได้ปล่อยไว้
+      }
+    }
+
+    const image = body?.image;
     if (!image) {
       return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลรูปภาพ' });
     }
 
-    const base64Data = image.split(',')[1] || image;
+    const base64Data = image.includes(',') ? image.split(',')[1] : image;
     const mimeType = image.match(/data:(.*?);base64/)?.[1] || 'image/jpeg';
 
     const apiKey = process.env.GEMINI_API_KEY;
@@ -60,7 +73,6 @@ module.exports = async function handler(req, res) {
     const result = await geminiRes.json();
 
     if (!geminiRes.ok) {
-      console.error('Gemini API Error:', JSON.stringify(result));
       return res.status(500).json({ success: false, error: result.error?.message || 'Gemini API Error' });
     }
 
@@ -78,7 +90,7 @@ module.exports = async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Serverless Function Error:', error.message);
-    return res.status(500).json({ success: false, error: error.message });
+    console.error('Serverless Error:', error);
+    return res.status(500).json({ success: false, error: error.message || 'Server Internal Error' });
   }
 };
