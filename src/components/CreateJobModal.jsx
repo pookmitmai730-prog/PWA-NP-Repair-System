@@ -29,45 +29,60 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // 🤖 ฟังก์ชันอัปโหลดภาพ: เคลียร์ค่าเก่าทั้งหมด และแมปข้อมูลให้ตรงกับภาพ 3301.jpg เป๊ะๆ
+  // 📸 ฟังก์ชันอัปโหลดภาพและส่งให้ AI Vision API อ่านเอกสารจริง
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setImagePreview(URL.createObjectURL(file));
     
-    // 🔴 1. เคลียร์ข้อมูลเดิมใน Textbox ทั้งหมดให้เป็นค่าว่างทันทีก่อนเริ่มประมวลผล
+    // 1. เคลียร์ข้อมูลเดิมใน Textbox ทั้งหมดให้เป็นค่าว่างทันทีก่อนตามที่คุณต้องการ
     setFormData(emptyFormState);
     setIsProcessingImage(true);
-    setStatusMessage('กำลังอัปโหลดภาพเข้าสู่ระบบ AI ประมวลผลเอกสาร...');
+    setStatusMessage('กำลังอัปโหลดภาพและให้ AI Vision อ่านเอกสาร...');
 
     try {
-      setTimeout(() => {
-        setStatusMessage('กำลังแกะรหัสข้อความและจัดหมวดหมู่ตามหัวข้อ...');
-      }, 500);
+      // แปลงไฟล์ภาพเป็น Base64
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      
+      reader.onload = async () => {
+        const base64Image = reader.result;
 
-      setTimeout(() => {
-        // 2. บรรจุข้อมูลที่อ่านได้จากภาพ 3301.jpg ลงในช่องฟอร์มให้ตรงหัวข้อหลักอย่างแม่นยำ[cite: 1]
-        setFormData({
-          phone: '0813021658', //[cite: 1]
-          channel: 'โทรศัพท์ไปที่ กปภ.สาขา/กปภ.เขต', //[cite: 1]
-          receivedNo: 'S2026102100614', //[cite: 1] เลขที่รับแจ้งตรงกับภาพ
-          receivedAt: '21/10/2569', //[cite: 1]
-          complaintType: 'การแจ้งเหตุ', //[cite: 1]
-          complainantInfo: '-', //[cite: 1]
-          complaintTopic: 'พบท่อแตกรั่ว : ท่อแตกรั่วขนาดเส้นผ่าศูนย์กลาง 2 นิ้วลงมา (ท่อที่อยู่อาศัย)', //[cite: 1]
-          details: 'น้ำไหลอ่อนและซึมบริเวณท่อเมน',
-          location: '142/8 หมู่บ้าน/อาคาร น้อยใต้ ถนน ประชาร่วมมิตร หนองญาติ เมืองนครพนม นครพนม', //[cite: 1]
-          receiverName: 'เจ้าหน้าที่รับแจ้ง (กปภ.สาขานครพนม)',
-          reporterName: ''
+        // 2. ส่งภาพไปประมวลผลที่ Backend หรือ Serverless API (เช่น Google Apps Script / Node.js API บน Vercel)
+        const response = await fetch('/api/ocr-vision', { // หรือเปลี่ยนเป็น URL ของ Apps Script Web App ของคุณ
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Image })
         });
+
+        const result = await response.json();
+
+        if (result.success && result.data) {
+          // 3. นำข้อมูลที่ AI อ่านได้มาหยอดลงเท็กซ์บ็อกซ์ให้ตรงหัวข้อเป๊ะๆ รวมถึงเลขที่รับแจ้ง
+          setFormData({
+            phone: result.data.phone || '',
+            channel: result.data.channel || '',
+            receivedNo: result.data.receivedNo || '', // เลขที่รับแจ้งจากภาพ
+            receivedAt: result.data.receivedAt || '',
+            complaintType: result.data.complaintType || '',
+            complainantInfo: result.data.complainantInfo || '-',
+            complaintTopic: result.data.complaintTopic || '',
+            details: result.data.details || '',
+            location: result.data.location || '',
+            receiverName: result.data.receiverName || '',
+            reporterName: result.data.reporterName || ''
+          });
+        } else {
+          alert("AI ไม่สามารถอ่านข้อมูลจากภาพนี้ได้ กรุณากรอกข้อมูลด้วยตนเอง");
+        }
         setIsProcessingImage(false);
-      }, 1200);
+      };
 
     } catch (err) {
-      console.error("Processing Error:", err);
+      console.error("Vision API Error:", err);
       setIsProcessingImage(false);
-      alert("ไม่สามารถอ่านข้อความจากภาพได้ กรุณากรอกข้อมูลด้วยตนเอง");
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อระบบอ่านภาพบน Vercel");
     }
   };
 
@@ -107,7 +122,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto font-sans">
           
-          {/* 📸 ส่วนอัปโหลดรูปภาพ (เคลียร์ค่าเก่าอัตโนมัติ) */}
+          {/* 📸 ส่วนอัปโหลดรูปภาพ (เคลียร์ค่าเก่าและส่งให้ AI Vision) */}
           <div className="bg-indigo-50/60 border-2 border-dashed border-indigo-300 rounded-2xl p-4 text-center space-y-2 relative hover:bg-indigo-50 transition">
             <input 
               type="file" 
@@ -126,7 +141,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
                 <img src={imagePreview} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-indigo-300" />
                 <div className="text-left">
                   <p className="text-xs font-bold text-indigo-900 flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> ล้างค่าเก่าและดึงข้อมูลจากภาพสำเร็จ
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> ล้างค่าเก่าและอ่านข้อมูลจากภาพสำเร็จ
                   </p>
                   <p className="text-[10px] text-indigo-600">คลิกหรือเลือกไฟล์ใหม่เพื่อเปลี่ยนภาพ (ฟอร์มจะถูกเคลียร์และสแกนใหม่)</p>
                 </div>
@@ -134,10 +149,10 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
             ) : (
               <div className="py-2 space-y-1">
                 <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-sm">
-                  <Sparkles className="w-5 h-5" />
+                  <Upload className="w-5 h-5" />
                 </div>
-                <p className="text-xs font-bold text-slate-700">อัปโหลดไฟล์ภาพใบรับแจ้ง เพื่อดึงข้อมูลอัตโนมัติ</p>
-                <p className="text-[10px] text-slate-400">ระบบจะเคลียร์ช่องกรอกทั้งหมด และนำข้อมูลจากภาพมาใส่ให้ตรงหัวข้ออย่างแม่นยำ</p>
+                <p className="text-xs font-bold text-slate-700">อัปโหลดไฟล์ภาพใบรับแจ้ง เพื่อให้ AI Vision อ่านข้อมูลอัตโนมัติ</p>
+                <p className="text-[10px] text-slate-400">ระบบจะเคลียร์ช่องกรอกทั้งหมด และนำข้อมูลจากภาพมาใส่ให้ตรงหัวข้อทันที</p>
               </div>
             )}
           </div>
