@@ -29,7 +29,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // 📸 ฟังก์ชันอัปโหลดภาพและส่งให้ AI Vision API อ่านเอกสารจริง
+  // 📸 ฟังก์ชันอัปโหลดภาพ พร้อมบีบอัดลดขนาดและส่งให้ AI Vision API อ่านเอกสารอย่างรวดเร็ว
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -39,50 +39,82 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
     // 1. เคลียร์ข้อมูลเดิมใน Textbox ทั้งหมดให้เป็นค่าว่างทันทีก่อนตามที่คุณต้องการ
     setFormData(emptyFormState);
     setIsProcessingImage(true);
-    setStatusMessage('กำลังอัปโหลดภาพและให้ AI Vision อ่านเอกสาร...');
+    setStatusMessage('กำลังเตรียมไฟล์ภาพ...');
 
     try {
-      // แปลงไฟล์ภาพเป็น Base64
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      
-      reader.onload = async () => {
-        const base64Image = reader.result;
+      // 2. บีบอัดขนาดภาพย่อส่วนเบื้องต้น เพื่อให้ส่งข้อมูลผ่านเน็ตได้เร็วขึ้น
+      const compressedBase64 = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+          const img = new Image();
+          img.src = event.target.result;
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            
+            // จำกัดความกว้างสูงสุดไม่เกิน 1200px เพื่อความรวดเร็วในการส่ง API
+            const maxWidth = 1200;
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
 
-        // 2. ส่งภาพไปประมวลผลที่ Backend หรือ Serverless API (เช่น Google Apps Script / Node.js API บน Vercel)
-        const response = await fetch('/api/ocr-vision', { // หรือเปลี่ยนเป็น URL ของ Apps Script Web App ของคุณ
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: base64Image })
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // แปลงเป็น Base64 แบบลดขนาดลงเล็กน้อย (JPEG 85%)
+            resolve(canvas.toDataURL('image/jpeg', 0.85));
+          };
+        };
+      });
+
+      setStatusMessage('กำลังส่งภาพให้ AI Vision อ่านข้อมูล (รอสักครู่)...');
+
+      // 3. ตั้งเวลา Timeout ป้องกันค้าง (กำหนด 15 วินาที)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      const response = await fetch('/api/ocr-vision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: compressedBase64 }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        // 4. นำข้อมูลที่ AI อ่านได้มาหยอดลงเท็กซ์บ็อกซ์ให้ตรงหัวข้อเป๊ะๆ รวมถึงเลขที่รับแจ้ง
+        setFormData({
+          phone: result.data.phone || '',
+          channel: result.data.channel || '',
+          receivedNo: result.data.receivedNo || '',
+          receivedAt: result.data.receivedAt || '',
+          complaintType: result.data.complaintType || '',
+          complainantInfo: result.data.complainantInfo || '-',
+          complaintTopic: result.data.complaintTopic || '',
+          details: result.data.details || '',
+          location: result.data.location || '',
+          receiverName: result.data.receiverName || '',
+          reporterName: result.data.reporterName || ''
         });
-
-        const result = await response.json();
-
-        if (result.success && result.data) {
-          // 3. นำข้อมูลที่ AI อ่านได้มาหยอดลงเท็กซ์บ็อกซ์ให้ตรงหัวข้อเป๊ะๆ รวมถึงเลขที่รับแจ้ง
-          setFormData({
-            phone: result.data.phone || '',
-            channel: result.data.channel || '',
-            receivedNo: result.data.receivedNo || '', // เลขที่รับแจ้งจากภาพ
-            receivedAt: result.data.receivedAt || '',
-            complaintType: result.data.complaintType || '',
-            complainantInfo: result.data.complainantInfo || '-',
-            complaintTopic: result.data.complaintTopic || '',
-            details: result.data.details || '',
-            location: result.data.location || '',
-            receiverName: result.data.receiverName || '',
-            reporterName: result.data.reporterName || ''
-          });
-        } else {
-          alert("AI ไม่สามารถอ่านข้อมูลจากภาพนี้ได้ กรุณากรอกข้อมูลด้วยตนเอง");
-        }
-        setIsProcessingImage(false);
-      };
-
+      } else {
+        alert("AI ไม่สามารถอ่านข้อมูลจากภาพนี้ได้ กรุณากรอกข้อมูลด้วยตนเอง");
+      }
     } catch (err) {
       console.error("Vision API Error:", err);
+      if (err.name === 'AbortError') {
+        alert("การเชื่อมต่อใช้เวลานานเกินไป (Timeout) กรุณาลองใหม่อีกครั้ง");
+      } else {
+        alert("เกิดข้อผิดพลาดในการเชื่อมต่อระบบอ่านภาพบน Vercel");
+      }
+    } finally {
       setIsProcessingImage(false);
-      alert("เกิดข้อผิดพลาดในการเชื่อมต่อระบบอ่านภาพบน Vercel");
     }
   };
 
@@ -112,6 +144,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
             <h3 className="font-bold text-base">รายละเอียดงานรับแจ้ง</h3>
           </div>
           <button 
+            type="button"
             onClick={onClose}
             className="text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition cursor-pointer"
           >
@@ -122,7 +155,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto font-sans">
           
-          {/* 📸 ส่วนอัปโหลดรูปภาพ (เคลียร์ค่าเก่าและส่งให้ AI Vision) */}
+          {/* 📸 ส่วนอัปโหลดรูปภาพ */}
           <div className="bg-indigo-50/60 border-2 border-dashed border-indigo-300 rounded-2xl p-4 text-center space-y-2 relative hover:bg-indigo-50 transition">
             <input 
               type="file" 
@@ -143,7 +176,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
                   <p className="text-xs font-bold text-indigo-900 flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5 text-amber-500" /> ล้างค่าเก่าและอ่านข้อมูลจากภาพสำเร็จ
                   </p>
-                  <p className="text-[10px] text-indigo-600">คลิกหรือเลือกไฟล์ใหม่เพื่อเปลี่ยนภาพ (ฟอร์มจะถูกเคลียร์และสแกนใหม่)</p>
+                  <p className="text-[10px] text-indigo-600">คลิกหรือเลือกไฟล์ใหม่เพื่อเปลี่ยนภาพ</p>
                 </div>
               </div>
             ) : (
@@ -189,7 +222,7 @@ export default function CreateJobModal({ isOpen, onClose, onSubmit }) {
             />
           </div>
 
-          {/* ส่วนรายละเอียดการรับแจ้ง Header */}
+          {/* Header ส่วนรายละเอียดการรับแจ้ง */}
           <div className="bg-slate-100 p-2.5 rounded-xl border-l-4 border-blue-600 font-bold text-xs text-blue-900 mt-2">
             รายละเอียดการรับแจ้ง
           </div>
