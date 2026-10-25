@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3 } from 'lucide-react';
+import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, ShieldAlert } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 import { saveJobToFirebase } from '../services/firebase';
 
@@ -83,8 +83,14 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setIsAdHocModalOpen(true);
   };
 
-  // ✏️ เปิด Modal เพื่อแก้ไขใบงาน
+  // ✏️ เปิด Modal เพื่อแก้ไขใบงาน (เฉพาะงานที่ช่างเปิดเอง และขึ้นต้นด้วยรหัส Ad-hoc หรือไม่มีช่องแอดมินล็อกไว้)
   const handleOpenEditModal = (job) => {
+    // ตรวจสอบว่าเป็นงานที่แอดมินมอบหมายหรือไม่ (เช่น channel ไม่ใช่ 'พบเหตุหน้างาน/แจ้งฉุกเฉิน')
+    if (job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน') {
+      alert("ไม่อนุญาตให้แก้ไข: งานนี้เป็นงานที่ได้รับมอบหมายจากแอดมิน");
+      return;
+    }
+
     setEditingJob(job);
     
     const isStandardTopic = ['ท่อแตกรั่ว', 'น้ำไม่ไหล/น้ำไหลอ่อน'].includes(job.complaintTopic);
@@ -101,8 +107,13 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setIsAdHocModalOpen(true);
   };
 
-  // 🗑️ ฟังก์ชันลบเรื่อง
+  // 🗑️ ฟังก์ชันลบเรื่อง (เฉพาะงานที่ช่างเปิดเอง)
   const handleDeleteJobAction = async (job) => {
+    if (job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน') {
+      alert("ไม่อนุญาตให้ลบ: งานนี้เป็นงานที่ได้รับมอบหมายจากแอดมิน");
+      return;
+    }
+
     if (job.status === 'COMPLETED') {
       alert("ไม่สามารถลบใบงานที่ซ่อมเสร็จสิ้นแล้วได้");
       return;
@@ -113,7 +124,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         if (onDeleteJob) {
           await onDeleteJob(job.id);
         } else {
-          // เผื่อเรียกตรงไปยังสถานะ CANCELED/DELETED
           await onUpdateJobStatus(job.id, 'DELETED');
         }
         alert("ลบรายการแจ้งซ่อมเรียบร้อยแล้ว");
@@ -195,7 +205,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     );
   };
 
-  // 🔴 บันทึกหรืออัปเดตใบงานด่วนหน้างาน
   const handleSaveAdHocJob = async (e) => {
     e.preventDefault();
     if (!adHocData.location.trim()) {
@@ -212,7 +221,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       : adHocData.complaintTopicType;
 
     if (editingJob) {
-      // โหมดแก้ไขข้อมูลใบงานเดิม
       const updatedPayload = {
         receivedNo: adHocData.receivedNo,
         reporterName: adHocData.reporterName.trim() || 'ไม่ระบุชื่อ',
@@ -233,7 +241,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         alert("เกิดข้อผิดพลาดในการอัปเดตข้อมูล");
       }
     } else {
-      // โหมดสร้างใบงานใหม่
       const newAdHocJob = {
         id: 'JOB-' + Date.now().toString().slice(-6),
         receivedNo: adHocData.receivedNo,
@@ -396,105 +403,116 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 <p className="text-xs text-slate-400">หากพบท่อแตกระหว่างทาง สามารถกดปุ่ม "เปิดใบงานด่วน" ด้านบนได้ทันที</p>
               </div>
             ) : (
-              activeJobs.map((job) => (
-                <div key={job.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3 relative overflow-hidden">
-                  
-                  <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${
-                    job.urgency === 'ด่วนมาก' ? 'bg-rose-600' :
-                    job.urgency === 'ด่วน' ? 'bg-amber-500' : 'bg-slate-300'
-                  }`} />
+              activeJobs.map((job) => {
+                // เช็คว่าเป็นงานที่แอดมินมอบหมายมาจากส่วนกลางหรือไม่
+                const isAdminAssigned = job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน';
 
-                  <div className="flex justify-between items-start pl-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
-                        {job.receivedNo || job.id}
-                      </span>
+                return (
+                  <div key={job.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3 relative overflow-hidden">
+                    
+                    <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${
+                      job.urgency === 'ด่วนมาก' ? 'bg-rose-600' :
+                      job.urgency === 'ด่วน' ? 'bg-amber-500' : 'bg-slate-300'
+                    }`} />
 
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 ${
-                        job.urgency === 'ด่วนมาก' 
-                          ? 'bg-rose-100 text-rose-700 border border-rose-200 animate-pulse' 
-                          : job.urgency === 'ด่วน'
-                          ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        {job.urgency === 'ด่วนมาก' && <AlertTriangle className="w-3 h-3 text-rose-600" />}
-                        {job.urgency || 'ปกติ'}
-                      </span>
+                    <div className="flex justify-between items-start pl-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
+                          {job.receivedNo || job.id}
+                        </span>
+
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 ${
+                          job.urgency === 'ด่วนมาก' 
+                            ? 'bg-rose-100 text-rose-700 border border-rose-200 animate-pulse' 
+                            : job.urgency === 'ด่วน'
+                            ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {job.urgency === 'ด่วนมาก' && <AlertTriangle className="w-3 h-3 text-rose-600" />}
+                          {job.urgency || 'ปกติ'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {/* 🔒 แสดงปุ่มแก้ไข/ลบ เฉพาะงานที่ช่างเปิดเอง และยังไม่ปิดงาน */}
+                        {!isAdminAssigned && job.status !== 'COMPLETED' && (
+                          <>
+                            <button
+                              onClick={() => handleOpenEditModal(job)}
+                              className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                              title="แก้ไขข้อมูลใบแจ้งซ่อม"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteJobAction(job)}
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                              title="ลบรายการแจ้งซ่อมนี้"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+
+                        {isAdminAssigned && (
+                          <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-0.5" title="งานที่ได้รับมอบหมายจากแอดมิน (ไม่สามารถแก้ไข/ลบได้)">
+                            <ShieldAlert className="w-3 h-3 text-slate-500" /> งานแอดมิน
+                          </span>
+                        )}
+
+                        <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ml-1 ${
+                          job.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {job.status === 'IN_PROGRESS' ? 'กำลังซ่อม' : 'รอเริ่มซ่อม'}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-1">
-                      {/* 🛠️ ปุ่มแก้ไขและลบ แสดงเฉพาะเคสที่ยังไม่ปิดงาน (COMPLETED) */}
-                      {job.status !== 'COMPLETED' && (
-                        <>
-                          <button
-                            onClick={() => handleOpenEditModal(job)}
-                            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
-                            title="แก้ไขข้อมูลใบแจ้งซ่อม"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteJobAction(job)}
-                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                            title="ลบรายการแจ้งซ่อมนี้"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
+                    <div className="space-y-1 pl-2">
+                      <h4 className="font-bold text-slate-800 text-sm">{job.complaintTopic || job.issueType}</h4>
+                      <p className="text-xs text-slate-600 flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        <span className="font-semibold">{job.reporterName}</span>
+                        <a href={`tel:${job.phone}`} className="text-blue-600 hover:underline flex items-center gap-0.5 ml-auto font-mono">
+                          <Phone className="w-3 h-3" /> {job.phone}
+                        </a>
+                      </p>
+                      <p className="text-xs text-slate-600 flex items-start gap-1.5 mt-1">
+                        <MapPin className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                        <span>{job.location}</span>
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex gap-2 pl-2">
+                      {job.status === 'DISPATCHED' && (
+                        <button 
+                          onClick={() => {
+                            const now = new Date();
+                            const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+                            const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
+                            onUpdateJobStatus(job.id, 'IN_PROGRESS', { inProgressAt: currentDateTime });
+                          }}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+                        >
+                          <Truck className="w-4 h-4" /> เริ่มเดินทาง / ถึงหน้างาน
+                        </button>
                       )}
 
-                      <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ml-1 ${
-                        job.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
-                      }`}>
-                        {job.status === 'IN_PROGRESS' ? 'กำลังซ่อม' : 'รอเริ่มซ่อม'}
-                      </span>
+                      {job.status === 'IN_PROGRESS' && (
+                        <button 
+                          onClick={() => {
+                            setSelectedJob(job);
+                            setCoords({ lat: null, lng: null });
+                          }}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-4 h-4" /> บันทึกผลซ่อม / ปิดงาน
+                        </button>
+                      )}
                     </div>
                   </div>
-
-                  <div className="space-y-1 pl-2">
-                    <h4 className="font-bold text-slate-800 text-sm">{job.complaintTopic || job.issueType}</h4>
-                    <p className="text-xs text-slate-600 flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                      <span className="font-semibold">{job.reporterName}</span>
-                      <a href={`tel:${job.phone}`} className="text-blue-600 hover:underline flex items-center gap-0.5 ml-auto font-mono">
-                        <Phone className="w-3 h-3" /> {job.phone}
-                      </a>
-                    </p>
-                    <p className="text-xs text-slate-600 flex items-start gap-1.5 mt-1">
-                      <MapPin className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                      <span>{job.location}</span>
-                    </p>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 flex gap-2 pl-2">
-                    {job.status === 'DISPATCHED' && (
-                      <button 
-                        onClick={() => {
-                          const now = new Date();
-                          const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-                          const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
-                          onUpdateJobStatus(job.id, 'IN_PROGRESS', { inProgressAt: currentDateTime });
-                        }}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
-                      >
-                        <Truck className="w-4 h-4" /> เริ่มเดินทาง / ถึงหน้างาน
-                      </button>
-                    )}
-
-                    {job.status === 'IN_PROGRESS' && (
-                      <button 
-                        onClick={() => {
-                          setSelectedJob(job);
-                          setCoords({ lat: null, lng: null });
-                        }}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-4 h-4" /> บันทึกผลซ่อม / ปิดงาน
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         ) : (
@@ -642,7 +660,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         )}
       </div>
 
-      {/* 🔴 Modal สำหรับเปิดใบงานด่วน หรือแก้ไขใบงานเดิม */}
+      {/* Modal สำหรับเปิดใบงานด่วน หรือแก้ไขใบงานเดิม */}
       {isAdHocModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
