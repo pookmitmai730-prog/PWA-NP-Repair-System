@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 
 export default function ReportsView({ jobs }) {
   const [reportType, setReportType] = useState('all');
@@ -51,7 +51,7 @@ export default function ReportsView({ jobs }) {
         }
       }
 
-      // 2. กรองตามคำค้นหา (เลขรับแจ้ง, เลข Smart 1662, ผู้แจ้ง, เบอร์โทร, สถานที่, ทีมช่าง)
+      // 2. กรองตามคำค้นหา (เลขรับแจ้ง, เลข Smart 1662, ผู้แจ้ง, เบอร์โทร, สถานที่, ทีมช่าง, ชนิดท่อ)
       if (tableSearchTerm.trim()) {
         const term = tableSearchTerm.trim().toLowerCase();
         const matchNo = (job.receivedNo || job.id || '').toLowerCase().includes(term);
@@ -60,8 +60,9 @@ export default function ReportsView({ jobs }) {
         const matchPhone = (job.phone || '').toLowerCase().includes(term);
         const matchLocation = (job.location || '').toLowerCase().includes(term);
         const matchTech = (job.technician || '').toLowerCase().includes(term);
+        const matchPipe = (job.pipeType || '').toLowerCase().includes(term);
 
-        if (!matchNo && !matchSmart && !matchName && !matchPhone && !matchLocation && !matchTech) {
+        if (!matchNo && !matchSmart && !matchName && !matchPhone && !matchLocation && !matchTech && !matchPipe) {
           return false;
         }
       }
@@ -85,6 +86,7 @@ export default function ReportsView({ jobs }) {
     setCurrentPage(1);
   };
 
+  // สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง
   const teamSummary = filteredJobs
     .filter(j => j.status === 'COMPLETED')
     .reduce((acc, job) => {
@@ -94,6 +96,18 @@ export default function ReportsView({ jobs }) {
       }
       
       acc[techName] = (acc[techName] || 0) + 1;
+      return acc;
+    }, {});
+
+  // 📊 สรุปชนิดท่อและขนาดท่อที่ใช้ซ่อม (ตามเงื่อนไขเวลาที่เลือก)
+  const pipeSummary = filteredJobs
+    .filter(j => j.status === 'COMPLETED')
+    .reduce((acc, job) => {
+      const type = job.pipeType || 'ไม่ระบุชนิด';
+      const size = job.pipeSize ? `${job.pipeSize} มม.` : 'ไม่ระบุขนาด';
+      const key = `${type} (ขนาด ${size})`;
+      
+      acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
 
@@ -117,7 +131,7 @@ export default function ReportsView({ jobs }) {
       return;
     }
 
-    const headers = ["ReceivedNo", "Smart1662No", "CreatedAt", "CompletedAt", "ReporterName", "Phone", "Location", "Latitude", "Longitude", "ComplaintTopic", "Technician", "Status", "Notes"];
+    const headers = ["ReceivedNo", "Smart1662No", "CreatedAt", "CompletedAt", "ReporterName", "Phone", "Location", "Latitude", "Longitude", "ComplaintTopic", "PipeType", "PipeSize", "Technician", "Status", "Notes"];
     const csvRows = [headers.join(",")];
 
     filteredJobs.forEach(job => {
@@ -132,6 +146,8 @@ export default function ReportsView({ jobs }) {
         `"${job.latitude || ""}"`,
         `"${job.longitude || ""}"`,
         `"${job.complaintTopic || job.issueType || ""}"`,
+        `"${job.pipeType || ""}"`,
+        `"${job.pipeSize || ""}"`,
         `"${job.technician || ""}"`,
         job.status || "",
         `"${(job.notes || job.description || "").replace(/"/g, '""')}"`
@@ -320,6 +336,13 @@ export default function ReportsView({ jobs }) {
             ${job.smart1662No ? `<div><strong>เลขที่ปิดงานซ่อม Smart 1662:</strong> <span style="font-family: monospace; color: #0891b2; font-weight: bold;">${job.smart1662No}</span></div>` : ''}
             <div><strong>สถานที่ซ่อม:</strong> ${job.location || '-'}</div>
 
+            ${job.pipeType || job.pipeSize ? `
+              <div style="margin-top: 6px; border-top: 1px solid #e2e8f0; padding-top: 6px;">
+                <strong>วัสดุท่อที่ซ่อม:</strong> 
+                <span style="color: #ea580c; font-weight: bold;">ท่อชนิด ${job.pipeType || 'ไม่ระบุ'} ขนาด ${job.pipeSize ? job.pipeSize + ' มม.' : 'ไม่ระบุ'}</span>
+              </div>
+            ` : ''}
+
             ${job.latitude && job.longitude ? `
               <div><strong>พิกัด GPS โลเคชั่น:</strong> 
                 <span style="font-family: monospace; color: #059669; font-weight: bold;">${job.latitude}, ${job.longitude}</span>
@@ -359,7 +382,7 @@ export default function ReportsView({ jobs }) {
           </div>
 
           <div class="info-box section-block" style="margin-top: 15px;">
-            <strong>การแก้ไข / อุปกรณ์:</strong> ${job.notes || job.description || '-'}
+            <strong>อุปกรณ์ที่ใช้:</strong> ${job.notes || job.description || '-'}
           </div>
 
           <div class="signature-section">
@@ -385,7 +408,7 @@ export default function ReportsView({ jobs }) {
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <TrendingUp className="w-6 h-6 text-blue-600" />
-            รายงานสรุปผลการปฏิบัติงานซ่อมท่อประปา
+            รายงานผลการปฏิบัติงานซ่อมท่อประปา
           </h2>
           <p className="text-xs text-slate-500 mt-1">กปภ.สาขานครพนม - ติดตามสถิติและการดำเนินงาน (เรียงจากล่าสุด)</p>
         </div>
@@ -435,27 +458,52 @@ export default function ReportsView({ jobs }) {
         </div>
       </div>
 
-      {/* 📊 สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง */}
-      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
-        <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-          <Users className="w-4 h-4 text-indigo-600" />
-          สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง (ตามเงื่อนไขเวลาที่เลือก)
-        </h3>
-        
-        {Object.keys(teamSummary).length === 0 ? (
-          <p className="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลงานที่ซ่อมเสร็จสิ้นในช่วงเวลานี้</p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {Object.entries(teamSummary).map(([teamName, count]) => (
-              <div key={teamName} className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl flex justify-between items-center shadow-xs">
-                <span className="text-xs font-bold text-slate-700 truncate">{teamName}</span>
-                <span className="bg-indigo-600 text-white text-xs font-bold px-2.5 py-1 rounded-xl shadow-xs">
-                  {count} จุด
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* 📊 สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
+          <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+            <Users className="w-4 h-4 text-indigo-600" />
+            สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง (ตามเงื่อนไขเวลา)
+          </h3>
+          
+          {Object.keys(teamSummary).length === 0 ? (
+            <p className="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลงานที่ซ่อมเสร็จสิ้นในช่วงเวลานี้</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {Object.entries(teamSummary).map(([teamName, count]) => (
+                <div key={teamName} className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl flex justify-between items-center shadow-xs">
+                  <span className="text-xs font-bold text-slate-700 truncate">{teamName}</span>
+                  <span className="bg-indigo-600 text-white text-xs font-bold px-2.5 py-1 rounded-xl shadow-xs">
+                    {count} จุด
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 🛠️ สรุปชนิดท่อและขนาดท่อที่ใช้ซ่อม (ใหม่) */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
+          <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+            <Layers className="w-4 h-4 text-orange-600" />
+            สรุปชนิดและขนาดท่อที่ใช้ซ่อม (ตามเงื่อนไขเวลา)
+          </h3>
+          
+          {Object.keys(pipeSummary).length === 0 ? (
+            <p className="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลชนิดและขนาดท่อในช่วงเวลานี้</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-40 overflow-y-auto pr-1">
+              {Object.entries(pipeSummary).map(([pipeInfo, count]) => (
+                <div key={pipeInfo} className="bg-orange-50/50 border border-orange-200/80 p-3.5 rounded-2xl flex justify-between items-center shadow-xs">
+                  <span className="text-xs font-bold text-slate-700 truncate">{pipeInfo}</span>
+                  <span className="bg-orange-600 text-white text-xs font-bold px-2.5 py-1 rounded-xl shadow-xs">
+                    {count} จุด
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
@@ -478,9 +526,9 @@ export default function ReportsView({ jobs }) {
                 value={tableSearchTerm}
                 onChange={(e) => {
                   setTableSearchTerm(e.target.value);
-                  setCurrentPage(1); // รีเซ็ตหน้าเมื่อพิมพ์ค้นหา
+                  setCurrentPage(1);
                 }}
-                placeholder="ค้นหาเลขรับแจ้ง, 1662, ผู้แจ้ง, สถานที่..."
+                placeholder="ค้นหาเลขรับแจ้ง, 1662, ผู้แจ้ง, ชนิดท่อ..."
                 className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-800 shadow-xs"
               />
             </div>
@@ -501,7 +549,7 @@ export default function ReportsView({ jobs }) {
                 <th className="p-4 font-semibold">เลขที่รับแจ้ง</th>
                 <th className="p-4 font-semibold">ผู้แจ้ง / เบอร์โทร</th>
                 <th className="p-4 font-semibold">หัวข้อร้องเรียน</th>
-                <th className="p-4 font-semibold">บริเวณที่เกิดเหตุ / พิกัด</th>
+                <th className="p-4 font-semibold">บริเวณที่เกิดเหตุ / ชนิดท่อ</th>
                 <th className="p-4 font-semibold text-center">สถานะ</th>
                 <th className="p-4 font-semibold text-center">พิมพ์รายงาน A4</th>
               </tr>
@@ -533,9 +581,9 @@ export default function ReportsView({ jobs }) {
                     </td>
                     <td className="p-4 text-slate-600 max-w-xs">
                       <p className="truncate">{job.location}</p>
-                      {job.latitude && job.longitude && (
-                        <p className="text-[10px] font-mono text-emerald-600 flex items-center gap-1 mt-0.5">
-                          <span className="font-bold">GPS:</span> {job.latitude}, {job.longitude}
+                      {job.pipeType && (
+                        <p className="text-[10px] font-bold text-orange-600 mt-0.5">
+                          ท่อ {job.pipeType} {job.pipeSize ? `(${job.pipeSize} มม.)` : ''}
                         </p>
                       )}
                     </td>
