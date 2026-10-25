@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
-import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X } from 'lucide-react';
+import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3 } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 import { saveJobToFirebase } from '../services/firebase';
 
-export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLogout, onJobCreated }) {
+export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLogout, onJobCreated, onDeleteJob }) {
   const [currentTeam, setCurrentTeam] = useState(localStorage.getItem('pwa_worker_team') || '');
   const [selectedJob, setSelectedJob] = useState(null);
   
   // State สำหรับเปิด Modal เพิ่มใบงานด่วนหน้างาน (Ad-hoc Job)
   const [isAdHocModalOpen, setIsAdHocModalOpen] = useState(false);
+  
+  // State สำหรับแก้ไขงานเดิม (Editing Job)
+  const [editingJob, setEditingJob] = useState(null);
+
   const [adHocData, setAdHocData] = useState({
     receivedNo: '',
     reporterName: '',
@@ -47,7 +51,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 🕒 ฟังก์ชันสร้างเลขที่รับแจ้งอัตโนมัติ (ตัวย่อทีม-วันเวลา-ลำดับรันรวม) ตามเวลาประเทศไทย
+  // 🕒 ฟังก์ชันสร้างเลขที่รับแจ้งอัตโนมัติ ตามเวลาประเทศไทย
   const generateAutoReceivedNo = () => {
     const now = new Date();
     const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
@@ -66,6 +70,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   };
 
   const handleOpenAdHocModal = () => {
+    setEditingJob(null);
     setAdHocData({
       receivedNo: generateAutoReceivedNo(),
       reporterName: '',
@@ -76,6 +81,47 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       urgency: 'ด่วน'
     });
     setIsAdHocModalOpen(true);
+  };
+
+  // ✏️ เปิด Modal เพื่อแก้ไขใบงาน
+  const handleOpenEditModal = (job) => {
+    setEditingJob(job);
+    
+    const isStandardTopic = ['ท่อแตกรั่ว', 'น้ำไม่ไหล/น้ำไหลอ่อน'].includes(job.complaintTopic);
+    
+    setAdHocData({
+      receivedNo: job.receivedNo || job.id,
+      reporterName: job.reporterName !== 'ไม่ระบุชื่อ' ? job.reporterName : '',
+      phone: job.phone !== '-' ? job.phone : '',
+      location: job.location || '',
+      complaintTopicType: isStandardTopic ? job.complaintTopic : 'อื่นๆ',
+      customComplaintTopic: isStandardTopic ? '' : job.complaintTopic,
+      urgency: job.urgency || 'ปกติ'
+    });
+    setIsAdHocModalOpen(true);
+  };
+
+  // 🗑️ ฟังก์ชันลบเรื่อง
+  const handleDeleteJobAction = async (job) => {
+    if (job.status === 'COMPLETED') {
+      alert("ไม่สามารถลบใบงานที่ซ่อมเสร็จสิ้นแล้วได้");
+      return;
+    }
+
+    if (window.confirm(`คุณต้องการลบใบแจ้งซ่อมเลขที่ "${job.receivedNo || job.id}" ใช่หรือไม่?`)) {
+      try {
+        if (onDeleteJob) {
+          await onDeleteJob(job.id);
+        } else {
+          // เผื่อเรียกตรงไปยังสถานะ CANCELED/DELETED
+          await onUpdateJobStatus(job.id, 'DELETED');
+        }
+        alert("ลบรายการแจ้งซ่อมเรียบร้อยแล้ว");
+      } catch (err) {
+        console.error("Error deleting job:", err);
+        alert("เกิดข้อผิดพลาดในการลบรายการ");
+      }
+    }
   };
 
   const getUrgencyWeight = (urgency) => {
@@ -149,7 +195,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     );
   };
 
-  const handleCreateAdHocJob = async (e) => {
+  // 🔴 บันทึกหรืออัปเดตใบงานด่วนหน้างาน
+  const handleSaveAdHocJob = async (e) => {
     e.preventDefault();
     if (!adHocData.location.trim()) {
       alert("กรุณาระบุบริเวณที่เกิดเหตุ");
@@ -164,39 +211,63 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       ? (adHocData.customComplaintTopic.trim() || 'อื่นๆ') 
       : adHocData.complaintTopicType;
 
-    const newAdHocJob = {
-      id: 'JOB-' + Date.now().toString().slice(-6),
-      receivedNo: adHocData.receivedNo,
-      receivedAt: currentDateTime,
-      channel: 'พบเหตุหน้างาน/แจ้งฉุกเฉิน',
-      complaintType: finalComplaintTopic,
-      complainantInfo: adHocData.phone || '-',
-      complaintTopic: finalComplaintTopic,
-      details: 'เปิดใบงานด่วนโดยช่างภาคสนามระหว่างปฏิบัติงาน',
-      location: adHocData.location,
-      reporterName: adHocData.reporterName.trim() || 'ไม่ระบุชื่อ',
-      phone: adHocData.phone.trim() || '-',
-      receiverName: currentTeam + ' (ภาคสนาม)',
-      status: 'IN_PROGRESS',
-      urgency: adHocData.urgency,
-      technician: currentTeam,
-      techName: currentTeam,
-      techPhone: '-',
-      dispatchedAt: currentDateTime,
-      inProgressAt: currentDateTime
-    };
+    if (editingJob) {
+      // โหมดแก้ไขข้อมูลใบงานเดิม
+      const updatedPayload = {
+        receivedNo: adHocData.receivedNo,
+        reporterName: adHocData.reporterName.trim() || 'ไม่ระบุชื่อ',
+        phone: adHocData.phone.trim() || '-',
+        location: adHocData.location,
+        complaintTopic: finalComplaintTopic,
+        complaintType: finalComplaintTopic,
+        urgency: adHocData.urgency
+      };
 
-    try {
-      await saveJobToFirebase(newAdHocJob);
-      if (onJobCreated) onJobCreated(newAdHocJob);
-      
-      setIsAdHocModalOpen(false);
-      setSelectedJob(newAdHocJob);
-      setCoords({ lat: null, lng: null });
-      alert("สร้างเลขที่รับแจ้งสำเร็จ! กรุณาถ่ายภาพและบันทึกผลการซ่อม");
-    } catch (err) {
-      console.error("Error saving ad-hoc job:", err);
-      alert("ไม่สามารถบันทึกใบงานด่วนได้");
+      try {
+        await onUpdateJobStatus(editingJob.id, editingJob.status, updatedPayload);
+        setIsAdHocModalOpen(false);
+        setEditingJob(null);
+        alert("แก้ไขข้อมูลใบงานเรียบร้อยแล้ว");
+      } catch (err) {
+        console.error("Error updating job:", err);
+        alert("เกิดข้อผิดพลาดในการอัปเดตข้อมูล");
+      }
+    } else {
+      // โหมดสร้างใบงานใหม่
+      const newAdHocJob = {
+        id: 'JOB-' + Date.now().toString().slice(-6),
+        receivedNo: adHocData.receivedNo,
+        receivedAt: currentDateTime,
+        channel: 'พบเหตุหน้างาน/แจ้งฉุกเฉิน',
+        complaintType: finalComplaintTopic,
+        complainantInfo: adHocData.phone || '-',
+        complaintTopic: finalComplaintTopic,
+        details: 'เปิดใบงานด่วนโดยช่างภาคสนามระหว่างปฏิบัติงาน',
+        location: adHocData.location,
+        reporterName: adHocData.reporterName.trim() || 'ไม่ระบุชื่อ',
+        phone: adHocData.phone.trim() || '-',
+        receiverName: currentTeam + ' (ภาคสนาม)',
+        status: 'IN_PROGRESS',
+        urgency: adHocData.urgency,
+        technician: currentTeam,
+        techName: currentTeam,
+        techPhone: '-',
+        dispatchedAt: currentDateTime,
+        inProgressAt: currentDateTime
+      };
+
+      try {
+        await saveJobToFirebase(newAdHocJob);
+        if (onJobCreated) onJobCreated(newAdHocJob);
+        
+        setIsAdHocModalOpen(false);
+        setSelectedJob(newAdHocJob);
+        setCoords({ lat: null, lng: null });
+        alert("สร้างเลขที่รับแจ้งสำเร็จ! กรุณาถ่ายภาพและบันทึกผลการซ่อม");
+      } catch (err) {
+        console.error("Error saving ad-hoc job:", err);
+        alert("ไม่สามารถบันทึกใบงานด่วนได้");
+      }
     }
   };
 
@@ -351,11 +422,33 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                       </span>
                     </div>
 
-                    <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ${
-                      job.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      {job.status === 'IN_PROGRESS' ? 'กำลังซ่อม' : 'รอเริ่มซ่อม'}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      {/* 🛠️ ปุ่มแก้ไขและลบ แสดงเฉพาะเคสที่ยังไม่ปิดงาน (COMPLETED) */}
+                      {job.status !== 'COMPLETED' && (
+                        <>
+                          <button
+                            onClick={() => handleOpenEditModal(job)}
+                            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                            title="แก้ไขข้อมูลใบแจ้งซ่อม"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteJobAction(job)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            title="ลบรายการแจ้งซ่อมนี้"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+
+                      <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ml-1 ${
+                        job.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {job.status === 'IN_PROGRESS' ? 'กำลังซ่อม' : 'รอเริ่มซ่อม'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="space-y-1 pl-2">
@@ -549,23 +642,23 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         )}
       </div>
 
-      {/* Modal สำหรับเปิดใบงานด่วนหน้างาน (Ad-hoc) */}
+      {/* 🔴 Modal สำหรับเปิดใบงานด่วน หรือแก้ไขใบงานเดิม */}
       {isAdHocModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                <PlusCircle className="w-5 h-5 text-rose-600" />
-                เปิดใบงานด่วนหน้างาน (Ad-hoc Job)
+                {editingJob ? <Edit3 className="w-5 h-5 text-blue-600" /> : <PlusCircle className="w-5 h-5 text-rose-600" />}
+                {editingJob ? 'แก้ไขข้อมูลใบแจ้งซ่อม' : 'เปิดใบงานด่วนหน้างาน (Ad-hoc Job)'}
               </h4>
               <button onClick={() => setIsAdHocModalOpen(false)} className="cursor-pointer">
                 <X className="w-5 h-5 text-slate-400" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateAdHocJob} className="space-y-3">
+            <form onSubmit={handleSaveAdHocJob} className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่รับแจ้งอัตโนมัติ (แก้ไขได้)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่รับแจ้ง (แก้ไขได้)</label>
                 <input 
                   type="text"
                   value={adHocData.receivedNo}
@@ -646,7 +739,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   type="submit"
                   className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-1"
                 >
-                  <PlusCircle className="w-4 h-4" /> บันทึกและไปหน้าบันทึกผลซ่อม
+                  {editingJob ? <Edit3 className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
+                  {editingJob ? 'บันทึกการแก้ไข' : 'บันทึกและไปหน้าบันทึกผลซ่อม'}
                 </button>
               </div>
             </form>
