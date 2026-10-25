@@ -7,15 +7,15 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const [currentTeam, setCurrentTeam] = useState(localStorage.getItem('pwa_worker_team') || '');
   const [selectedJob, setSelectedJob] = useState(null);
   
-  // 🔴 State สำหรับเปิด Modal เพิ่มใบงานด่วนหน้างาน (Ad-hoc Job)
+  // State สำหรับเปิด Modal เพิ่มใบงานด่วนหน้างาน (Ad-hoc Job)
   const [isAdHocModalOpen, setIsAdHocModalOpen] = useState(false);
   const [adHocData, setAdHocData] = useState({
     receivedNo: '',
     reporterName: '',
     phone: '',
     location: '',
-    complaintTopicType: 'ท่อแตกรั่ว', // ค่าเริ่มต้นหัวข้อปัญหา
-    customComplaintTopic: '',     // สำหรับกรณีเลือก "อื่นๆ"
+    complaintTopicType: 'ท่อแตกรั่ว',
+    customComplaintTopic: '',
     urgency: 'ด่วน'
   });
 
@@ -47,12 +47,11 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 🕒 ฟังก์ชันสร้างเลขที่รับแจ้งอัตโนมัติ (ตัวย่อทีม-วันเวลา-ลำดับรันรวม)
+  // 🕒 ฟังก์ชันสร้างเลขที่รับแจ้งอัตโนมัติ (ตัวย่อทีม-วันเวลา-ลำดับรันรวม) ตามเวลาประเทศไทย
   const generateAutoReceivedNo = () => {
     const now = new Date();
     const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
     
-    // รูปแบบ YYMMDD-HHmm (เช่น 261025-1430)
     const yy = String(thaiTime.getFullYear()).slice(-2);
     const mm = String(thaiTime.getMonth() + 1).padStart(2, '0');
     const dd = String(thaiTime.getDate()).padStart(2, '0');
@@ -60,10 +59,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     const min = String(thaiTime.getMinutes()).padStart(2, '0');
     const dateCode = `${yy}${mm}${dd}-${hh}${min}`;
 
-    // คำนวณลำดับรันอัตโนมัติรวมทุกทีมจากจำนวน jobs ทั้งหมดในระบบ + 1
     const runningNo = String((jobs ? jobs.length : 0) + 1).padStart(2, '0');
-
-    // ตัวย่อทีม (ดึงชื่อทีมปัจจุบัน)
     const teamShortName = currentTeam || 'ทีมช่าง';
 
     return `${teamShortName}-${dateCode}-${runningNo}`;
@@ -153,7 +149,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     );
   };
 
-  // 🔴 บันทึกเปิดใบงานด่วนหน้างาน
   const handleCreateAdHocJob = async (e) => {
     e.preventDefault();
     if (!adHocData.location.trim()) {
@@ -165,7 +160,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
     const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
 
-    // กำหนดหัวข้อปัญหาตามที่เลือก หรือข้อความที่พิมพ์เองถ้าเลือก "อื่นๆ"
     const finalComplaintTopic = adHocData.complaintTopicType === 'อื่นๆ' 
       ? (adHocData.customComplaintTopic.trim() || 'อื่นๆ') 
       : adHocData.complaintTopicType;
@@ -223,7 +217,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       beforeImgBase64: JSON.stringify(images.before),
       inProgImgBase64: JSON.stringify(images.inProgress),
       afterImgBase64: JSON.stringify(images.after),
-      notes: notes || `ดำเนินการซ่อมท่อเสร็จสิ้น ชนิดท่อ ${pipeType} ขนาด ${pipeSize} มม. เปิดจ่ายน้ำปกติ`,
+      notes: notes || `ใช้อุปกรณ์: ท่อ ${pipeType} ขนาด ${pipeSize} มม.`,
       completedAt: currentDateTime,
       latitude: coords.lat || selectedJob.latitude || '',
       longitude: coords.lng || selectedJob.longitude || ''
@@ -532,12 +526,12 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">สรุปการซ่อม / การแก้ไข</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">อุปกรณ์ที่ใช้</label>
                 <textarea 
                   rows="2"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="เช่น เปลี่ยนท่อ HDPE ขนาด 110 มม. แตกชำรุดเรียบร้อย"
+                  placeholder="กรุณาใส่อุปกรณ์ซ่อม"
                   className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 ></textarea>
               </div>
@@ -555,7 +549,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         )}
       </div>
 
-      {/* 🔴 Modal สำหรับเปิดใบงานด่วนหน้างาน (Ad-hoc) */}
+      {/* Modal สำหรับเปิดใบงานด่วนหน้างาน (Ad-hoc) */}
       {isAdHocModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
@@ -628,7 +622,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   <option value="อื่นๆ">3. อื่นๆ</option>
                 </select>
 
-                {/* แสดงเท็กซ์บ็อกซ์ให้กรอกเองเมื่อเลือก "อื่นๆ" */}
                 {adHocData.complaintTopicType === 'อื่นๆ' && (
                   <input 
                     type="text"
