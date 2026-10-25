@@ -352,7 +352,7 @@ export default function ReportsView({ jobs }) {
 
             <div class="info-row">
               <span><strong>ผู้แจ้ง:</strong> ${job.reporterName || '-'} (${job.phone || '-'})</span>
-              <span><strong>ทีมช่าง:</strong> ${job.technician || '-'}</span>
+              <span><strong>ทีมช่างซ่อม:</strong> ${job.technician || '-'}</span>
             </div>
             <div class="info-row">
               <span><strong>วันเวลาที่รับแจ้ง:</strong> ${job.receivedAt || job.createdAt || '-'}</span>
