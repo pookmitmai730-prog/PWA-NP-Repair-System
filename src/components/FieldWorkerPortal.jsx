@@ -1,14 +1,27 @@
 import React, { useState } from 'react';
-import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle } from 'lucide-react';
+import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
+import { saveJobToFirebase } from '../services/firebase'; // สำหรับบันทึกใบงานด่วนลง Firebase
 
-export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLogout }) {
+export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLogout, onJobCreated }) {
   const [currentTeam, setCurrentTeam] = useState(localStorage.getItem('pwa_worker_team') || '');
   const [selectedJob, setSelectedJob] = useState(null);
+  
+  // 🔴 State สำหรับเปิด Modal เพิ่มใบงานด่วนหน้างาน (Ad-hoc Job)
+  const [isAdHocModalOpen, setIsAdHocModalOpen] = useState(false);
+  const [adHocData, setAdHocData] = useState({
+    receivedNo: 'ADHOC-' + Date.now().toString().slice(-8),
+    reporterName: 'พบเหตุนอกสถานที่ / แจ้งหน้างาน',
+    phone: '-',
+    location: '',
+    complaintTopic: 'ซ่อมท่อประปาฉุกเฉิน (พบหน้างาน)',
+    urgency: 'ด่วน'
+  });
+
   const [images, setImages] = useState({ before: [], inProgress: [], after: [] });
   const [notes, setNotes] = useState('');
   
-  // 🔴 State สำหรับชนิดท่อและขนาดท่อ
+  // State สำหรับชนิดท่อและขนาดท่อ
   const [pipeType, setPipeType] = useState('HDPE');
   const [pipeSize, setPipeSize] = useState('110');
 
@@ -16,7 +29,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // รายการตัวเลือกชนิดท่อและขนาดท่อ
   const pipeTypes = ['PB', 'PVC', 'AC', 'HDPE', 'GS', 'SP'];
   const pipeSizes = ['20', '25', '40', '50', '100', '110', '150', '160', '200', '225', '250', '280', '300', '315', '400', '630'];
 
@@ -43,6 +55,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
+  // กรองงานของทีมตัวเอง (รวมทั้งงานที่จ่ายมาและงานด่วนที่เปิดหน้างาน)
   const activeJobs = jobs
     .filter(j => {
       const matchTechName = j.techName && j.techName.trim() === currentTeam.trim();
@@ -55,10 +68,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     .sort((a, b) => {
       const weightA = getUrgencyWeight(a.urgency);
       const weightB = getUrgencyWeight(b.urgency);
-
-      if (weightA !== weightB) {
-        return weightB - weightA;
-      }
+      if (weightA !== weightB) return weightB - weightA;
 
       const timeA = new Date(a.receivedAt || a.createdAt || 0).getTime();
       const timeB = new Date(b.receivedAt || b.createdAt || 0).getTime();
@@ -101,11 +111,60 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       },
       (error) => {
         console.error("Geolocation error:", error);
-        alert("ไม่สามารถดึงพิกัดได้ (กรุณาอนุญาตการเข้าถึงตำแหน่ง GPS ในเบราว์เซอร์)");
+        alert("ไม่สามารถดึงพิกัดได้ (กรุณาอนุญาตการเข้าถึงตำแหน่ง GPS)");
         setIsGettingLocation(false);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+  };
+
+  // 🔴 ฟังก์ชันบันทึกเปิดใบงานด่วนหน้างาน (Ad-hoc)
+  const handleCreateAdHocJob = async (e) => {
+    e.preventDefault();
+    if (!adHocData.location.trim()) {
+      alert("กรุณาระบุบริเวณที่เกิดเหตุ");
+      return;
+    }
+
+    const now = new Date();
+    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
+
+    const newAdHocJob = {
+      id: 'JOB-' + Date.now().toString().slice(-6),
+      receivedNo: adHocData.receivedNo,
+      receivedAt: currentDateTime,
+      channel: 'พบเหตุหน้างาน/แจ้งฉุกเฉิน',
+      complaintType: 'ท่อแตก/รั่ว (หน้างาน)',
+      complainantInfo: adHocData.phone,
+      complaintTopic: adHocData.complaintTopic,
+      details: 'เปิดใบงานด่วนโดยช่างภาคสนามระหว่างปฏิบัติงาน',
+      location: adHocData.location,
+      reporterName: adHocData.reporterName,
+      phone: adHocData.phone,
+      receiverName: currentTeam + ' (ภาคสนาม)',
+      status: 'IN_PROGRESS', // ตั้งสถานะเป็นกำลังซ่อมทันทีเพื่อให้ช่างปิดงานต่อได้เลย
+      urgency: adHocData.urgency,
+      technician: currentTeam,
+      techName: currentTeam,
+      techPhone: '-',
+      dispatchedAt: currentDateTime,
+      inProgressAt: currentDateTime
+    };
+
+    try {
+      await saveJobToFirebase(newAdHocJob);
+      if (onJobCreated) onJobCreated(newAdHocJob);
+      
+      setIsAdHocModalOpen(false);
+      // เปิดหน้าจอเลือกงานนี้เพื่อบันทึกผลซ่อมทันที
+      setSelectedJob(newAdHocJob);
+      setCoords({ lat: null, lng: null });
+      alert("สร้างใบงานด่วนหน้างานสำเร็จ! กรุณาถ่ายภาพและบันทึกผลการซ่อม");
+    } catch (err) {
+      console.error("Error saving ad-hoc job:", err);
+      alert("ไม่สามารถบันทึกใบงานด่วนได้");
+    }
   };
 
   const handleSubmitFix = async (e) => {
@@ -199,9 +258,14 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2.5 py-1 rounded-full font-bold">
-            {activeJobs.length} งาน
-          </span>
+          <button
+            onClick={() => setIsAdHocModalOpen(true)}
+            className="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+            title="เปิดใบงานด่วนหน้างาน"
+          >
+            <PlusCircle className="w-3.5 h-3.5" /> เปิดใบงานด่วน
+          </button>
+          
           <button 
             onClick={handleLogoutAction} 
             className="p-1.5 bg-slate-800 hover:bg-rose-600 rounded-lg text-slate-300 hover:text-white transition cursor-pointer" 
@@ -215,15 +279,17 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       <div className="p-4 space-y-4">
         {!selectedJob ? (
           <div className="space-y-3">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              รายการงานซ่อม (เรียงตามลำดับความเร่งด่วน)
-            </h3>
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                รายการงานซ่อม ({activeJobs.length} งาน)
+              </h3>
+            </div>
 
             {activeJobs.length === 0 ? (
-              <div className="bg-white p-8 rounded-2xl text-center space-y-2 border border-slate-200">
+              <div className="bg-white p-8 rounded-2xl text-center space-y-3 border border-slate-200">
                 <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
                 <p className="text-sm font-bold text-slate-700">ไม่มีงานค้างรับผิดชอบ</p>
-                <p className="text-xs text-slate-400">งานซ่อมของทีมคุณถูกดำเนินการเสร็จสิ้นทั้งหมดแล้ว</p>
+                <p className="text-xs text-slate-400">หากพบท่อแตกระหว่างทาง สามารถกดปุ่ม "เปิดใบงานด่วน" ด้านบนได้ทันที</p>
               </div>
             ) : (
               activeJobs.map((job) => (
@@ -319,7 +385,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
             <form onSubmit={handleSubmitFix} className="space-y-4">
               
-              {/* 🔴 ส่วนเลือกชนิดท่อและขนาดท่อ */}
+              {/* ส่วนเลือกชนิดท่อและขนาดท่อ */}
               <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">ชนิดท่อ *</label>
@@ -369,7 +435,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   </p>
                 ) : (
                   <p className="text-[11px] text-slate-500">
-                    * ควรกดปุ่ม "ดึงพิกัดปัจจุบัน" ขณะยืนอยู่ที่จุดซ่อมท่อ เพื่อใช้อ้างอิงตำแหน่งในอนาคต
+                    * ควรกดปุ่ม "ดึงพิกัดปัจจุบัน" ขณะยืนอยู่ที่จุดซ่อมท่อ
                   </p>
                 )}
               </div>
@@ -449,6 +515,98 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
           </div>
         )}
       </div>
+
+      {/* 🔴 Modal สำหรับเปิดใบงานด่วนหน้างาน (Ad-hoc) */}
+      {isAdHocModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                <PlusCircle className="w-5 h-5 text-rose-600" />
+                เปิดใบงานด่วนหน้างาน (Ad-hoc Job)
+              </h4>
+              <button onClick={() => setIsAdHocModalOpen(false)} className="cursor-pointer">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateAdHocJob} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่ใบงาน (สามารถแก้ไขได้เผื่ออ้างอิง Smart 1662 ภายหลัง)</label>
+                <input 
+                  type="text"
+                  value={adHocData.receivedNo}
+                  onChange={(e) => setAdHocData(prev => ({ ...prev, receivedNo: e.target.value }))}
+                  required
+                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold text-blue-600 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อผู้แจ้ง / แหล่งที่มา</label>
+                  <input 
+                    type="text"
+                    value={adHocData.reporterName}
+                    onChange={(e) => setAdHocData(prev => ({ ...prev, reporterName: e.target.value }))}
+                    placeholder="เช่น พบระหว่างสำรวจ / ชาวบ้านแจ้ง"
+                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">เบอร์โทรศัพท์ติดต่อ</label>
+                  <input 
+                    type="text"
+                    value={adHocData.phone}
+                    onChange={(e) => setAdHocData(prev => ({ ...prev, phone: e.target.value }))}
+                    placeholder="เบอร์โทรผู้แจ้ง"
+                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">บริเวณที่เกิดเหตุ / สถานที่ซ่อม *</label>
+                <textarea 
+                  rows="2"
+                  value={adHocData.location}
+                  onChange={(e) => setAdHocData(prev => ({ ...prev, location: e.target.value }))}
+                  placeholder="ระบุบ้านเลขที่ ถนน ซอย หรือจุดสังเกต"
+                  required
+                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
+                ></textarea>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">หัวข้อปัญหา</label>
+                <input 
+                  type="text"
+                  value={adHocData.complaintTopic}
+                  onChange={(e) => setAdHocData(prev => ({ ...prev, complaintTopic: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAdHocModalOpen(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-1"
+                >
+                  <PlusCircle className="w-4 h-4" /> บันทึกและไปหน้าบันทึกผลซ่อม
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
