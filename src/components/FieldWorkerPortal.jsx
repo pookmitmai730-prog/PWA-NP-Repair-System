@@ -945,7 +945,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                                 <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md text-[11px]">
                                   {item.quantity} {item.unit}
                                 </span>
-                                {/* 🔴 ปุ่มยกเลิก/ลบอุปกรณ์ทีละรายการ */}
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveEquipmentItem(item.id)}
@@ -972,56 +971,62 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {/* 📸 ส่วนแนบรูปถ่ายการทำงาน */}
+              {/* 📸 ส่วนแนบรูปถ่ายการทำงาน (รองรับหลายรูป + พรีวิว + ลบแต่ละรูปได้) */}
               <div className="space-y-3 pt-2 border-t border-slate-100">
                 <label className="block text-xs font-bold text-slate-700">แนบรูปถ่ายการทำงาน *</label>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-3">
                   {[
-                    { key: 'before', label: '1. ก่อนซ่อม', req: true },
-                    { key: 'inProgress', label: '2. ระหว่างซ่อม', req: false },
-                    { key: 'after', label: '3. หลังซ่อมเสร็จ', req: !isUnrepairable }
+                    { key: 'before', label: '1. รูปถ่ายก่อนซ่อม', req: true },
+                    { key: 'inProgress', label: '2. รูปถ่ายระหว่างซ่อม', req: false },
+                    { key: 'after', label: '3. รูปถ่ายหลังซ่อมเสร็จ', req: !isUnrepairable }
                   ].map((imgCat) => (
-                    <div key={imgCat.key} className="space-y-1.5">
-                      <span className="text-[10px] font-bold text-slate-600 block truncate">
-                        {imgCat.label} {imgCat.req && <span className="text-rose-500">*</span>}
-                      </span>
-
-                      <div className="relative">
-                        {images[imgCat.key].length > 0 ? (
-                          <div className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square">
-                            <img 
-                              src={images[imgCat.key][0]} 
-                              alt={imgCat.label} 
-                              className="w-full h-full object-cover"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveImage(imgCat.key, 0)}
-                              className="absolute top-1 right-1 bg-rose-600 text-white p-1 rounded-full shadow-md hover:bg-rose-700 transition cursor-pointer"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                            {images[imgCat.key].length > 1 && (
-                              <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold">
-                                +{images[imgCat.key].length - 1}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <label className="border-2 border-dashed border-slate-200 rounded-xl aspect-square flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 transition">
-                            <Camera className="w-5 h-5 text-slate-400 mb-1" />
-                            <span className="text-[9px] text-slate-400 font-bold">เพิ่มรูป</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              multiple
-                              onChange={(e) => handleMultipleImagesChange(imgCat.key, e.target.files)}
-                              className="hidden"
-                            />
-                          </label>
-                        )}
+                    <div key={imgCat.key} className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-slate-700">
+                          {imgCat.label} {imgCat.req && <span className="text-rose-500">*</span>}
+                        </span>
+                        <label className="bg-white border border-slate-200 hover:bg-blue-50 text-blue-600 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition">
+                          <Camera className="w-3.5 h-3.5" /> เพิ่มรูปภาพ
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={(e) => handleMultipleImagesChange(imgCat.key, e.target.files)}
+                            className="hidden"
+                          />
+                        </label>
                       </div>
+
+                      {/* แสดงรายการรูปภาพที่อัปโหลด (พรีวิวหลายรูป + ปุ่มลบแต่ละรูป) */}
+                      {images[imgCat.key].length === 0 ? (
+                        <p className="text-[11px] text-slate-400 italic text-center py-2">
+                          ยังไม่มีรูปภาพ (คลิกปุ่ม "เพิ่มรูปภาพ" ด้านบน)
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                          {images[imgCat.key].map((imgUrl, index) => (
+                            <div key={index} className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square bg-white shadow-2xs">
+                              <img 
+                                src={imgUrl} 
+                                alt={`${imgCat.label} ${index + 1}`} 
+                                className="w-full h-full object-cover"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveImage(imgCat.key, index)}
+                                className="absolute top-1.5 right-1.5 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-md transition cursor-pointer"
+                                title="ลบรูปนี้"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded font-mono">
+                                #{index + 1}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
