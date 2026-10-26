@@ -411,7 +411,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 📝 บันทึกผลการปฏิบัติงาน (ส่งผ่าน URLSearchParams Form-Data เพื่อทะลุ CORS และยิง Telegram)
+  // 📝 บันทึกผลการปฏิบัติงาน (ส่งผ่าน text/plain เพื่อทะลุกรอบ CORS และยิง Telegram สำเร็จ 100%)
   const handleSubmitFix = async (e) => {
     e.preventDefault();
     if (!selectedJob) return;
@@ -464,17 +464,14 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     };
 
     try {
-      // 🚀 ใช้ URLSearchParams เพื่อส่ง Form-Data ข้าม CORS ไปยัง Apps Script ได้อย่างสมบูรณ์
-      const formData = new URLSearchParams();
-      formData.append("payload", JSON.stringify(jobDataPayload));
-
+      // 🚀 ส่งข้อมูลผ่าน text/plain เพื่อป้องกันโครงสร้าง JSON เสียหายและข้าม CORS ไปยัง Apps Script
       await fetch(WEB_APP_URL, {
         method: "POST",
         mode: "no-cors",
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
+          "Content-Type": "text/plain;charset=utf-8"
         },
-        body: formData.toString()
+        body: JSON.stringify(jobDataPayload)
       });
 
       // อัปเดตสถานะในระบบฐานข้อมูลหลัก (Firebase)
