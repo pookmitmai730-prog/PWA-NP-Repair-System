@@ -3,6 +3,17 @@ import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User,
 import { compressImage } from '../utils/imageCompressor';
 import { saveJobToFirebase } from '../services/firebase';
 
+// รายการอุปกรณ์สำรอง (Fallback Data) ในกรณียังไม่ใส่ URL หรือดึงข้อมูลผ่าน API ไม่สำเร็จ
+const DEFAULT_EQUIPMENT_LIST = [
+  { id: 'EQ-001', name: 'ข้อต่อตรง HDPE 110 มม.', unit: 'ตัว' },
+  { id: 'EQ-002', name: 'ท่อ HDPE ขนาด 110 มม.', unit: 'เมตร' },
+  { id: 'EQ-003', name: 'เทปพันเกลียว', unit: 'ม้วน' },
+  { id: 'EQ-004', name: 'กาวทาท่อ PVC', unit: 'กระป๋อง' },
+  { id: 'EQ-005', name: 'ข้อต่อตรง PVC 2 นิ้ว', unit: 'ตัว' },
+  { id: 'EQ-006', name: 'ประตูน้ำทองเหลือง 1 นิ้ว', unit: 'ตัว' },
+  { id: 'EQ-007', name: 'หน้าจานเหล็ก 110 มม.', unit: 'ชุด' },
+];
+
 export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLogout, onJobCreated, onDeleteJob }) {
   const [currentTeam, setCurrentTeam] = useState(localStorage.getItem('pwa_worker_team') || '');
   const [selectedJob, setSelectedJob] = useState(null);
@@ -26,7 +37,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const [images, setImages] = useState({ before: [], inProgress: [], after: [] });
   
   // 🛠️ State สำหรับระบบเลือกอุปกรณ์จาก Google Sheets
-  const [equipmentList, setEquipmentList] = useState([]);
+  const [equipmentList, setEquipmentList] = useState(DEFAULT_EQUIPMENT_LIST);
   const [isLoadingEquipment, setIsLoadingEquipment] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -51,13 +62,15 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     const fetchEquipmentFromSheets = async () => {
       setIsLoadingEquipment(true);
       try {
-        // ⚠️ แทนที่ URL ด้านล่างด้วย Web App URL ของคุณที่ได้จากการ Deploy ใน Google Apps Script
-        const WEB_APP_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?action=equipment";
+        // 📌 เปลี่ยน URL ตรงนี้เป็น Web App URL ของคุณที่ Deploy จาก Google Apps Script
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbywoc-W-hGbo4AbCJm78g4lic5pz0bsqoAqBxtDnbb7Q7_xV5J3u12W3oK7lGzRkVrRww/exec";
         
-        const response = await fetch(WEB_APP_URL);
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          setEquipmentList(data);
+        if (!WEB_APP_URL.includes("YOUR_SCRIPT_ID")) {
+          const response = await fetch(WEB_APP_URL);
+          const data = await response.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setEquipmentList(data);
+          }
         }
       } catch (err) {
         console.error("Error fetching equipment:", err);
@@ -75,20 +88,24 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const handleSearchEquipmentChange = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
+    
     if (!value.trim()) {
       setSuggestions([]);
     } else {
-      const filtered = equipmentList.filter(item => 
-        String(item.name || '').toLowerCase().includes(value.toLowerCase())
-      );
+      const query = value.trim().toLowerCase();
+      const filtered = equipmentList.filter(item => {
+        const itemName = String(item.name || item.itemName || item.อุปกรณ์ || '').toLowerCase();
+        return itemName.includes(query);
+      });
       setSuggestions(filtered);
     }
   };
 
   // เลือกอุปกรณ์จากรายชื่อแนะนำ
   const handleSelectEquipmentSuggestion = (item) => {
+    const itemName = item.name || item.itemName || item.อุปกรณ์ || '';
     setSelectedEquipmentItem(item);
-    setSearchTerm(item.name);
+    setSearchTerm(itemName);
     setSuggestions([]);
   };
 
@@ -99,8 +116,13 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       return;
     }
 
-    const itemName = selectedEquipmentItem ? selectedEquipmentItem.name : searchTerm;
-    const itemUnit = selectedEquipmentItem ? selectedEquipmentItem.unit : 'หน่วย';
+    const itemName = selectedEquipmentItem 
+      ? (selectedEquipmentItem.name || selectedEquipmentItem.itemName || selectedEquipmentItem.อุปกรณ์) 
+      : searchTerm.trim();
+    
+    const itemUnit = selectedEquipmentItem 
+      ? (selectedEquipmentItem.unit || selectedEquipmentItem.หน่วยนับ || selectedEquipmentItem.หน่วย || 'หน่วย') 
+      : 'หน่วย';
 
     const newItem = {
       id: Date.now(),
@@ -113,7 +135,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setSelectedEquipmentList(updatedList);
 
     // รวมข้อความไปเก็บใน notes อัตโนมัติ เพื่อส่งบันทึก
-    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join(', ');
+    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join('\n');
     setNotes(summaryText);
 
     // รีเซ็ตช่องค้นหาเพื่อเลือกชิ้นถัดไป
@@ -126,7 +148,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const handleRemoveEquipmentItem = (id) => {
     const updatedList = selectedEquipmentList.filter(item => item.id !== id);
     setSelectedEquipmentList(updatedList);
-    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join(', ');
+    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join('\n');
     setNotes(summaryText);
   };
 
@@ -144,7 +166,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 🕒 ฟังก์ชันสร้างเลขที่รับแจ้งอัตโนมัติ ตามเวลาประเทศไทย
+  // 🕒 ฟังก์ชันสร้างเลขที่รับแจ้งอัตโนมัติ
   const generateAutoReceivedNo = () => {
     const now = new Date();
     const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
@@ -176,7 +198,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setIsAdHocModalOpen(true);
   };
 
-  // ✏️ เปิด Modal เพื่อแก้ไขใบงาน
   const handleOpenEditModal = (job) => {
     if (job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน') {
       alert("ไม่อนุญาตให้แก้ไข: งานนี้เป็นงานที่ได้รับมอบหมายจากแอดมิน");
@@ -198,7 +219,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setIsAdHocModalOpen(true);
   };
 
-  // 🗑️ ฟังก์ชันลบเรื่อง (เฉพาะงานที่ช่างเปิดเอง)
   const handleDeleteJobAction = async (job) => {
     if (job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน') {
       alert("ไม่อนุญาตให้ลบ: งานนี้เป็นงานที่ได้รับมอบหมายจากแอดมิน");
@@ -651,7 +671,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               <div className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                 <div className="flex justify-between items-center">
                   <label className="block text-xs font-bold text-slate-700">เลือกอุปกรณ์ที่ใช้ซ่อม (จาก Google Sheets)</label>
-                  {isLoadingEquipment && <span className="text-[10px] text-blue-600 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> กำลังโหลดรายการ...</span>}
+                  {isLoadingEquipment && <span className="text-[10px] text-blue-600 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> กำลังโหลด...</span>}
                 </div>
                 
                 <div className="flex gap-2 relative">
@@ -671,16 +691,20 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     {/* รายชื่อแนะนำ (Dropdown Suggestions) */}
                     {suggestions.length > 0 && (
                       <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-40 overflow-y-auto">
-                        {suggestions.map((item, idx) => (
-                          <div 
-                            key={idx}
-                            onClick={() => handleSelectEquipmentSuggestion(item)}
-                            className="p-2.5 hover:bg-slate-100 text-xs text-slate-800 cursor-pointer border-b border-slate-100 last:border-none flex justify-between items-center"
-                          >
-                            <span className="font-semibold">{item.name}</span>
-                            <span className="text-[10px] text-slate-400">หน่วย: {item.unit}</span>
-                          </div>
-                        ))}
+                        {suggestions.map((item, idx) => {
+                          const itemName = item.name || item.itemName || item.อุปกรณ์ || '';
+                          const itemUnit = item.unit || item.หน่วยนับ || item.หน่วย || 'หน่วย';
+                          return (
+                            <div 
+                              key={idx}
+                              onClick={() => handleSelectEquipmentSuggestion(item)}
+                              className="p-2.5 hover:bg-slate-100 text-xs text-slate-800 cursor-pointer border-b border-slate-100 last:border-none flex justify-between items-center"
+                            >
+                              <span className="font-semibold">{itemName}</span>
+                              <span className="text-[10px] text-slate-400">หน่วย: {itemUnit}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -732,6 +756,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 )}
               </div>
 
+              {/* ส่วนพิกัด GPS หน้างาน */}
               <div className="bg-blue-50/60 border border-blue-200 p-3 rounded-2xl space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold text-blue-900 flex items-center gap-1">
@@ -758,6 +783,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 )}
               </div>
 
+              {/* ส่วนอัปโหลดรูปภาพ */}
               <div className="space-y-3">
                 <label className="block text-xs font-bold text-slate-700">ถ่ายรูปหลักฐานหน้างาน (เลือกหลายรูปได้)</label>
                 
@@ -810,10 +836,11 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               </div>
 
+              {/* ส่วนข้อความสรุปอุปกรณ์ */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">สรุปอุปกรณ์ที่ใช้ (บันทึกอัตโนมัติจากด้านบน)</label>
                 <textarea 
-                  rows="2"
+                  rows="3"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="อุปกรณ์ที่เลือกจะแสดงที่นี่อัตโนมัติ หรือพิมพ์เพิ่มเติม..."
