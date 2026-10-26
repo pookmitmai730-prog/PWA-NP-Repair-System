@@ -164,12 +164,21 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setEquipmentQuantity(1);
   };
 
-  // ลบอุปกรณ์ออกจากรายการสะสม
+  // 🗑️ ลบอุปกรณ์ออกจากรายการสะสม (ทีละรายการ)
   const handleRemoveEquipmentItem = (id) => {
     const updatedList = selectedEquipmentList.filter(item => item.id !== id);
     setSelectedEquipmentList(updatedList);
     const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join('\n');
     setNotes(summaryText);
+  };
+
+  // 🧹 ยกเลิก/ล้างรายการอุปกรณ์ทั้งหมด
+  const handleClearAllEquipment = () => {
+    if (selectedEquipmentList.length === 0) return;
+    if (window.confirm("คุณต้องการยกเลิกอุปกรณ์ที่เลือกทั้งหมดใช่หรือไม่?")) {
+      setSelectedEquipmentList([]);
+      setNotes('');
+    }
   };
 
   const handleLogin = (teamName) => {
@@ -411,7 +420,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 📝 บันทึกผลการปฏิบัติงาน (ส่งผ่าน text/plain เพื่อทะลุกรอบ CORS และยิง Telegram สำเร็จ 100%)
+  // 📝 บันทึกผลการปฏิบัติงาน
   const handleSubmitFix = async (e) => {
     e.preventDefault();
     if (!selectedJob) return;
@@ -464,7 +473,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     };
 
     try {
-      // 🚀 ส่งข้อมูลผ่าน text/plain เพื่อป้องกันโครงสร้าง JSON เสียหายและข้าม CORS ไปยัง Apps Script
       await fetch(WEB_APP_URL, {
         method: "POST",
         mode: "no-cors",
@@ -474,7 +482,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         body: JSON.stringify(jobDataPayload)
       });
 
-      // อัปเดตสถานะในระบบฐานข้อมูลหลัก (Firebase)
       await onUpdateJobStatus(selectedJob.id, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
 
       alert(isUnrepairable 
@@ -736,6 +743,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
             <form onSubmit={handleSubmitFix} className="space-y-4">
               
+              {/* เลือกกรณีไม่สามารถซ่อมได้ */}
               <div className={`p-3.5 rounded-2xl border transition-all ${
                 isUnrepairable ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 border-slate-200'
               }`}>
@@ -751,25 +759,21 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                       ⚠️ ไม่สามารถดำเนินการซ่อมได้ในขณะนี้
                     </span>
                     <span className="text-[10px] text-slate-500 block">
-                      ติ๊กถูกช่องนี้หากพบอุปสรรคหน้างาน เพื่อบันทึกสาเหตุรายงานผู้บังคับบัญชา
+                      ติ๊กเลือกเมื่อพบอุปสรรคหน้างาน เช่น ติดโครงสร้างอาคาร/ต้องใช้เครื่องจักรใหญ่
                     </span>
                   </div>
                 </label>
               </div>
 
+              {/* กรณีซ่อมไม่ได้ */}
               {isUnrepairable ? (
                 <div className="bg-rose-50/60 p-4 rounded-2xl border border-rose-200 space-y-3">
-                  <div className="flex items-center gap-1.5 text-rose-800 font-bold text-xs">
-                    <AlertCircle className="w-4 h-4 text-rose-600" />
-                    <span>กรอกข้อมูลอุปสรรคที่ไม่สามารถซ่อมได้</span>
-                  </div>
-
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">สาเหตุหลักที่ไม่สามารถซ่อมได้ *</label>
+                    <label className="block text-xs font-bold text-rose-800 mb-1">สาเหตุที่ไม่สามารถซ่อมได้ *</label>
                     <select
                       value={unrepairableReasonType}
                       onChange={(e) => setUnrepairableReasonType(e.target.value)}
-                      className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-white font-bold text-slate-800 focus:ring-2 focus:ring-rose-500"
+                      className="w-full border border-rose-300 rounded-xl p-2.5 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-rose-500 font-medium"
                     >
                       {unrepairableReasons.map((reason) => (
                         <option key={reason} value={reason}>{reason}</option>
@@ -779,41 +783,43 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
                   {unrepairableReasonType === 'อื่นๆ (ระบุในรายละเอียด)' && (
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">ระบุสาเหตุเพิ่มเติม *</label>
+                      <label className="block text-xs font-bold text-rose-800 mb-1">ระบุสาเหตุเพิ่มเติม *</label>
                       <input 
                         type="text"
                         value={customUnrepairableReason}
                         onChange={(e) => setCustomUnrepairableReason(e.target.value)}
-                        placeholder="กรอกสาเหตุ..."
-                        className="w-full border border-slate-200 rounded-xl p-2 text-xs focus:ring-2 focus:ring-rose-500 bg-white"
+                        placeholder="ระบุสาเหตุสั้นๆ..."
+                        required
+                        className="w-full border border-rose-300 rounded-xl p-2.5 text-xs bg-white focus:ring-2 focus:ring-rose-500"
                       />
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">รายละเอียดและคำแนะนำเพิ่มเติม *</label>
+                    <label className="block text-xs font-bold text-rose-800 mb-1">รายละเอียดอุปสรรคหน้างาน *</label>
                     <textarea 
                       rows="3"
                       value={unrepairableDetails}
                       onChange={(e) => setUnrepairableDetails(e.target.value)}
-                      placeholder="อธิบายสภาพปัญหาหน้างาน เช่น มีอาคารทับแนวท่อ ต้องใช้แม็คโครขนาดใหญ่ หรือประสานหน่วยงานใด..."
+                      placeholder="อธิบายลักษณะอุปสรรค และข้อเสนอแนะในการแก้ไขต่อไป..."
                       required
-                      className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500 bg-white font-medium"
-                    ></textarea>
+                      className="w-full border border-rose-300 rounded-xl p-2.5 text-xs bg-white focus:ring-2 focus:ring-rose-500"
+                    />
                   </div>
                 </div>
               ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                /* กรณีซ่อมสำเร็จปกติ */
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">ชนิดท่อ *</label>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">ชนิดท่อที่ซ่อม *</label>
                       <select
                         value={pipeType}
                         onChange={(e) => setPipeType(e.target.value)}
-                        className="w-full border border-slate-200 rounded-xl p-2 text-xs bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
                       >
-                        {pipeTypes.map((type) => (
-                          <option key={type} value={type}>{type}</option>
+                        {pipeTypes.map((t) => (
+                          <option key={t} value={t}>{t}</option>
                         ))}
                       </select>
                     </div>
@@ -823,217 +829,265 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                       <select
                         value={pipeSize}
                         onChange={(e) => setPipeSize(e.target.value)}
-                        className="w-full border border-slate-200 rounded-xl p-2 text-xs bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
                       >
-                        {pipeSizes.map((size) => (
-                          <option key={size} value={size}>{size} มม.</option>
+                        {pipeSizes.map((s) => (
+                          <option key={s} value={s}>{s} มม.</option>
                         ))}
                       </select>
                     </div>
                   </div>
 
-                  <div className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                  {/* 🛠️ ส่วนเลือกอุปกรณ์จาก Google Sheets */}
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
                     <div className="flex justify-between items-center">
-                      <label className="block text-xs font-bold text-slate-700">เลือกอุปกรณ์ที่ใช้ซ่อม (จาก Google Sheets)</label>
-                      {isLoadingEquipment && <span className="text-[10px] text-blue-600 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> กำลังโหลด...</span>}
+                      <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
+                        <Wrench className="w-3.5 h-3.5 text-blue-600" /> เลือกอุปกรณ์ที่ใช้ซ่อม
+                      </label>
+                      {isLoadingEquipment && (
+                        <span className="text-[10px] text-blue-600 flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" /> กำลังโหลดคลังอุปกรณ์...
+                        </span>
+                      )}
                     </div>
-                    
-                    <div className="flex gap-2 relative">
-                      <div className="flex-1 relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                          <Search className="w-3.5 h-3.5" />
+
+                    <div className="relative">
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={handleSearchEquipmentChange}
+                            placeholder="พิมพ์ค้นหาชื่ออุปกรณ์..."
+                            className="w-full border border-slate-200 rounded-xl p-2.5 pr-8 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          {searchTerm && (
+                            <button
+                              type="button"
+                              onClick={() => { setSearchTerm(''); setSuggestions([]); setSelectedEquipmentItem(null); }}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                            >
+                              ✕
+                            </button>
+                          )}
                         </div>
-                        <input 
-                          type="text"
-                          value={searchTerm}
-                          onChange={handleSearchEquipmentChange}
-                          placeholder="พิมพ์ชื่ออุปกรณ์ เช่น ท่อ, ข้อต่อ..."
-                          className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 font-medium text-slate-800 shadow-xs"
-                        />
 
-                        {suggestions.length > 0 && (
-                          <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-40 overflow-y-auto">
-                            {suggestions.map((item, idx) => {
-                              const itemName = item.name || item.itemName || item.อุปกรณ์ || '';
-                              const itemUnit = item.unit || item.หน่วยนับ || item.หน่วย || 'หน่วย';
-                              return (
-                                <div 
-                                  key={idx}
-                                  onClick={() => handleSelectEquipmentSuggestion(item)}
-                                  className="p-2.5 hover:bg-slate-100 text-xs text-slate-800 cursor-pointer border-b border-slate-100 last:border-none flex justify-between items-center"
-                                >
-                                  <span className="font-semibold">{itemName}</span>
-                                  <span className="text-[10px] text-slate-400">หน่วย: {itemUnit}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="w-20">
-                        <input 
+                        <input
                           type="number"
                           min="1"
                           value={equipmentQuantity}
                           onChange={(e) => setEquipmentQuantity(e.target.value)}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-2 py-2 text-xs text-center font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 shadow-xs"
-                          placeholder="จำนวน"
+                          className="w-16 border border-slate-200 rounded-xl p-2.5 text-xs text-center font-bold bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          title="จำนวน"
                         />
+
+                        <button
+                          type="button"
+                          onClick={handleAddEquipmentToList}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 transition shadow-sm active:scale-95 cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" /> เพิ่ม
+                        </button>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={handleAddEquipmentToList}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer shrink-0"
-                      >
-                        <Plus className="w-4 h-4" /> เพิ่ม
-                      </button>
+                      {/* Dropdown รายชื่อค้นหาแนะนำ */}
+                      {suggestions.length > 0 && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 max-h-48 overflow-y-auto divide-y divide-slate-100">
+                          {suggestions.map((item, idx) => {
+                            const name = item.name || item.itemName || item.อุปกรณ์ || '';
+                            const unit = item.unit || item.หน่วยนับ || item.หน่วย || '';
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => handleSelectEquipmentSuggestion(item)}
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 flex justify-between items-center transition cursor-pointer"
+                              >
+                                <span className="font-medium text-slate-800">{name}</span>
+                                {unit && <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{unit}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
-                    {selectedEquipmentList.length > 0 && (
-                      <div className="space-y-1.5 pt-2 border-t border-slate-200">
-                        <span className="text-[11px] font-bold text-slate-500">รายการอุปกรณ์ที่เลือกไว้ ({selectedEquipmentList.length}):</span>
-                        <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                    {/* 📋 รายการสรุปอุปกรณ์ที่เลือกไว้ (สามารถลบ/ยกเลิกได้ก่อนบันทึก) */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <label className="block text-[11px] font-bold text-slate-600">
+                          สรุปอุปกรณ์ที่ใช้ ({selectedEquipmentList.length} รายการ):
+                        </label>
+                        {selectedEquipmentList.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleClearAllEquipment}
+                            className="text-[10px] text-rose-600 hover:text-rose-700 hover:underline font-bold flex items-center gap-0.5 cursor-pointer"
+                            title="ยกเลิกอุปกรณ์ทั้งหมดที่เลือกไว้"
+                          >
+                            <Trash2 className="w-3 h-3" /> ยกเลิกทั้งหมด
+                          </button>
+                        )}
+                      </div>
+
+                      {selectedEquipmentList.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 italic bg-white p-2.5 rounded-xl border border-dashed border-slate-200 text-center">
+                          ยังไม่ได้เลือกอุปกรณ์ (พิมพ์ค้นหาแล้วกดปุ่ม "เพิ่ม")
+                        </p>
+                      ) : (
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                           {selectedEquipmentList.map((item) => (
-                            <div key={item.id} className="bg-white px-3 py-2 rounded-xl border border-slate-200 flex justify-between items-center text-xs shadow-xs">
-                              <span className="font-medium text-slate-800">🔹 {item.name}</span>
-                              <div className="flex items-center gap-3">
-                                <span className="font-bold text-emerald-600 font-mono">จำนวน: {item.quantity} {item.unit}</span>
-                                <button 
-                                  type="button" 
+                            <div key={item.id} className="bg-white px-3 py-2 rounded-xl border border-slate-200 flex justify-between items-center text-xs shadow-2xs">
+                              <span className="font-medium text-slate-800 flex-1 truncate mr-2">
+                                • {item.name}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md text-[11px]">
+                                  {item.quantity} {item.unit}
+                                </span>
+                                {/* 🔴 ปุ่มยกเลิก/ลบอุปกรณ์ทีละรายการ */}
+                                <button
+                                  type="button"
                                   onClick={() => handleRemoveEquipmentItem(item.id)}
-                                  className="text-rose-500 hover:text-rose-700 cursor-pointer"
+                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                  title="ยกเลิกอุปกรณ์ชิ้นนี้"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <X className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
                           ))}
                         </div>
-                      </div>
-                    )}
+                      )}
+
+                      <textarea
+                        rows="2"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="หมายเหตุ หรือสรุปอุปกรณ์เพิ่มเติม (ถ้ามี)..."
+                        className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
+                      />
+                    </div>
                   </div>
-                </>
+                </div>
               )}
 
-              <div className="bg-blue-50/60 border border-blue-200 p-3 rounded-2xl space-y-2">
+              {/* 📸 ส่วนแนบรูปถ่ายการทำงาน */}
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <label className="block text-xs font-bold text-slate-700">แนบรูปถ่ายการทำงาน *</label>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { key: 'before', label: '1. ก่อนซ่อม', req: true },
+                    { key: 'inProgress', label: '2. ระหว่างซ่อม', req: false },
+                    { key: 'after', label: '3. หลังซ่อมเสร็จ', req: !isUnrepairable }
+                  ].map((imgCat) => (
+                    <div key={imgCat.key} className="space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-600 block truncate">
+                        {imgCat.label} {imgCat.req && <span className="text-rose-500">*</span>}
+                      </span>
+
+                      <div className="relative">
+                        {images[imgCat.key].length > 0 ? (
+                          <div className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square">
+                            <img 
+                              src={images[imgCat.key][0]} 
+                              alt={imgCat.label} 
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveImage(imgCat.key, 0)}
+                              className="absolute top-1 right-1 bg-rose-600 text-white p-1 rounded-full shadow-md hover:bg-rose-700 transition cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                            {images[imgCat.key].length > 1 && (
+                              <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold">
+                                +{images[imgCat.key].length - 1}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <label className="border-2 border-dashed border-slate-200 rounded-xl aspect-square flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 transition">
+                            <Camera className="w-5 h-5 text-slate-400 mb-1" />
+                            <span className="text-[9px] text-slate-400 font-bold">เพิ่มรูป</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              onChange={(e) => handleMultipleImagesChange(imgCat.key, e.target.files)}
+                              className="hidden"
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 📍 พิกัด GPS หน้างาน */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-blue-900 flex items-center gap-1">
-                    <Navigation className="w-4 h-4 text-blue-600" /> พิกัด GPS หน้างาน
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Navigation className="w-3.5 h-3.5 text-blue-600" /> พิกัดสถานที่ซ่อม (GPS)
                   </span>
                   <button
                     type="button"
                     onClick={handleGetGPS}
                     disabled={isGettingLocation}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-bold shadow-xs active:scale-95 cursor-pointer disabled:opacity-50"
+                    className="bg-white border border-slate-200 text-blue-600 px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 hover:bg-blue-50 transition cursor-pointer"
                   >
-                    {isGettingLocation ? 'กำลังดึงพิกัด...' : '📍 ดึงพิกัดปัจจุบัน'}
+                    {isGettingLocation ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3 text-rose-500" />}
+                    {coords.lat ? 'ดึงพิกัดใหม่' : 'กดดึงพิกัด GPS'}
                   </button>
                 </div>
 
-                {coords.lat && coords.lng ? (
-                  <p className="text-[11px] font-mono text-emerald-700 font-bold bg-emerald-50 p-2 rounded-xl border border-emerald-200">
-                    Lat: {coords.lat}, Lng: {coords.lng} (บันทึกพิกัดสำเร็จ)
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-slate-500">
-                    * ควรกดปุ่ม "ดึงพิกัดปัจจุบัน" เพื่อเป็นหลักฐานตำแหน่งหน้างาน
+                {coords.lat && (
+                  <p className="text-[11px] font-mono font-semibold text-slate-600 bg-white p-2 rounded-xl border border-slate-100">
+                    📍 Lat: {coords.lat}, Lng: {coords.lng}
                   </p>
                 )}
               </div>
 
-              <div className="space-y-3">
-                <label className="block text-xs font-bold text-slate-700">ถ่ายรูปหลักฐานหน้างาน (เลือกหลายรูปได้)</label>
-                
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="border-2 border-dashed border-slate-200 rounded-xl p-2 text-center relative hover:bg-slate-50">
-                    <input type="file" accept="image/*" multiple onChange={(e) => handleMultipleImagesChange('before', e.target.files)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" />
-                    <div className="py-1 space-y-1">
-                      <Camera className="w-5 h-5 mx-auto text-blue-500" />
-                      <span className="text-[10px] block font-bold text-slate-600">รูปสภาพปัญหา ({images.before.length})</span>
-                    </div>
-                  </div>
-
-                  <div className="border-2 border-dashed border-slate-200 rounded-xl p-2 text-center relative hover:bg-slate-50">
-                    <input type="file" accept="image/*" multiple onChange={(e) => handleMultipleImagesChange('inProgress', e.target.files)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" />
-                    <div className="py-1 space-y-1">
-                      <Camera className="w-5 h-5 mx-auto text-amber-500" />
-                      <span className="text-[10px] block font-bold text-slate-600">รูประหว่างทำ ({images.inProgress.length})</span>
-                    </div>
-                  </div>
-
-                  <div className="border-2 border-dashed border-slate-200 rounded-xl p-2 text-center relative hover:bg-slate-50">
-                    <input type="file" accept="image/*" multiple onChange={(e) => handleMultipleImagesChange('after', e.target.files)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" />
-                    <div className="py-1 space-y-1">
-                      <Camera className="w-5 h-5 mx-auto text-emerald-500" />
-                      <span className="text-[10px] block font-bold text-slate-600">รูปหลังซ่อม ({images.after.length})</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2 pt-2">
-                  {['before', 'inProgress', 'after'].map((type) => (
-                    images[type].length > 0 && (
-                      <div key={type} className="space-y-1">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">
-                          {type === 'before' ? 'รูปสภาพปัญหา' : type === 'inProgress' ? 'รูประหว่างทำ' : 'รูปหลังซ่อม'} ({images[type].length})
-                        </span>
-                        <div className="flex gap-2 overflow-x-auto pb-1">
-                          {images[type].map((imgSrc, idx) => (
-                            <div key={idx} className="relative shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-slate-200 group">
-                              <img src={imgSrc} alt="preview" className="w-full h-full object-cover" />
-                              <button type="button" onClick={() => handleRemoveImage(type, idx)} className="absolute top-1 right-1 bg-rose-600 text-white rounded-full p-0.5 cursor-pointer">
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  ))}
-                </div>
+              {/* ปุ่มบันทึกการส่งงาน */}
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className={`w-full text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer ${
+                    isUnrepairable 
+                      ? 'bg-purple-600 hover:bg-purple-700' 
+                      : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>กำลังบันทึกข้อมูล...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>{isUnrepairable ? 'ยืนยันบันทึกรายงานซ่อมไม่ได้' : 'ยืนยันปิดงานซ่อม'}</span>
+                    </>
+                  )}
+                </button>
               </div>
-
-              {!isUnrepairable && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">สรุปอุปกรณ์ที่ใช้ (บันทึกอัตโนมัติจากด้านบน)</label>
-                  <textarea 
-                    rows="3"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="อุปกรณ์ที่เลือกจะแสดงที่นี่อัตโนมัติ หรือพิมพ์เพิ่มเติม..."
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 font-medium"
-                  ></textarea>
-                </div>
-              )}
-
-              <button 
-                type="submit"
-                disabled={isSubmitting}
-                className={`w-full text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-md active:scale-95 disabled:opacity-50 cursor-pointer ${
-                  isUnrepairable ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                }`}
-              >
-                {isUnrepairable ? <XCircle className="w-4 h-4" /> : <Send className="w-4 h-4" />}
-                {isSubmitting 
-                  ? 'กำลังบันทึกข้อมูล...' 
-                  : isUnrepairable 
-                  ? 'ยืนยันบันทึกรายงานซ่อมไม่ได้' 
-                  : 'ยืนยันปิดงานซ่อม'}
-              </button>
             </form>
           </div>
         )}
       </div>
 
+      {/* 🔴 Modal สำหรับเพิ่ม/แก้ไข ใบงานด่วนหน้างาน (Ad-hoc Job) */}
       {isAdHocModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                {editingJob ? <Edit3 className="w-5 h-5 text-blue-600" /> : <PlusCircle className="w-5 h-5 text-rose-600" />}
-                {editingJob ? 'แก้ไขข้อมูลใบแจ้งซ่อม' : 'เปิดใบงานด่วนหน้างาน (Ad-hoc Job)'}
+                <PlusCircle className="w-5 h-5 text-rose-600" />
+                {editingJob ? 'แก้ไขข้อมูลใบแจ้งซ่อม' : 'เปิดใบงานด่วนหน้างาน'}
               </h4>
               <button onClick={() => setIsAdHocModalOpen(false)} className="cursor-pointer">
                 <X className="w-5 h-5 text-slate-400" />
@@ -1042,7 +1096,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
             <form onSubmit={handleSaveAdHocJob} className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่รับแจ้ง (แก้ไขได้)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่รับแจ้ง (รหัสอ้างอิง) *</label>
                 <input 
                   type="text"
                   value={adHocData.receivedNo}
@@ -1054,99 +1108,108 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อผู้แจ้ง</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อผู้แจ้ง/ผู้พบเห็น</label>
                   <input 
                     type="text"
                     value={adHocData.reporterName}
                     onChange={(e) => setAdHocData(prev => ({ ...prev, reporterName: e.target.value }))}
-                    placeholder="กรอกชื่อผู้แจ้ง"
+                    placeholder="ไม่ระบุใส่ว่างไว้ได้"
                     className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">เบอร์โทรศัพท์</label>
                   <input 
-                    type="tel"
+                    type="text"
                     value={adHocData.phone}
                     onChange={(e) => setAdHocData(prev => ({ ...prev, phone: e.target.value }))}
-                    placeholder="เบอร์โทรผู้แจ้ง"
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
+                    placeholder="ไม่ระบุใส่ว่างไว้ได้"
+                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">บริเวณที่เกิดเหตุ / สถานที่ *</label>
-                <input 
-                  type="text"
+                <label className="block text-xs font-bold text-slate-700 mb-1">สถานที่เกิดเหตุ / จุดสังเกต *</label>
+                <textarea 
+                  rows="2"
                   value={adHocData.location}
                   onChange={(e) => setAdHocData(prev => ({ ...prev, location: e.target.value }))}
-                  placeholder="เช่น หน้าบ้านเลขที่ 123 ถ.นิตโย"
+                  placeholder="ระบุชื่อถนน ซอย หรือสถานที่ใกล้เคียง..."
                   required
                   className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">หัวข้อปัญหา</label>
-                  <select
-                    value={adHocData.complaintTopicType}
-                    onChange={(e) => setAdHocData(prev => ({ ...prev, complaintTopicType: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-white focus:ring-2 focus:ring-blue-500 font-bold"
-                  >
-                    <option value="ท่อแตกรั่ว">ท่อแตกรั่ว</option>
-                    <option value="น้ำไม่ไหล/น้ำไหลอ่อน">น้ำไม่ไหล/น้ำไหลอ่อน</option>
-                    <option value="อื่นๆ">อื่นๆ (ระบุเอง)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">ระดับความเร่งด่วน</label>
-                  <select
-                    value={adHocData.urgency}
-                    onChange={(e) => setAdHocData(prev => ({ ...prev, urgency: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-white focus:ring-2 focus:ring-blue-500 font-bold text-amber-600"
-                  >
-                    <option value="ปกติ">ปกติ</option>
-                    <option value="ด่วน">ด่วน</option>
-                    <option value="ด่วนมาก">ด่วนมาก</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">หัวข้อปัญหา *</label>
+                <select
+                  value={adHocData.complaintTopicType}
+                  onChange={(e) => setAdHocData(prev => ({ ...prev, complaintTopicType: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="ท่อแตกรั่ว">ท่อแตกรั่ว</option>
+                  <option value="น้ำไม่ไหล/น้ำไหลอ่อน">น้ำไม่ไหล/น้ำไหลอ่อน</option>
+                  <option value="อื่นๆ">อื่นๆ (ระบุเพิ่มเติม)</option>
+                </select>
               </div>
 
               {adHocData.complaintTopicType === 'อื่นๆ' && (
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">ระบุหัวข้อปัญหาเพิ่มเติม</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ระบุหัวข้อปัญหาเพิ่มเติม *</label>
                   <input 
                     type="text"
                     value={adHocData.customComplaintTopic}
                     onChange={(e) => setAdHocData(prev => ({ ...prev, customComplaintTopic: e.target.value }))}
-                    placeholder="ระบุลักษณะปัญหา..."
+                    placeholder="ระบุปัญหา..."
+                    required
                     className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               )}
 
-              <div className="pt-2 flex gap-2">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">ระดับความเร่งด่วน *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['ปกติ', 'ด่วน', 'ด่วนมาก'].map((level) => (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => setAdHocData(prev => ({ ...prev, urgency: level }))}
+                      className={`py-2 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                        adHocData.urgency === level 
+                          ? level === 'ด่วนมาก' ? 'bg-rose-600 text-white border-rose-600' :
+                            level === 'ด่วน' ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-700 text-white border-slate-700'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {level}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsAdHocModalOpen(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs cursor-pointer"
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl cursor-pointer"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md cursor-pointer"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer"
                 >
-                  {editingJob ? 'บันทึกการแก้ไข' : 'บันทึกและเริ่มงานทันที'}
+                  {editingJob ? 'บันทึกการแก้ไข' : 'สร้างและเริ่มบันทึกงาน'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
     </div>
   );
 }
