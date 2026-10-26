@@ -1,16 +1,42 @@
 import React, { useState } from 'react';
-import { Wrench, Lock, UserCheck, Shield, Smartphone, Globe, KeyRound, User } from 'lucide-react';
+import { Wrench, Lock, UserCheck, Shield, Smartphone, Globe, KeyRound, User, PlusCircle, X, MapPin, Phone, AlertTriangle, Send, Loader2, Camera, Navigation } from 'lucide-react';
 import TrackingSearch from './TrackingSearch';
+import { compressImage } from '../utils/imageCompressor';
+import { saveJobToFirebase } from '../services/firebase';
+
+// 🌐 URL ของ Google Apps Script Web App (สำหรับบันทึกและยิง Telegram)
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec";
 
 export default function RolePortal({ 
   adminUsers = [], 
   workerAccounts = [], 
   onAdminLogin, 
   onWorkerLogin,
-  jobs = [] 
+  jobs = [],
+  onJobCreated
 }) {
   const [activeTab, setActiveTab] = useState('public'); // 'public', 'admin', 'worker'
   
+  // State สำหรับเปิด/ปิด Modal ฟอร์มแจ้งท่อแตกรั่วสำหรับประชาชน
+  const [isPublicFormOpen, setIsPublicFormOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [publicFormImages, setPublicFormImages] = useState([]);
+
+  // State สำหรับฟอร์มแจ้งซ่อมของประชาชนทั่วไป
+  const [publicData, setPublicData] = useState({
+    receivedNo: '',
+    reporterName: '',
+    phone: '',
+    location: '',
+    complaintTopicType: 'ท่อแตกรั่ว',
+    customComplaintTopic: '',
+    urgency: 'ปกติ',
+    description: ''
+  });
+
+  const [coords, setCoords] = useState({ lat: null, lng: null });
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+
   // State สำหรับฟอร์ม Login Admin
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -21,7 +47,155 @@ export default function RolePortal({
   const [workerPassword, setWorkerPassword] = useState('');
   const [workerError, setWorkerError] = useState('');
 
-  // จัดการ Login แอดมิน (ตรวจสอบเฉพาะจากรายชื่อ adminUsers ในฐานข้อมูลเท่านั้น ไม่มีรหัส 1234)
+  // 🕒 ฟังก์ชันสร้างเลขที่รับแจ้งอัตโนมัติสำหรับ ปชช.
+  const generatePublicReceivedNo = () => {
+    const now = new Date();
+    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    
+    const yy = String(thaiTime.getFullYear()).slice(-2);
+    const mm = String(thaiTime.getMonth() + 1).padStart(2, '0');
+    const dd = String(thaiTime.getDate()).padStart(2, '0');
+    const hh = String(thaiTime.getHours()).padStart(2, '0');
+    const min = String(thaiTime.getMinutes()).padStart(2, '0');
+    const dateCode = `${yy}${mm}${dd}-${hh}${min}`;
+
+    const runningNo = String((jobs ? jobs.length : 0) + 1).padStart(2, '0');
+    return `PWA-${dateCode}-${runningNo}`;
+  };
+
+  const handleOpenPublicForm = () => {
+    setPublicData({
+      receivedNo: generatePublicReceivedNo(),
+      reporterName: '',
+      phone: '',
+      location: '',
+      complaintTopicType: 'ท่อแตกรั่ว',
+      customComplaintTopic: '',
+      urgency: 'ปกติ',
+      description: ''
+    });
+    setPublicFormImages([]);
+    setCoords({ lat: null, lng: null });
+    setIsPublicFormOpen(true);
+  };
+
+  const handlePublicImagesChange = async (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    try {
+      const compressedList = [];
+      for (let i = 0; i < files.length; i++) {
+        const compressedBase64 = await compressImage(files[i], 1024, 0.7);
+        compressedList.push(compressedBase64);
+      }
+      setPublicFormImages(prev => [...prev, ...compressedList]);
+    } catch (err) {
+      console.error("Image compression error:", err);
+      alert("เกิดข้อผิดพลาดในการโหลดรูปภาพ");
+    }
+  };
+
+  const handleRemovePublicImage = (index) => {
+    setPublicFormImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleGetGPS = () => {
+    if (!navigator.geolocation) {
+      alert("เบราว์เซอร์ของคุณไม่รองรับการระบุตำแหน่ง GPS");
+      return;
+    }
+
+    setIsGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCoords({
+          lat: position.coords.latitude.toFixed(6),
+          lng: position.coords.longitude.toFixed(6)
+        });
+        setIsGettingLocation(false);
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        alert("ไม่สามารถดึงพิกัดได้ (กรุณาอนุญาตการเข้าถึงตำแหน่ง GPS)");
+        setIsGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  // 🚀 ส่งข้อมูลแจ้งซ่อมจากประชาชนทั่วไป
+  const handlePublicSubmit = async (e) => {
+    e.preventDefault();
+    if (!publicData.location.trim()) {
+      alert("กรุณาระบุสถานที่เกิดเหตุ");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const now = new Date();
+    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
+
+    const finalComplaintTopic = publicData.complaintTopicType === 'อื่นๆ' 
+      ? (publicData.customComplaintTopic.trim() || 'อื่นๆ') 
+      : publicData.complaintTopicType;
+
+    const newPublicJob = {
+      id: 'JOB-' + Date.now().toString().slice(-6),
+      receivedNo: publicData.receivedNo,
+      receivedAt: currentDateTime,
+      timestamp: currentDateTime,
+      channel: 'แจ้งผ่านระบบเว็บไซต์ประชาชน',
+      complaintType: finalComplaintTopic,
+      complainantInfo: publicData.phone || '-',
+      complaintTopic: finalComplaintTopic,
+      description: publicData.description || 'แจ้งซ่อมโดยประชาชนทั่วไปผ่านเว็บไซต์',
+      location: publicData.location,
+      reporterName: publicData.reporterName.trim() || 'ประชาชนทั่วไป',
+      phone: publicData.phone.trim() || '-',
+      receiverName: 'ระบบรับแจ้งอัตโนมัติ',
+      status: 'PENDING',
+      urgency: publicData.urgency,
+      technician: '-',
+      techName: '-',
+      techPhone: '-',
+      latitude: coords.lat || '',
+      longitude: coords.lng || '',
+      beforeImgBase64: publicFormImages.length > 0 ? publicFormImages[0] : ''
+    };
+
+    try {
+      // 1. บันทึกลง Firebase
+      await saveJobToFirebase(newPublicJob);
+      if (onJobCreated) onJobCreated(newPublicJob);
+
+      // 2. ส่งข้อมูลไป Apps Script เพื่อเก็บบันทึกลง Sheets และยิงแจ้งเตือน Telegram (ถ้าต้องการ)
+      try {
+        const payload = {
+          action: "archive_job", // หรือจะส่งไปเก็บบันทึก
+          jobData: newPublicJob
+        };
+        await fetch(WEB_APP_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload)
+        });
+      } catch (netErr) {
+        console.error("Network notice:", netErr);
+      }
+
+      alert(`แจ้งซ่อมสำเร็จ! เลขที่รับแจ้งของคุณคือ: ${publicData.receivedNo}\n(กรุณาจดเลขที่รับแจ้งไว้สำหรับตรวจสอบสถานะ)`);
+      setIsPublicFormOpen(false);
+    } catch (err) {
+      console.error("Error saving public job:", err);
+      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // จัดการ Login แอดมิน
   const handleAdminSubmit = (e) => {
     e.preventDefault();
     setAdminError('');
@@ -112,25 +286,45 @@ export default function RolePortal({
         </div>
 
         {/* Tab Content */}
-        <div className="p-5 sm:p-6">
+        <div className="p-5 sm:p-6 space-y-6">
           
-          {/* 1. ส่วนประชาชนทั่วไป: ค้นหา Tracking ได้ทันทีหน้าแรก */}
+          {/* 1. ส่วนประชาชนทั่วไป: ค้นหา Tracking และปุ่มแจ้งท่อแตกรั่ว */}
           {activeTab === 'public' && (
-            <div className="space-y-4">
-              <div className="text-center space-y-1">
-                <h3 className="font-bold text-base text-white">ตรวจสอบสถานะการแจ้งซ่อม</h3>
-                <p className="text-xs text-slate-400">
-                  กรอกเลขที่ใบรับแจ้ง เบอร์โทรศัพท์ หรือชื่อผู้แจ้ง เพื่อค้นหาติดตามสถานะได้ทันที
-                </p>
+            <div className="space-y-6">
+              {/* ปุ่มแจ้งท่อแตกรั่ว */}
+              <div className="bg-gradient-to-r from-blue-600/20 to-cyan-600/20 border border-blue-500/30 p-5 rounded-3xl text-center space-y-3">
+                <div className="w-12 h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-blue-600/30">
+                  <Wrench className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">พบปัญหาท่อแตกรั่ว / น้ำไม่ไหล?</h3>
+                  <p className="text-xs text-slate-300 mt-0.5">แจ้งเรื่องเข้ามาเพื่อให้เจ้าหน้าที่ตรวจสอบและดำเนินการแก้ไขได้ทันที</p>
+                </div>
+                <button
+                  onClick={handleOpenPublicForm}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition active:scale-95 cursor-pointer"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>แจ้งท่อแตกรั่ว / ส่งเรื่องร้องเรียน</span>
+                </button>
               </div>
 
-              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
-                <TrackingSearch jobs={jobs} />
+              <div className="border-t border-slate-800 pt-4">
+                <div className="text-center space-y-1 mb-3">
+                  <h3 className="font-bold text-sm text-white">ตรวจสอบสถานะการแจ้งซ่อม</h3>
+                  <p className="text-xs text-slate-400">
+                    กรอกเลขที่ใบรับแจ้ง เบอร์โทรศัพท์ หรือชื่อผู้แจ้ง เพื่อค้นหาติดตามสถานะได้ทันที
+                  </p>
+                </div>
+
+                <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
+                  <TrackingSearch jobs={jobs} />
+                </div>
               </div>
             </div>
           )}
 
-          {/* 2. ส่วนของ Admin (ไม่มีรหัสตั้งต้น 1234 และเปลี่ยนข้อความคำแนะนำใหม่) */}
+          {/* 2. ส่วนของ Admin */}
           {activeTab === 'admin' && (
             <form onSubmit={handleAdminSubmit} className="space-y-4">
               <div className="text-center space-y-1 mb-4">
@@ -247,7 +441,7 @@ export default function RolePortal({
 
               <button
                 type="submit"
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition active:scale-95 cursor-pointer mt-2"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition active:scale-95 cursor-pointer"
               >
                 <span>เข้าสู่ระบบหน้าช่างภาคสนาม</span>
               </button>
@@ -256,6 +450,220 @@ export default function RolePortal({
 
         </div>
       </div>
+
+      {/* 🔴 Modal ฟอร์มแจ้งท่อแตกรั่วสำหรับประชาชนทั่วไป */}
+      {isPublicFormOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-3xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto text-slate-100">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                <PlusCircle className="w-5 h-5 text-blue-500" />
+                แบบฟอร์มแจ้งท่อแตกรั่ว / ร้องเรียน
+              </h4>
+              <button onClick={() => setIsPublicFormOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handlePublicSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">เลขที่รับแจ้ง (รหัสอ้างอิงอัตโนมัติ) *</label>
+                <input 
+                  type="text"
+                  value={publicData.receivedNo}
+                  disabled
+                  className="w-full border border-slate-800 rounded-xl p-2.5 text-xs font-mono font-bold text-cyan-400 bg-slate-950"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">ชื่อผู้แจ้ง *</label>
+                  <input 
+                    type="text"
+                    value={publicData.reporterName}
+                    onChange={(e) => setPublicData(prev => ({ ...prev, reporterName: e.target.value }))}
+                    placeholder="กรอกชื่อ-นามสกุลของคุณ"
+                    required
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">เบอร์โทรศัพท์ติดต่อ *</label>
+                  <input 
+                    type="text"
+                    value={publicData.phone}
+                    onChange={(e) => setPublicData(prev => ({ ...prev, phone: e.target.value }))}
+                    placeholder="เช่น 0812345678"
+                    required
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs font-mono text-white focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">สถานที่เกิดเหตุ / จุดสังเกตชัดเจน *</label>
+                <textarea 
+                  rows="2"
+                  value={publicData.location}
+                  onChange={(e) => setPublicData(prev => ({ ...prev, location: e.target.value }))}
+                  placeholder="เช่น ซอย 3 ถนนสุนทรราชกิจ ใกล้ร้านค้า..."
+                  required
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">หัวข้อปัญหา *</label>
+                <select
+                  value={publicData.complaintTopicType}
+                  onChange={(e) => setPublicData(prev => ({ ...prev, complaintTopicType: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs font-bold text-white focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="ท่อแตกรั่ว">ท่อแตกรั่ว</option>
+                  <option value="น้ำไม่ไหล/น้ำไหลอ่อน">น้ำไม่ไหล/น้ำไหลอ่อน</option>
+                  <option value="อื่นๆ">อื่นๆ (ระบุเพิ่มเติม)</option>
+                </select>
+              </div>
+
+              {publicData.complaintTopicType === 'อื่นๆ' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">ระบุหัวข้อปัญหาเพิ่มเติม *</label>
+                  <input 
+                    type="text"
+                    value={publicData.customComplaintTopic}
+                    onChange={(e) => setPublicData(prev => ({ ...prev, customComplaintTopic: e.target.value }))}
+                    placeholder="ระบุปัญหา..."
+                    required
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">ระดับความเร่งด่วน *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'ปกติ', label: 'ปกติ', activeClass: 'bg-slate-700 text-white border-slate-700' },
+                    { id: 'ด่วน', label: 'ด่วน', activeClass: 'bg-amber-500 text-white border-amber-500' },
+                    { id: 'ด่วนมาก', label: 'ด่วนมาก', activeClass: 'bg-rose-600 text-white border-rose-600 animate-pulse' }
+                  ].map((level) => (
+                    <button
+                      key={level.id}
+                      type="button"
+                      onClick={() => setPublicData(prev => ({ ...prev, urgency: level.id }))}
+                      className={`py-2 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                        publicData.urgency === level.id 
+                          ? level.activeClass 
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800'
+                      }`}
+                    >
+                      {level.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">รายละเอียดเพิ่มเติม (ถ้ามี)</label>
+                <textarea 
+                  rows="2"
+                  value={publicData.description}
+                  onChange={(e) => setPublicData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="ลักษณะน้ำรั่วไหล หรือข้อมูลเพิ่มเติม..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* 📸 แนบรูปถ่ายหน้างาน */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-bold text-slate-300">แนบรูปถ่ายจุดเกิดเหตุ (ถ้ามี)</label>
+                  <label className="bg-slate-800 hover:bg-slate-700 text-cyan-400 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition">
+                    <Camera className="w-3.5 h-3.5" /> เลือกรูปภาพ
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handlePublicImagesChange}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {publicFormImages.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {publicFormImages.map((imgUrl, index) => (
+                      <div key={index} className="relative group rounded-xl overflow-hidden border border-slate-800 aspect-square bg-slate-950">
+                        <img src={imgUrl} alt={`Preview ${index}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePublicImage(index)}
+                          className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow transition cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 📍 พิกัด GPS */}
+              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
+                    <Navigation className="w-3.5 h-3.5 text-blue-400" /> พิกัดจุดเกิดเหตุ (GPS)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleGetGPS}
+                    disabled={isGettingLocation}
+                    className="bg-slate-800 hover:bg-slate-700 text-blue-400 px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                  >
+                    {isGettingLocation ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3 text-rose-500" />}
+                    {coords.lat ? 'ดึงพิกัดใหม่' : 'กดดึงพิกัดปัจจุบัน'}
+                  </button>
+                </div>
+
+                {coords.lat && (
+                  <p className="text-[11px] font-mono font-semibold text-slate-300 bg-slate-900 p-2 rounded-xl border border-slate-800">
+                    📍 Lat: {coords.lat}, Lng: {coords.lng}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPublicFormOpen(false)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold py-3 rounded-xl cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>กำลังส่งเรื่อง...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>ยืนยันส่งเรื่องแจ้งซ่อม</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Footer info */}
       <div className="mt-6 text-center text-[11px] text-slate-500 space-y-1">
