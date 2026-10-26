@@ -3,7 +3,7 @@ import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User,
 import { compressImage } from '../utils/imageCompressor';
 import { saveJobToFirebase } from '../services/firebase';
 
-// รายการอุปกรณ์สำรอง (Fallback Data) ในกรณียังไม่ใส่ URL หรือดึงข้อมูลผ่าน API ไม่สำเร็จ
+// รายการอุปกรณ์สำรอง (Fallback Data) ในกรณีดึงข้อมูลผ่าน API ไม่สำเร็จ
 const DEFAULT_EQUIPMENT_LIST = [
   { id: 'EQ-001', name: 'ข้อต่อตรง HDPE 110 มม.', unit: 'ตัว' },
   { id: 'EQ-002', name: 'ท่อ HDPE ขนาด 110 มม.', unit: 'เมตร' },
@@ -57,20 +57,17 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const pipeTypes = ['PB', 'PVC', 'AC', 'HDPE', 'GS', 'SP'];
   const pipeSizes = ['20', '25', '40', '50', '100', '110', '150', '160', '200', '225', '250', '280', '300', '315', '400', '630'];
 
-  // 🌐 ดึงข้อมูลรายการอุปกรณ์จาก Google Sheets (ผ่าน Web App API)
+  // 🌐 ดึงข้อมูลรายการอุปกรณ์จาก Google Sheets (ผ่าน Web App API ที่คุณระบุ)
   useEffect(() => {
     const fetchEquipmentFromSheets = async () => {
       setIsLoadingEquipment(true);
       try {
-        // 📌 เปลี่ยน URL ตรงนี้เป็น Web App URL ของคุณที่ Deploy จาก Google Apps Script
-        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbywoc-W-hGbo4AbCJm78g4lic5pz0bsqoAqBxtDnbb7Q7_xV5J3u12W3oK7lGzRkVrRww/exec";
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbywoc-W-hGbo4AbCJm78g4lic5pz0bsqoAqBxtDnbb7Q7_xV5J3u12W3oK7lGzRkVrRww/exec?action=equipment";
         
-        if (!WEB_APP_URL.includes("YOUR_SCRIPT_ID")) {
-          const response = await fetch(WEB_APP_URL);
-          const data = await response.json();
-          if (Array.isArray(data) && data.length > 0) {
-            setEquipmentList(data);
-          }
+        const response = await fetch(WEB_APP_URL);
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setEquipmentList(data);
         }
       } catch (err) {
         console.error("Error fetching equipment:", err);
