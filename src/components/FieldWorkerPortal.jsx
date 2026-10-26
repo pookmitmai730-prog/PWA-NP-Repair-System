@@ -3,6 +3,9 @@ import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User,
 import { compressImage } from '../utils/imageCompressor';
 import { saveJobToFirebase } from '../services/firebase';
 
+// 🌐 URL ของ Google Apps Script Web App (ตรวจสอบให้แน่ใจว่าเป็น URL ล่าสุดจากการ Deploy)
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbywoc-W-hGbo4AbCJm78g4lic5pz0bsqoAqBxtDnbb7Q7_xV5J3u12W3oK7lGzRkVrRww/exec";
+
 // รายการอุปกรณ์สำรอง (Fallback Data) ในกรณีดึงข้อมูลผ่าน API ไม่สำเร็จ
 const DEFAULT_EQUIPMENT_LIST = [
   { id: 'EQ-001', name: 'ข้อต่อตรง HDPE 110 มม.', unit: 'ตัว' },
@@ -79,9 +82,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     const fetchEquipmentFromSheets = async () => {
       setIsLoadingEquipment(true);
       try {
-        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbywoc-W-hGbo4AbCJm78g4lic5pz0bsqoAqBxtDnbb7Q7_xV5J3u12W3oK7lGzRkVrRww/exec?action=equipment";
-        
-        const response = await fetch(WEB_APP_URL);
+        const response = await fetch(`${WEB_APP_URL}?action=equipment`);
         const data = await response.json();
 
         if (Array.isArray(data) && data.length > 0) {
@@ -273,7 +274,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 🔄 ดึงทั้งงาน DISPATCHED, IN_PROGRESS และ UNREPAIRABLE (เพื่อกลับมาซ่อมซ้ำ)
+  // 🔄 ดึงทั้งงาน DISPATCHED, IN_PROGRESS และ UNREPAIRABLE (เพื่อให้สามารถกลับมาซ่อมซ้ำได้)
   const activeJobs = jobs
     .filter(j => {
       const matchTechName = j.techName && j.techName.trim() === currentTeam.trim();
@@ -410,90 +411,95 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 📝 บันทึกผลการปฏิบัติงาน (ส่งค่าครบถ้วนสำหรับ Telegram Notification)
+  // 📝 บันทึกผลการปฏิบัติงาน (ส่งผ่าน URLSearchParams Form-Data เพื่อทะลุ CORS และยิง Telegram)
   const handleSubmitFix = async (e) => {
     e.preventDefault();
     if (!selectedJob) return;
 
+    setIsSubmitting(true);
+    const now = new Date();
+    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
+
+    let finalReason = '';
     if (isUnrepairable) {
-      const finalReason = unrepairableReasonType === 'อื่นๆ (ระบุในรายละเอียด)' 
+      finalReason = unrepairableReasonType === 'อื่นๆ (ระบุในรายละเอียด)' 
         ? (customUnrepairableReason.trim() || 'ไม่ระบุสาเหตุ') 
         : unrepairableReasonType;
 
       if (!unrepairableDetails.trim()) {
         alert("กรุณากรอกรายละเอียดอุปสรรคหน้างานที่ไม่สามารถซ่อมได้");
+        setIsSubmitting(false);
         return;
       }
-
-      setIsSubmitting(true);
-      const now = new Date();
-      const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-      const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
-
-      const updatePayload = {
-        receivedNo: selectedJob.receivedNo || selectedJob.id,
-        receivedAt: selectedJob.receivedAt || selectedJob.timestamp || '-',
-        reporterName: selectedJob.reporterName || 'ไม่ระบุชื่อ',
-        phone: selectedJob.phone || '-',
-        location: selectedJob.location || '-',
-        technician: currentTeam,
-        status: 'UNREPAIRABLE',
-        unrepairableReason: finalReason,
-        unrepairableDetails: unrepairableDetails.trim(),
-        beforeImgBase64: JSON.stringify(images.before),
-        inProgImgBase64: JSON.stringify(images.inProgress),
-        afterImgBase64: JSON.stringify(images.after),
-        notes: `❌ ไม่สามารถซ่อมได้เนื่องจาก: ${finalReason}\nรายละเอียด: ${unrepairableDetails.trim()}`,
-        completedAt: currentDateTime,
-        closedAt: currentDateTime,
-        latitude: coords.lat || selectedJob.latitude || '',
-        longitude: coords.lng || selectedJob.longitude || ''
-      };
-
-      await onUpdateJobStatus(selectedJob.id, 'UNREPAIRABLE', updatePayload);
-      alert(`บันทึกรายงาน: ไม่สามารถซ่อมใบงาน ${selectedJob.receivedNo || selectedJob.id} เรียบร้อยแล้ว`);
-    } else {
-      // กรณีซ่อมเสร็จสิ้นตามปกติ
-      setIsSubmitting(true);
-      const now = new Date();
-      const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-      const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
-
-      const updatePayload = {
-        receivedNo: selectedJob.receivedNo || selectedJob.id,
-        receivedAt: selectedJob.receivedAt || selectedJob.timestamp || '-',
-        reporterName: selectedJob.reporterName || 'ไม่ระบุชื่อ',
-        phone: selectedJob.phone || '-',
-        location: selectedJob.location || '-',
-        technician: currentTeam,
-        status: 'COMPLETED',
-        pipeType: pipeType,
-        pipeSize: pipeSize,
-        beforeImgBase64: JSON.stringify(images.before),
-        inProgImgBase64: JSON.stringify(images.inProgress),
-        afterImgBase64: JSON.stringify(images.after),
-        notes: notes || `ใช้อุปกรณ์: ท่อ ${pipeType} ขนาด ${pipeSize} มม.`,
-        closedAt: currentDateTime,
-        completedAt: currentDateTime,
-        latitude: coords.lat || selectedJob.latitude || '',
-        longitude: coords.lng || selectedJob.longitude || ''
-      };
-
-      await onUpdateJobStatus(selectedJob.id, 'COMPLETED', updatePayload);
-      alert(`ปิดงานซ่อม ${selectedJob.receivedNo || selectedJob.id} เรียบร้อยแล้ว!`);
     }
 
-    setIsSubmitting(false);
-    setSelectedJob(null);
-    setImages({ before: [], inProgress: [], after: [] });
-    setNotes('');
-    setSelectedEquipmentList([]);
-    setIsUnrepairable(false);
-    setUnrepairableDetails('');
-    setCustomUnrepairableReason('');
-    setPipeType('HDPE');
-    setPipeSize('110');
-    setCoords({ lat: null, lng: null });
+    const jobDataPayload = {
+      action: "archive_job",
+      jobData: {
+        id: selectedJob.id,
+        receivedNo: selectedJob.receivedNo || selectedJob.id,
+        timestamp: selectedJob.receivedAt || selectedJob.timestamp || currentDateTime,
+        receivedAt: selectedJob.receivedAt || selectedJob.timestamp || '-',
+        reporterName: selectedJob.reporterName || 'ไม่ระบุชื่อ',
+        phone: selectedJob.phone || '-',
+        location: selectedJob.location || '-',
+        issueType: selectedJob.complaintTopic || selectedJob.issueType || 'ท่อแตกรั่ว',
+        pipeType: isUnrepairable ? '-' : pipeType,
+        pipeSize: isUnrepairable ? '-' : pipeSize,
+        description: selectedJob.details || '-',
+        technician: currentTeam,
+        status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
+        beforeImgBase64: images.before.length > 0 ? images.before[0] : '',
+        inProgImgBase64: images.inProgress.length > 0 ? images.inProgress[0] : '',
+        afterImgBase64: images.after.length > 0 ? images.after[0] : '',
+        notes: isUnrepairable 
+          ? `❌ ไม่สามารถซ่อมได้เนื่องจาก: ${finalReason}\nรายละเอียด: ${unrepairableDetails.trim()}` 
+          : (notes || `ใช้อุปกรณ์: ท่อ ${pipeType} ขนาด ${pipeSize} มม.`),
+        closedAt: currentDateTime,
+        completedAt: currentDateTime,
+        latitude: coords.lat || selectedJob.latitude || '',
+        longitude: coords.lng || selectedJob.longitude || ''
+      }
+    };
+
+    try {
+      // 🚀 ใช้ URLSearchParams เพื่อส่ง Form-Data ข้าม CORS ไปยัง Apps Script ได้อย่างสมบูรณ์
+      const formData = new URLSearchParams();
+      formData.append("payload", JSON.stringify(jobDataPayload));
+
+      await fetch(WEB_APP_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: formData.toString()
+      });
+
+      // อัปเดตสถานะในระบบฐานข้อมูลหลัก (Firebase)
+      await onUpdateJobStatus(selectedJob.id, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
+
+      alert(isUnrepairable 
+        ? `บันทึกรายงานซ่อมไม่ได้ของใบงาน ${selectedJob.receivedNo || selectedJob.id} เรียบร้อยแล้ว` 
+        : `ปิดงานซ่อม ${selectedJob.receivedNo || selectedJob.id} เรียบร้อยแล้ว!`
+      );
+    } catch (err) {
+      console.error("Error submitting fix:", err);
+      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+    } finally {
+      setIsSubmitting(false);
+      setSelectedJob(null);
+      setImages({ before: [], inProgress: [], after: [] });
+      setNotes('');
+      setSelectedEquipmentList([]);
+      setIsUnrepairable(false);
+      setUnrepairableDetails('');
+      setCustomUnrepairableReason('');
+      setPipeType('HDPE');
+      setPipeSize('110');
+      setCoords({ lat: null, lng: null });
+    }
   };
 
   if (!currentTeam) {
@@ -665,10 +671,10 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                         <span>{job.location}</span>
                       </p>
 
-                      {job.status === 'UNREPAIRABLE' && job.unrepairableReason && (
+                      {job.status === 'UNREPAIRABLE' && job.notes && (
                         <div className="mt-2 bg-purple-50 p-2 rounded-xl border border-purple-200 text-[11px] text-purple-900">
                           <span className="font-bold block">⚠️ อุปสรรคหน้างานเดิม:</span>
-                          <span>{job.unrepairableReason}</span>
+                          <span>{job.notes}</span>
                         </div>
                       )}
                     </div>
@@ -935,7 +941,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   </p>
                 ) : (
                   <p className="text-[11px] text-slate-500">
-                    * ควรกดปุ่ม "ดึงพิกัดปัจจุบัน" เพื่อเป็นหลักฐานตำแหน่งอุปสรรคหน้างาน
+                    * ควรกดปุ่ม "ดึงพิกัดปัจจุบัน" เพื่อเป็นหลักฐานตำแหน่งหน้างาน
                   </p>
                 )}
               </div>
@@ -956,7 +962,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     <input type="file" accept="image/*" multiple onChange={(e) => handleMultipleImagesChange('inProgress', e.target.files)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" />
                     <div className="py-1 space-y-1">
                       <Camera className="w-5 h-5 mx-auto text-amber-500" />
-                      <span className="text-[10px] block font-bold text-slate-600">รูปอุปสรรค ({images.inProgress.length})</span>
+                      <span className="text-[10px] block font-bold text-slate-600">รูประหว่างทำ ({images.inProgress.length})</span>
                     </div>
                   </div>
 
@@ -964,7 +970,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     <input type="file" accept="image/*" multiple onChange={(e) => handleMultipleImagesChange('after', e.target.files)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" />
                     <div className="py-1 space-y-1">
                       <Camera className="w-5 h-5 mx-auto text-emerald-500" />
-                      <span className="text-[10px] block font-bold text-slate-600">รูปโดยรอบ ({images.after.length})</span>
+                      <span className="text-[10px] block font-bold text-slate-600">รูปหลังซ่อม ({images.after.length})</span>
                     </div>
                   </div>
                 </div>
@@ -974,7 +980,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     images[type].length > 0 && (
                       <div key={type} className="space-y-1">
                         <span className="text-[10px] font-bold text-slate-500 uppercase">
-                          {type === 'before' ? 'รูปสภาพปัญหา' : type === 'inProgress' ? 'รูปอุปสรรค' : 'รูปโดยรอบ'} ({images[type].length})
+                          {type === 'before' ? 'รูปสภาพปัญหา' : type === 'inProgress' ? 'รูประหว่างทำ' : 'รูปหลังซ่อม'} ({images[type].length})
                         </span>
                         <div className="flex gap-2 overflow-x-auto pb-1">
                           {images[type].map((imgSrc, idx) => (
