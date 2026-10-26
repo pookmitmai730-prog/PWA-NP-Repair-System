@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, ShieldAlert } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, ShieldAlert, Search, Loader2, Plus } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 import { saveJobToFirebase } from '../services/firebase';
 
@@ -24,8 +24,17 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   });
 
   const [images, setImages] = useState({ before: [], inProgress: [], after: [] });
-  const [notes, setNotes] = useState('');
   
+  // 🛠️ State สำหรับระบบเลือกอุปกรณ์จาก Google Sheets
+  const [equipmentList, setEquipmentList] = useState([]);
+  const [isLoadingEquipment, setIsLoadingEquipment] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [selectedEquipmentItem, setSelectedEquipmentItem] = useState(null);
+  const [equipmentQuantity, setEquipmentQuantity] = useState(1);
+  const [selectedEquipmentList, setSelectedEquipmentList] = useState([]);
+  const [notes, setNotes] = useState(''); // เก็บข้อความสรุปอุปกรณ์
+
   // State สำหรับชนิดท่อและขนาดท่อ
   const [pipeType, setPipeType] = useState('HDPE');
   const [pipeSize, setPipeSize] = useState('110');
@@ -36,6 +45,90 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
   const pipeTypes = ['PB', 'PVC', 'AC', 'HDPE', 'GS', 'SP'];
   const pipeSizes = ['20', '25', '40', '50', '100', '110', '150', '160', '200', '225', '250', '280', '300', '315', '400', '630'];
+
+  // 🌐 ดึงข้อมูลรายการอุปกรณ์จาก Google Sheets (ผ่าน Web App API)
+  useEffect(() => {
+    const fetchEquipmentFromSheets = async () => {
+      setIsLoadingEquipment(true);
+      try {
+        // ⚠️ แทนที่ URL ด้านล่างด้วย Web App URL ของคุณที่ได้จากการ Deploy ใน Google Apps Script
+        const WEB_APP_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?action=equipment";
+        
+        const response = await fetch(WEB_APP_URL);
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setEquipmentList(data);
+        }
+      } catch (err) {
+        console.error("Error fetching equipment:", err);
+      } finally {
+        setIsLoadingEquipment(false);
+      }
+    };
+
+    if (currentTeam) {
+      fetchEquipmentFromSheets();
+    }
+  }, [currentTeam]);
+
+  // ฟังก์ชันพิมพ์ค้นหาอุปกรณ์อัตโนมัติ
+  const handleSearchEquipmentChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    if (!value.trim()) {
+      setSuggestions([]);
+    } else {
+      const filtered = equipmentList.filter(item => 
+        String(item.name || '').toLowerCase().includes(value.toLowerCase())
+      );
+      setSuggestions(filtered);
+    }
+  };
+
+  // เลือกอุปกรณ์จากรายชื่อแนะนำ
+  const handleSelectEquipmentSuggestion = (item) => {
+    setSelectedEquipmentItem(item);
+    setSearchTerm(item.name);
+    setSuggestions([]);
+  };
+
+  // กดปุ่มเพิ่มอุปกรณ์ลงในรายการสะสม
+  const handleAddEquipmentToList = () => {
+    if (!searchTerm.trim()) {
+      alert("กรุณาพิมพ์หรือเลือกชื่ออุปกรณ์");
+      return;
+    }
+
+    const itemName = selectedEquipmentItem ? selectedEquipmentItem.name : searchTerm;
+    const itemUnit = selectedEquipmentItem ? selectedEquipmentItem.unit : 'หน่วย';
+
+    const newItem = {
+      id: Date.now(),
+      name: itemName,
+      quantity: Number(equipmentQuantity) || 1,
+      unit: itemUnit
+    };
+
+    const updatedList = [...selectedEquipmentList, newItem];
+    setSelectedEquipmentList(updatedList);
+
+    // รวมข้อความไปเก็บใน notes อัตโนมัติ เพื่อส่งบันทึก
+    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join(', ');
+    setNotes(summaryText);
+
+    // รีเซ็ตช่องค้นหาเพื่อเลือกชิ้นถัดไป
+    setSearchTerm('');
+    setSelectedEquipmentItem(null);
+    setEquipmentQuantity(1);
+  };
+
+  // ลบอุปกรณ์ออกจากรายการสะสม
+  const handleRemoveEquipmentItem = (id) => {
+    const updatedList = selectedEquipmentList.filter(item => item.id !== id);
+    setSelectedEquipmentList(updatedList);
+    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join(', ');
+    setNotes(summaryText);
+  };
 
   const handleLogin = (teamName) => {
     setCurrentTeam(teamName);
@@ -83,16 +176,14 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setIsAdHocModalOpen(true);
   };
 
-  // ✏️ เปิด Modal เพื่อแก้ไขใบงาน (เฉพาะงานที่ช่างเปิดเอง และขึ้นต้นด้วยรหัส Ad-hoc หรือไม่มีช่องแอดมินล็อกไว้)
+  // ✏️ เปิด Modal เพื่อแก้ไขใบงาน
   const handleOpenEditModal = (job) => {
-    // ตรวจสอบว่าเป็นงานที่แอดมินมอบหมายหรือไม่ (เช่น channel ไม่ใช่ 'พบเหตุหน้างาน/แจ้งฉุกเฉิน')
     if (job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน') {
       alert("ไม่อนุญาตให้แก้ไข: งานนี้เป็นงานที่ได้รับมอบหมายจากแอดมิน");
       return;
     }
 
     setEditingJob(job);
-    
     const isStandardTopic = ['ท่อแตกรั่ว', 'น้ำไม่ไหล/น้ำไหลอ่อน'].includes(job.complaintTopic);
     
     setAdHocData({
@@ -307,6 +398,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setSelectedJob(null);
     setImages({ before: [], inProgress: [], after: [] });
     setNotes('');
+    setSelectedEquipmentList([]);
     setPipeType('HDPE');
     setPipeSize('110');
     setCoords({ lat: null, lng: null });
@@ -404,12 +496,10 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               </div>
             ) : (
               activeJobs.map((job) => {
-                // เช็คว่าเป็นงานที่แอดมินมอบหมายมาจากส่วนกลางหรือไม่
                 const isAdminAssigned = job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน';
 
                 return (
                   <div key={job.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3 relative overflow-hidden">
-                    
                     <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${
                       job.urgency === 'ด่วนมาก' ? 'bg-rose-600' :
                       job.urgency === 'ด่วน' ? 'bg-amber-500' : 'bg-slate-300'
@@ -434,7 +524,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                       </div>
 
                       <div className="flex items-center gap-1">
-                        {/* 🔒 แสดงปุ่มแก้ไข/ลบ เฉพาะงานที่ช่างเปิดเอง และยังไม่ปิดงาน */}
                         {!isAdminAssigned && job.status !== 'COMPLETED' && (
                           <>
                             <button
@@ -455,7 +544,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                         )}
 
                         {isAdminAssigned && (
-                          <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-0.5" title="งานที่ได้รับมอบหมายจากแอดมิน (ไม่สามารถแก้ไข/ลบได้)">
+                          <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-0.5" title="งานที่ได้รับมอบหมายจากแอดมิน">
                             <ShieldAlert className="w-3 h-3 text-slate-500" /> งานแอดมิน
                           </span>
                         )}
@@ -558,6 +647,91 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               </div>
 
+              {/* 🛠️ ระบบเลือกอุปกรณ์จาก Google Sheets แบบพิมพ์ค้นหาอัตโนมัติ (Autocomplete & Multi-select) */}
+              <div className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-bold text-slate-700">เลือกอุปกรณ์ที่ใช้ซ่อม (จาก Google Sheets)</label>
+                  {isLoadingEquipment && <span className="text-[10px] text-blue-600 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> กำลังโหลดรายการ...</span>}
+                </div>
+                
+                <div className="flex gap-2 relative">
+                  {/* ช่องพิมพ์ค้นหาอุปกรณ์ */}
+                  <div className="flex-1 relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <Search className="w-3.5 h-3.5" />
+                    </div>
+                    <input 
+                      type="text"
+                      value={searchTerm}
+                      onChange={handleSearchEquipmentChange}
+                      placeholder="พิมพ์ชื่ออุปกรณ์ เช่น ท่อ, ข้อต่อ..."
+                      className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 font-medium text-slate-800 shadow-xs"
+                    />
+
+                    {/* รายชื่อแนะนำ (Dropdown Suggestions) */}
+                    {suggestions.length > 0 && (
+                      <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-40 overflow-y-auto">
+                        {suggestions.map((item, idx) => (
+                          <div 
+                            key={idx}
+                            onClick={() => handleSelectEquipmentSuggestion(item)}
+                            className="p-2.5 hover:bg-slate-100 text-xs text-slate-800 cursor-pointer border-b border-slate-100 last:border-none flex justify-between items-center"
+                          >
+                            <span className="font-semibold">{item.name}</span>
+                            <span className="text-[10px] text-slate-400">หน่วย: {item.unit}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ช่องใส่จำนวน */}
+                  <div className="w-20">
+                    <input 
+                      type="number"
+                      min="1"
+                      value={equipmentQuantity}
+                      onChange={(e) => setEquipmentQuantity(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2 py-2 text-xs text-center font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 shadow-xs"
+                      placeholder="จำนวน"
+                    />
+                  </div>
+
+                  {/* ปุ่มกดเพิ่ม */}
+                  <button
+                    type="button"
+                    onClick={handleAddEquipmentToList}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer shrink-0"
+                  >
+                    <Plus className="w-4 h-4" /> เพิ่ม
+                  </button>
+                </div>
+
+                {/* แสดงรายการอุปกรณ์ที่เลือกสะสมไว้ */}
+                {selectedEquipmentList.length > 0 && (
+                  <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-500">รายการอุปกรณ์ที่เลือกไว้ ({selectedEquipmentList.length}):</span>
+                    <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                      {selectedEquipmentList.map((item) => (
+                        <div key={item.id} className="bg-white px-3 py-2 rounded-xl border border-slate-200 flex justify-between items-center text-xs shadow-xs">
+                          <span className="font-medium text-slate-800">🔹 {item.name}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold text-emerald-600 font-mono">จำนวน: {item.quantity} {item.unit}</span>
+                            <button 
+                              type="button" 
+                              onClick={() => handleRemoveEquipmentItem(item.id)}
+                              className="text-rose-500 hover:text-rose-700 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="bg-blue-50/60 border border-blue-200 p-3 rounded-2xl space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold text-blue-900 flex items-center gap-1">
@@ -637,13 +811,13 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">อุปกรณ์ที่ใช้</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">สรุปอุปกรณ์ที่ใช้ (บันทึกอัตโนมัติจากด้านบน)</label>
                 <textarea 
                   rows="2"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="กรุณาใส่อุปกรณ์ซ่อม"
-                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="อุปกรณ์ที่เลือกจะแสดงที่นี่อัตโนมัติ หรือพิมพ์เพิ่มเติม..."
+                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 font-medium"
                 ></textarea>
               </div>
 
@@ -698,74 +872,89 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">เบอร์โทรศัพท์ติดต่อ</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">เบอร์โทรศัพท์</label>
                   <input 
-                    type="text"
+                    type="tel"
                     value={adHocData.phone}
                     onChange={(e) => setAdHocData(prev => ({ ...prev, phone: e.target.value }))}
                     placeholder="เบอร์โทรผู้แจ้ง"
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500 font-mono"
+                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">บริเวณที่เกิดเหตุ / สถานที่ซ่อม *</label>
-                <textarea 
-                  rows="2"
+                <label className="block text-xs font-bold text-slate-700 mb-1">บริเวณที่เกิดเหตุ / สถานที่ *</label>
+                <input 
+                  type="text"
                   value={adHocData.location}
                   onChange={(e) => setAdHocData(prev => ({ ...prev, location: e.target.value }))}
-                  placeholder="ระบุบ้านเลขที่ ถนน ซอย หรือจุดสังเกต"
+                  placeholder="เช่น หน้าบ้านเลขที่ 123 ถ.นิตโย"
                   required
                   className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
-                ></textarea>
+                />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">หัวข้อปัญหา *</label>
-                <select
-                  value={adHocData.complaintTopicType}
-                  onChange={(e) => setAdHocData(prev => ({ ...prev, complaintTopicType: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 mb-2"
-                >
-                  <option value="ท่อแตกรั่ว">1. ท่อแตกรั่ว</option>
-                  <option value="น้ำไม่ไหล/น้ำไหลอ่อน">2. น้ำไม่ไหล/น้ำไหลอ่อน</option>
-                  <option value="อื่นๆ">3. อื่นๆ</option>
-                </select>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">หัวข้อปัญหา</label>
+                  <select
+                    value={adHocData.complaintTopicType}
+                    onChange={(e) => setAdHocData(prev => ({ ...prev, complaintTopicType: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-white focus:ring-2 focus:ring-blue-500 font-bold"
+                  >
+                    <option value="ท่อแตกรั่ว">ท่อแตกรั่ว</option>
+                    <option value="น้ำไม่ไหล/น้ำไหลอ่อน">น้ำไม่ไหล/น้ำไหลอ่อน</option>
+                    <option value="อื่นๆ">อื่นๆ (ระบุเอง)</option>
+                  </select>
+                </div>
 
-                {adHocData.complaintTopicType === 'อื่นๆ' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ระดับความเร่งด่วน</label>
+                  <select
+                    value={adHocData.urgency}
+                    onChange={(e) => setAdHocData(prev => ({ ...prev, urgency: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-white focus:ring-2 focus:ring-blue-500 font-bold text-amber-600"
+                  >
+                    <option value="ปกติ">ปกติ</option>
+                    <option value="ด่วน">ด่วน</option>
+                    <option value="ด่วนมาก">ด่วนมาก</option>
+                  </select>
+                </div>
+              </div>
+
+              {adHocData.complaintTopicType === 'อื่นๆ' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ระบุหัวข้อปัญหาเพิ่มเติม</label>
                   <input 
                     type="text"
                     value={adHocData.customComplaintTopic}
                     onChange={(e) => setAdHocData(prev => ({ ...prev, customComplaintTopic: e.target.value }))}
-                    placeholder="กรุณาระบุหัวข้อปัญหาเพิ่มเติม..."
-                    required
+                    placeholder="ระบุลักษณะปัญหา..."
                     className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
                   />
-                )}
-              </div>
+                </div>
+              )}
 
-              <div className="flex gap-2 pt-2">
+              <div className="pt-2 flex gap-2">
                 <button
                   type="button"
                   onClick={() => setIsAdHocModalOpen(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl cursor-pointer"
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs cursor-pointer"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-1"
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md cursor-pointer"
                 >
-                  {editingJob ? <Edit3 className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
-                  {editingJob ? 'บันทึกการแก้ไข' : 'บันทึกและไปหน้าบันทึกผลซ่อม'}
+                  {editingJob ? 'บันทึกการแก้ไข' : 'บันทึกและเริ่มงานทันที'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }
