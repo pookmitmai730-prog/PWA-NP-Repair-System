@@ -276,14 +276,10 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                             </button>
                           )}
                           {col.id === 'DISPATCHED' && (
-                            <button
-                              onClick={() => onStatusChange(job.id, 'IN_PROGRESS', { inProgressAt: getThaiTimestamp() })}
-                              className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg font-bold transition shadow-sm cursor-pointer"
-                            >
-                              เริ่มซ่อม
-                            </button>
+                            <span className="text-[11px] text-cyan-700 bg-cyan-50 border border-cyan-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
+                              ⏳ รอช่างเข้าตรวจสอบ
+                            </span>
                           )}
-                          {/* 🛑 แอดมินไม่มีสิทธิ์กดปิดงาน การปิดงานต้องทำมาจากฝั่งเจ้าหน้าที่ภาคสนามเท่านั้น */}
                           {col.id === 'IN_PROGRESS' && (
                             <span className="text-[10px] text-slate-400 italic bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
                               รอช่างปิดงาน
