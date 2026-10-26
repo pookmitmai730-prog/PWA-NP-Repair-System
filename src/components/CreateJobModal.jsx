@@ -16,19 +16,18 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // กำหนดค่าเริ่มต้นของฟอร์ม
+  // กำหนดค่าเริ่มต้นของฟอร์มให้ตรงกับฟิลด์ที่ต้องการ
   const [formData, setFormData] = useState({
     id: 'JOB-' + Date.now().toString().slice(-6),
     receivedNo: '',
     receivedAt: getThaiNowForInput(),
-    channel: 'รับแจ้งทางโทรศัพท์',
-    complaintType: 'ท่อแตก/รั่ว',
-    complainantInfo: '',
-    complaintTopic: 'แจ้งท่อประปาชำรุด',
-    details: '',
-    location: '',
-    receiverName: '',
     reporterName: '',
+    phone: '',
+    location: '',
+    complaintTopic: 'ท่อแตกรั่ว',
+    customComplaintTopic: '',
+    urgency: 'ปกติ',
+    channel: 'รับแจ้งทางโทรศัพท์',
     status: 'PENDING'
   });
 
@@ -97,14 +96,11 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
             ...prev,
             receivedNo: data.receivedNo || prev.receivedNo,
             receivedAt: data.receivedAt ? data.receivedAt.replace(' ', 'T') : prev.receivedAt,
-            channel: data.channel || prev.channel,
-            complaintType: data.complaintType || prev.complaintType,
-            complainantInfo: data.complainantInfo || prev.complainantInfo,
-            complaintTopic: data.complaintTopic || prev.complaintTopic,
-            details: data.details || prev.details,
-            location: data.location || prev.location,
-            receiverName: data.receiverName || prev.receiverName,
             reporterName: data.reporterName || prev.reporterName,
+            phone: data.phone || data.complainantInfo || prev.phone,
+            location: data.location || prev.location,
+            complaintTopic: data.complaintTopic || prev.complaintTopic,
+            urgency: data.urgency || prev.urgency,
           }));
 
         } catch (err) {
@@ -122,8 +118,14 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
     setLoading(true);
     setError(null);
 
+    const finalTopic = formData.complaintTopic === 'อื่นๆ' 
+      ? (formData.customComplaintTopic.trim() || 'อื่นๆ') 
+      : formData.complaintTopic;
+
     const formattedData = {
       ...formData,
+      complaintTopic: finalTopic,
+      complaintType: finalTopic,
       receivedAt: formData.receivedAt ? formData.receivedAt.replace('T', ' ') : getThaiNowForInput().replace('T', ' ')
     };
 
@@ -141,7 +143,7 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 my-8 border border-slate-200">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 my-8 border border-slate-200">
         
         {/* หัวข้อโมดัล */}
         <div className="flex justify-between items-center pb-4 border-b border-slate-100">
@@ -192,83 +194,37 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
           </div>
         )}
 
-        {/* ฟอร์มกรอกข้อมูล */}
+        {/* ฟอร์มกรอกข้อมูลตามที่กำหนด */}
         <form onSubmit={handleSubmit} className="mt-4 space-y-3.5">
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่รับแจ้ง</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่รับแจ้ง *</label>
               <input 
                 type="text" 
                 name="receivedNo" 
                 value={formData.receivedNo} 
                 onChange={handleChange} 
+                required
                 className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-mono font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 shadow-xs" 
                 placeholder="เช่น S67-00123" 
               />
             </div>
             
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">วัน-เวลาที่รับแจ้ง</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">วัน-เวลารับแจ้ง *</label>
               <input 
                 type="datetime-local" 
                 name="receivedAt" 
                 value={formData.receivedAt} 
                 onChange={handleChange} 
+                required
                 className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">ช่องทางการรับแจ้ง</label>
-              <input 
-                type="text" 
-                name="channel" 
-                value={formData.channel} 
-                onChange={handleChange} 
-                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
-              />
-            </div>
-            
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">ประเภทการร้องเรียน</label>
-              <input 
-                type="text" 
-                name="complaintType" 
-                value={formData.complaintType} 
-                onChange={handleChange} 
-                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">บริเวณที่เกิดเหตุ</label>
-            <input 
-              type="text" 
-              name="location" 
-              value={formData.location} 
-              onChange={handleChange} 
-              className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
-              placeholder="ระบุสถานที่ บ้านเลขที่ ถนน ซอย" 
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">รายละเอียดการรับแจ้ง</label>
-            <textarea 
-              name="details" 
-              rows="3" 
-              value={formData.details} 
-              onChange={handleChange} 
-              className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
-              placeholder="รายละเอียดเพิ่มเติมของปัญหา"
-            ></textarea>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อผู้แจ้ง</label>
               <input 
@@ -277,31 +233,81 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
                 value={formData.reporterName} 
                 onChange={handleChange} 
                 className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
+                placeholder="ชื่อ-นามสกุล ผู้แจ้ง"
               />
             </div>
             
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">ข้อมูลผู้ร้องเรียน / เบอร์โทร</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">เบอร์โทรศัพท์</label>
               <input 
-                type="text" 
-                name="complainantInfo" 
-                value={formData.complainantInfo} 
+                type="tel" 
+                name="phone" 
+                value={formData.phone} 
                 onChange={handleChange} 
                 className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
-              />
-            </div>
-            
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">ผู้รับแจ้ง</label>
-              <input 
-                type="text" 
-                name="receiverName" 
-                value={formData.receiverName} 
-                onChange={handleChange} 
-                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
+                placeholder="เบอร์โทรติดต่อ"
               />
             </div>
           </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">บริเวณที่เกิดเหตุ / สถานที่ *</label>
+            <input 
+              type="text" 
+              name="location" 
+              value={formData.location} 
+              onChange={handleChange} 
+              required
+              className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
+              placeholder="ระบุสถานที่ บ้านเลขที่ ถนน ซอย" 
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">หัวข้อปัญหา *</label>
+              <select
+                name="complaintTopic"
+                value={formData.complaintTopic}
+                onChange={handleChange}
+                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs"
+              >
+                <option value="ท่อแตกรั่ว">ท่อแตกรั่ว</option>
+                <option value="น้ำไม่ไหล/น้ำไหลอ่อน">น้ำไม่ไหล/น้ำไหลอ่อน</option>
+                <option value="มาตรวัดน้ำชำรุด">มาตรวัดน้ำชำรุด</option>
+                <option value="อื่นๆ">อื่นๆ (ระบุเอง)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">ระดับความเร่งด่วน</label>
+              <select
+                name="urgency"
+                value={formData.urgency}
+                onChange={handleChange}
+                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-bold text-amber-600 focus:ring-2 focus:ring-blue-500 shadow-xs"
+              >
+                <option value="ปกติ">ปกติ</option>
+                <option value="ด่วน">ด่วน</option>
+                <option value="ด่วนมาก">ด่วนมาก</option>
+              </select>
+            </div>
+          </div>
+
+          {formData.complaintTopic === 'อื่นๆ' && (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">ระบุหัวข้อปัญหาเพิ่มเติม *</label>
+              <input 
+                type="text" 
+                name="customComplaintTopic" 
+                value={formData.customComplaintTopic} 
+                onChange={handleChange} 
+                required
+                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
+                placeholder="ระบุลักษณะปัญหา..."
+              />
+            </div>
+          )}
 
           <div className="flex justify-end space-x-2.5 pt-4 border-t border-slate-100">
             <button 
