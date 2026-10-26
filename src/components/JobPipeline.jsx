@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash } from 'lucide-react';
 
+// 🌐 URL ของ Google Apps Script Web App (ใช้ตัวเดียวกับหน้าช่างภาคสนาม)
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec";
+
 export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] }) {
   const [selectedJobForDispatch, setSelectedJobForDispatch] = useState(null);
   const [selectedTeam, setSelectedTeam] = useState('');
@@ -43,7 +46,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     return status;
   };
 
-  const handleConfirmDispatch = () => {
+  // 🚀 ยืนยันจ่ายงานช่าง พร้อมยิงข้อมูลแจ้งเตือนเข้า Telegram
+  const handleConfirmDispatch = async () => {
     if (!selectedTeam) {
       alert("กรุณาเลือกทีมช่างก่อนทำการจ่ายงาน");
       return;
@@ -53,6 +57,38 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     
     const currentDateTime = getThaiTimestamp();
 
+    const dispatchPayload = {
+      action: "dispatch_job",
+      jobData: {
+        id: selectedJobForDispatch.id,
+        receivedNo: selectedJobForDispatch.receivedNo || selectedJobForDispatch.id,
+        reporterName: selectedJobForDispatch.reporterName || 'ไม่ระบุชื่อ',
+        phone: selectedJobForDispatch.phone || '-',
+        location: selectedJobForDispatch.location || '-',
+        complaintTopic: selectedJobForDispatch.complaintTopic || selectedJobForDispatch.issueType || '-',
+        techName: workerObj?.teamName || selectedTeam,
+        techPhone: workerObj?.phone || '-',
+        urgency: urgencyLevel,
+        status: 'DISPATCHED',
+        dispatchedAt: currentDateTime
+      }
+    };
+
+    try {
+      // 📡 ส่งข้อมูลผ่าน text/plain เพื่อยิง Telegram ผ่าน Apps Script แบบทะลุกรอบ CORS
+      await fetch(WEB_APP_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify(dispatchPayload)
+      });
+    } catch (err) {
+      console.error("Error sending dispatch notification to Telegram:", err);
+    }
+
+    // อัปเดตสถานะในระบบหลัก
     onStatusChange(selectedJobForDispatch.id, 'DISPATCHED', { 
       technician: techDetails,
       techName: workerObj?.teamName || selectedTeam,
@@ -60,9 +96,11 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       dispatchedAt: currentDateTime,
       urgency: urgencyLevel
     });
+
     setSelectedJobForDispatch(null);
     setSelectedTeam('');
     setUrgencyLevel('ปกติ');
+    alert("จ่ายงานช่างและส่งแจ้งเตือน Telegram สำเร็จ!");
   };
 
   const handleConfirmChangeTeam = () => {
