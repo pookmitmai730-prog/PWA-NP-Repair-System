@@ -81,7 +81,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     'อื่นๆ (ระบุในรายละเอียด)'
   ];
 
-  // 📸 ฟังก์ชันแปลงรูปภาพจาก Array / String ให้เป็น Array มาตรฐาน
+  // 📸 ฟังก์ชันแปลงรูปภาพจาก Array / String / JSON ให้เป็น Array มาตรฐาน
   const parseImages = (imgData) => {
     if (!imgData) return [];
     try {
@@ -158,7 +158,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const handleSelectEquipmentSuggestion = (item) => {
     const itemName = item.name || item.itemName || item.อุปกรณ์ || '';
     setSelectedEquipmentItem(item);
-    SearchTerm(itemName);
+    setSearchTerm(itemName); // 🛠️ แก้ไขจาก SearchTerm -> setSearchTerm
     setSuggestions([]);
   };
 
@@ -832,14 +832,13 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               )}
             </div>
 
-            {/* 📸 Section 2: แก้ไขรูปภาพใบงานที่ปิดแล้วของทีม */}
+            {/* 📸 Section 2: จัดการรูปภาพใบงานที่ปิดแล้ว */}
             <div className="space-y-3 pt-4 border-t border-slate-200">
               <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
                 <ImageIcon className="w-4 h-4 text-indigo-600" />
                 จัดการแก้ไขรูปภาพใบงานที่ปิดแล้ว ({myCompletedJobs.length} งาน)
               </h3>
 
-              {/* 🔍 ช่องค้นหาใบงานที่ปิดแล้ว */}
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                   <Search className="w-4 h-4" />
@@ -898,7 +897,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               </button>
             </div>
 
-            {/* รายละเอียดใบงานเดิม */}
             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs space-y-1">
               <p><strong>ผู้แจ้ง:</strong> {editingPhotoJob.reporterName || '-'} ({editingPhotoJob.phone || '-'})</p>
               <p><strong>หัวข้อ:</strong> {editingPhotoJob.complaintTopic || editingPhotoJob.issueType || '-'}</p>
@@ -906,7 +904,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               {editingPhotoJob.notes && <p className="text-slate-600"><strong>หมายเหตุ/อุปกรณ์:</strong> {editingPhotoJob.notes}</p>}
             </div>
 
-            {/* อัปโหลด/จัดการรูปภาพ */}
             <div className="space-y-4">
               {/* ภาพก่อนซ่อม */}
               <div className="space-y-2">
@@ -1035,7 +1032,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
             </div>
 
             <form onSubmit={handleSubmitFix} className="space-y-4">
-              {/* เลือกกรณีไม่สามารถซ่อมได้ */}
               <div className={`p-3.5 rounded-2xl border transition-all ${
                 isUnrepairable ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 border-slate-200'
               }`}>
@@ -1096,7 +1092,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 )}
               </div>
 
-              {/* ชนิดท่อและขนาดท่อ (กรณีซ่อมได้) */}
               {!isUnrepairable && (
                 <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                   <div>
@@ -1126,7 +1121,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {/* ระบบเลือกอุปกรณ์จาก Google Sheets */}
               {!isUnrepairable && (
                 <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
                   <div className="flex justify-between items-center">
@@ -1188,7 +1182,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                       </button>
                     </div>
 
-                    {/* รายการอุปกรณ์ที่เลือกไว้ */}
                     {selectedEquipmentList.length > 0 && (
                       <div className="space-y-1.5 pt-2">
                         {selectedEquipmentList.map((item) => (
@@ -1209,12 +1202,10 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {/* แนบรูปภาพ 3 ระยะ */}
               <div className="space-y-3">
                 <label className="block text-xs font-bold text-slate-700">📸 แนบรูปภาพปฏิบัติงาน *</label>
 
                 <div className="grid grid-cols-3 gap-2">
-                  {/* ภาพก่อนซ่อม */}
                   <div className="space-y-1">
                     <span className="text-[10px] font-bold text-slate-500 block text-center">ก่อนซ่อม</span>
                     <label className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50 rounded-xl p-2 flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[70px] transition">
@@ -1233,7 +1224,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     )}
                   </div>
 
-                  {/* ภาพระหว่างซ่อม */}
                   <div className="space-y-1">
                     <span className="text-[10px] font-bold text-slate-500 block text-center">ระหว่างซ่อม</span>
                     <label className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50 rounded-xl p-2 flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[70px] transition">
@@ -1252,7 +1242,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     )}
                   </div>
 
-                  {/* ภาพหลังซ่อม */}
                   <div className="space-y-1">
                     <span className="text-[10px] font-bold text-slate-500 block text-center">หลังซ่อม</span>
                     <label className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50 rounded-xl p-2 flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[70px] transition">
@@ -1273,7 +1262,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               </div>
 
-              {/* ดึงตำแหน่งพิกัด GPS */}
               <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex justify-between items-center">
                 <div>
                   <span className="text-xs font-bold text-slate-700 block">📍 พิกัดหน้างาน (GPS)</span>
