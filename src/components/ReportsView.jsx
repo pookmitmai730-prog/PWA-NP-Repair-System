@@ -109,13 +109,28 @@ export default function ReportsView({ jobs }) {
       return acc;
     }, {});
 
+  // 📸 ฟังก์ชันแปลงและแยกรูปภาพให้รองรับทั้ง Array, JSON, และ String ที่คั่นด้วยบรรทัดใหม่หรือจุลภาค
   const parseImages = (imgData) => {
     if (!imgData) return [];
     try {
-      if (typeof imgData === 'string' && imgData.startsWith('[')) {
-        return JSON.parse(imgData);
-      } else if (typeof imgData === 'string' && imgData.trim() !== '') {
-        return [imgData];
+      if (Array.isArray(imgData)) {
+        return imgData.filter(url => url && typeof url === 'string' && url.trim() !== '');
+      }
+      if (typeof imgData === 'string') {
+        if (imgData.startsWith('[')) {
+          const parsed = JSON.parse(imgData);
+          if (Array.isArray(parsed)) return parsed.filter(url => url && typeof url === 'string');
+        }
+        // รองรับกรณีคั่นด้วยขึ้นบรรทัดใหม่ (\n) หรือจุลภาค (,)
+        if (imgData.includes('\n')) {
+          return imgData.split('\n').map(u => u.trim()).filter(u => u !== '');
+        }
+        if (imgData.includes(',')) {
+          return imgData.split(',').map(u => u.trim()).filter(u => u !== '');
+        }
+        if (imgData.trim() !== '') {
+          return [imgData.trim()];
+        }
       }
     } catch (e) {
       console.error("Error parsing images:", e);
@@ -695,49 +710,92 @@ export default function ReportsView({ jobs }) {
                 </h4>
                 <p className="text-xs text-slate-500">{selectedJobForPhotos.location}</p>
               </div>
-              <button onClick={() => setSelectedJobForPhotos(null)} className="cursor-pointer text-slate-400 hover:text-slate-600">
+              <button 
+                onClick={() => setSelectedJobForPhotos(null)} 
+                className="cursor-pointer text-slate-400 hover:text-slate-700 p-1 rounded-xl bg-slate-100 hover:bg-slate-200 transition"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              {[
-                { title: '📸 รูปภาพก่อนซ่อม', imgs: parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg) },
-                { title: '📸 รูปภาพระหว่างซ่อม', imgs: parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg) },
-                { title: '📸 รูปภาพหลังซ่อมเสร็จ', imgs: parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg) }
-              ].map((cat, idx) => (
-                <div key={idx} className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-700">{cat.title} ({cat.imgs.length} รูป)</span>
-                  </div>
-
-                  {cat.imgs.length === 0 ? (
-                    <p className="text-[11px] text-slate-400 italic text-center py-2">ไม่มีรูปภาพในหมวดนี้</p>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {cat.imgs.map((url, imgIdx) => (
-                        <div key={imgIdx} className="bg-white rounded-xl overflow-hidden border border-slate-200 shadow-2xs space-y-1.5 p-2">
-                          <div className="aspect-square rounded-lg overflow-hidden bg-slate-100">
-                            <img src={url} alt="Repair" className="w-full h-full object-cover" />
-                          </div>
-                          <button
-                            onClick={() => handleDownloadSingleImage(url, `${selectedJobForPhotos.receivedNo || 'job'}_${idx}_${imgIdx + 1}.jpg`)}
-                            className="w-full bg-slate-800 hover:bg-slate-900 text-white text-[10px] font-bold py-1.5 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer"
-                          >
-                            <Download className="w-3 h-3" /> ดาวน์โหลดรูปนี้
+            <div className="space-y-4 text-xs">
+              {/* ภาพก่อนซ่อม */}
+              <div>
+                <h5 className="font-bold text-slate-700 mb-2">📸 รูปภาพก่อนซ่อม</h5>
+                {parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg).length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg).map((url, idx) => (
+                      <div key={idx} className="relative group border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 aspect-square">
+                        <img src={url} alt={`Before ${idx}`} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                          <a href={url} target="_blank" rel="noreferrer" className="bg-white p-2 rounded-xl text-slate-800 font-bold shadow-md hover:bg-blue-50" title="ดูภาพเต็ม">
+                            <Eye className="w-4 h-4" />
+                          </a>
+                          <button onClick={() => handleDownloadSingleImage(url, `${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_before_${idx + 1}.jpg`)} className="bg-emerald-600 p-2 rounded-xl text-white font-bold shadow-md hover:bg-emerald-700" title="ดาวน์โหลด">
+                            <Download className="w-4 h-4" />
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 text-center">ไม่มีรูปภาพก่อนซ่อม</p>
+                )}
+              </div>
+
+              {/* ภาพระหว่างซ่อม */}
+              <div>
+                <h5 className="font-bold text-slate-700 mb-2">📸 รูปภาพระหว่างซ่อม</h5>
+                {parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg).length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg).map((url, idx) => (
+                      <div key={idx} className="relative group border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 aspect-square">
+                        <img src={url} alt={`InProg ${idx}`} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                          <a href={url} target="_blank" rel="noreferrer" className="bg-white p-2 rounded-xl text-slate-800 font-bold shadow-md hover:bg-blue-50" title="ดูภาพเต็ม">
+                            <Eye className="w-4 h-4" />
+                          </a>
+                          <button onClick={() => handleDownloadSingleImage(url, `${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_inprog_${idx + 1}.jpg`)} className="bg-emerald-600 p-2 rounded-xl text-white font-bold shadow-md hover:bg-emerald-700" title="ดาวน์โหลด">
+                            <Download className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 text-center">ไม่มีรูปภาพระหว่างซ่อม</p>
+                )}
+              </div>
+
+              {/* ภาพหลังซ่อมเสร็จ */}
+              <div>
+                <h5 className="font-bold text-slate-700 mb-2">📸 รูปภาพหลังซ่อมเสร็จ</h5>
+                {parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg).length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg).map((url, idx) => (
+                      <div key={idx} className="relative group border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 aspect-square">
+                        <img src={url} alt={`After ${idx}`} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                          <a href={url} target="_blank" rel="noreferrer" className="bg-white p-2 rounded-xl text-slate-800 font-bold shadow-md hover:bg-blue-50" title="ดูภาพเต็ม">
+                            <Eye className="w-4 h-4" />
+                          </a>
+                          <button onClick={() => handleDownloadSingleImage(url, `${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_after_${idx + 1}.jpg`)} className="bg-emerald-600 p-2 rounded-xl text-white font-bold shadow-md hover:bg-emerald-700" title="ดาวน์โหลด">
+                            <Download className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 text-center">ไม่มีรูปภาพหลังซ่อม</p>
+                )}
+              </div>
             </div>
 
-            <div className="pt-2">
-              <button
-                onClick={() => setSelectedJobForPhotos(null)}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl cursor-pointer"
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
+              <button 
+                onClick={() => setSelectedJobForPhotos(null)} 
+                className="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold transition cursor-pointer"
               >
                 ปิดหน้าต่าง
               </button>
@@ -746,57 +804,53 @@ export default function ReportsView({ jobs }) {
         </div>
       )}
 
-      {/* Modal ป้อนเลข Smart 1662 ก่อนเปิดหน้าต่างปริ้นท์ */}
+      {/* 🖨️ Modal กรอกเลข Smart 1662 ก่อนพิมพ์รายงาน A4 */}
       {selectedJobForPrint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                <Hash className="w-5 h-5 text-cyan-600" />
-                กรอกเลขปิดงาน Smart 1662 ก่อนพิมพ์
+                <Printer className="w-5 h-5 text-blue-600" />
+                กรอกเลขที่ปิดงาน Smart 1662 (ก่อนพิมพ์)
               </h4>
-              <button onClick={() => setSelectedJobForPrint(null)} className="cursor-pointer">
-                <X className="w-5 h-5 text-slate-400" />
+              <button onClick={() => setSelectedJobForPrint(null)} className="cursor-pointer text-slate-400 hover:text-slate-700 p-1 rounded-xl bg-slate-100 hover:bg-slate-200 transition">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="space-y-3">
-              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-xs space-y-1">
-                <p className="font-bold text-slate-800">เลขที่รับแจ้ง: <span className="font-mono text-blue-600">{selectedJobForPrint.receivedNo || selectedJobForPrint.id}</span></p>
-                <p className="text-slate-500">สถานที่: {selectedJobForPrint.location}</p>
-              </div>
-
+              <p className="text-xs text-slate-500">
+                ใบแจ้งซ่อมเลขที่: <strong className="font-mono text-blue-600">{selectedJobForPrint.receivedNo || selectedJobForPrint.id}</strong>
+              </p>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่ปิดงานซ่อมใน Smart 1662 (ถ้ามี / ไม่บังคับ)</label>
-                <input 
+                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่ปิดงาน Smart 1662 (ถ้ามี)</label>
+                <input
                   type="text"
                   value={smart1662Input}
                   onChange={(e) => setSmart1662Input(e.target.value)}
-                  placeholder="เช่น 1662-69-XXXXXX"
-                  className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-blue-500 font-mono font-bold text-slate-800"
+                  placeholder="เช่น 1662-68-XXXXX"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-mono font-bold focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
                 />
-                <p className="text-[10px] text-slate-400 mt-1">หากไม่มี สามารถเว้นว่างไว้แล้วกดปุ่มเปิดรายงาน A4 ได้ทันที</p>
               </div>
             </div>
 
-            <div className="flex gap-2 pt-2">
+            <div className="pt-3 border-t border-slate-100 flex gap-2">
               <button
                 onClick={() => setSelectedJobForPrint(null)}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl cursor-pointer"
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={handleConfirmAndOpenReport}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-md transition cursor-pointer"
               >
-                ยืนยันและเปิดรายงาน A4
+                ยืนยันและเปิดหน้าพิมพ์ A4
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 }
