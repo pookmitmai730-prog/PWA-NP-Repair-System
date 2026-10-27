@@ -420,7 +420,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 📝 บันทึกผลการปฏิบัติงาน
+  // 📝 บันทึกผลการปฏิบัติงาน (ตัดการเรียก fetch ซ้ำออก เหลือผ่าน onUpdateJobStatus ทางเดียว)
   const handleSubmitFix = async (e) => {
     e.preventDefault();
     if (!selectedJob) return;
@@ -473,15 +473,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     };
 
     try {
-      await fetch(WEB_APP_URL, {
-        method: "POST",
-        mode: "no-cors",
-        headers: {
-          "Content-Type": "text/plain;charset=utf-8"
-        },
-        body: JSON.stringify(jobDataPayload)
-      });
-
+      // ✅ ส่งคำขอผ่าน onUpdateJobStatus ทางเดียว เพื่อป้องกันการบันทึกซ้ำและยิง Telegram เบิ้ล
       await onUpdateJobStatus(selectedJob.id, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
 
       alert(isUnrepairable 
@@ -758,463 +750,226 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     <span className={`text-xs font-bold block ${isUnrepairable ? 'text-rose-700' : 'text-slate-700'}`}>
                       ⚠️ ไม่สามารถดำเนินการซ่อมได้ในขณะนี้
                     </span>
-                    <span className="text-[10px] text-slate-500 block">
-                      ติ๊กเลือกเมื่อพบอุปสรรคหน้างาน เช่น ติดโครงสร้างอาคาร/ต้องใช้เครื่องจักรใหญ่
-                    </span>
+                    <span className="text-[10px] text-slate-500">เลือกตัวเลือกนี้หากหน้างานมีอุปสรรคไม่สามารถซ่อมเสร็จได้</span>
                   </div>
                 </label>
               </div>
 
-              {/* กรณีซ่อมไม่ได้ */}
               {isUnrepairable ? (
-                <div className="bg-rose-50/60 p-4 rounded-2xl border border-rose-200 space-y-3">
+                <div className="space-y-3 bg-rose-50/50 p-3.5 rounded-2xl border border-rose-200">
                   <div>
-                    <label className="block text-xs font-bold text-rose-800 mb-1">สาเหตุที่ไม่สามารถซ่อมได้ *</label>
+                    <label className="block text-xs font-bold text-rose-900 mb-1">สาเหตุที่ไม่สามารถซ่อมได้ *</label>
                     <select
                       value={unrepairableReasonType}
                       onChange={(e) => setUnrepairableReasonType(e.target.value)}
-                      className="w-full border border-rose-300 rounded-xl p-2.5 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-rose-500 font-medium"
+                      className="w-full bg-white border border-rose-200 rounded-xl p-2.5 text-xs text-slate-800 font-medium focus:ring-2 focus:ring-rose-500"
                     >
-                      {unrepairableReasons.map((reason) => (
-                        <option key={reason} value={reason}>{reason}</option>
+                      {unrepairableReasons.map((reason, idx) => (
+                        <option key={idx} value={reason}>{reason}</option>
                       ))}
                     </select>
                   </div>
 
                   {unrepairableReasonType === 'อื่นๆ (ระบุในรายละเอียด)' && (
                     <div>
-                      <label className="block text-xs font-bold text-rose-800 mb-1">ระบุสาเหตุเพิ่มเติม *</label>
-                      <input 
+                      <label className="block text-xs font-bold text-rose-900 mb-1">ระบุสาเหตุอื่นๆ *</label>
+                      <input
                         type="text"
                         value={customUnrepairableReason}
                         onChange={(e) => setCustomUnrepairableReason(e.target.value)}
-                        placeholder="ระบุสาเหตุสั้นๆ..."
-                        required
-                        className="w-full border border-rose-300 rounded-xl p-2.5 text-xs bg-white focus:ring-2 focus:ring-rose-500"
+                        placeholder="ระบุสาเหตุเพิ่มเติม..."
+                        className="w-full bg-white border border-rose-200 rounded-xl p-2.5 text-xs text-slate-800"
                       />
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-xs font-bold text-rose-800 mb-1">รายละเอียดอุปสรรคหน้างาน *</label>
-                    <textarea 
-                      rows="3"
+                    <label className="block text-xs font-bold text-rose-900 mb-1">รายละเอียดอุปสรรคเพิ่มเติม *</label>
+                    <textarea
+                      rows="2"
                       value={unrepairableDetails}
                       onChange={(e) => setUnrepairableDetails(e.target.value)}
-                      placeholder="อธิบายลักษณะอุปสรรค และข้อเสนอแนะในการแก้ไขต่อไป..."
-                      required
-                      className="w-full border border-rose-300 rounded-xl p-2.5 text-xs bg-white focus:ring-2 focus:ring-rose-500"
+                      placeholder="อธิบายรายละเอียดปัญหาที่ไม่สามารถซ่อมได้..."
+                      className="w-full bg-white border border-rose-200 rounded-xl p-2.5 text-xs text-slate-800"
                     />
                   </div>
                 </div>
               ) : (
-                /* กรณีซ่อมสำเร็จปกติ */
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2">
+                <>
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">ชนิดท่อที่ซ่อม *</label>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">ชนิดท่อ</label>
                       <select
                         value={pipeType}
                         onChange={(e) => setPipeType(e.target.value)}
-                        className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 font-medium"
                       >
-                        {pipeTypes.map((t) => (
-                          <option key={t} value={t}>{t}</option>
-                        ))}
+                        {pipeTypes.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                     </div>
-
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">ขนาดท่อ (มม.) *</label>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">ขนาดท่อ (มม.)</label>
                       <select
                         value={pipeSize}
                         onChange={(e) => setPipeSize(e.target.value)}
-                        className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 font-medium"
                       >
-                        {pipeSizes.map((s) => (
-                          <option key={s} value={s}>{s} มม.</option>
-                        ))}
+                        {pipeSizes.map(s => <option key={s} value={s}>{s} มม.</option>)}
                       </select>
                     </div>
                   </div>
 
-                  {/* 🛠️ ส่วนเลือกอุปกรณ์จาก Google Sheets */}
-                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
-                        <Wrench className="w-3.5 h-3.5 text-blue-600" /> เลือกอุปกรณ์ที่ใช้ซ่อม
-                      </label>
-                      {isLoadingEquipment && (
-                        <span className="text-[10px] text-blue-600 flex items-center gap-1">
-                          <Loader2 className="w-3 h-3 animate-spin" /> กำลังโหลดคลังอุปกรณ์...
-                        </span>
-                      )}
-                    </div>
+                  {/* 🛠️ ระบบค้นหาและเลือกใช้อุปกรณ์ */}
+                  <div className="space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <label className="block text-xs font-bold text-slate-700 flex items-center justify-between">
+                      <span>🛠️ เบิก/ใช้อุปกรณ์ซ่อมท่อ</span>
+                      {isLoadingEquipment && <span className="text-[10px] text-blue-600 font-normal">กำลังโหลดรายการ...</span>}
+                    </label>
 
-                    <div className="relative">
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <input
-                            type="text"
-                            value={searchTerm}
-                            onChange={handleSearchEquipmentChange}
-                            placeholder="พิมพ์ค้นหาชื่ออุปกรณ์..."
-                            className="w-full border border-slate-200 rounded-xl p-2.5 pr-8 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                          {searchTerm && (
-                            <button
-                              type="button"
-                              onClick={() => { setSearchTerm(''); setSuggestions([]); setSelectedEquipmentItem(null); }}
-                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-
+                    <div className="flex gap-2 relative">
+                      <div className="relative flex-1">
                         <input
-                          type="number"
-                          min="1"
-                          value={equipmentQuantity}
-                          onChange={(e) => setEquipmentQuantity(e.target.value)}
-                          className="w-16 border border-slate-200 rounded-xl p-2.5 text-xs text-center font-bold bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          title="จำนวน"
+                          type="text"
+                          value={searchTerm}
+                          onChange={handleSearchEquipmentChange}
+                          placeholder="พิมพ์ชื่ออุปกรณ์เพื่อค้นหา..."
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 font-medium"
                         />
-
-                        <button
-                          type="button"
-                          onClick={handleAddEquipmentToList}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 transition shadow-sm active:scale-95 cursor-pointer"
-                        >
-                          <Plus className="w-4 h-4" /> เพิ่ม
-                        </button>
-                      </div>
-
-                      {/* Dropdown รายชื่อค้นหาแนะนำ */}
-                      {suggestions.length > 0 && (
-                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 max-h-48 overflow-y-auto divide-y divide-slate-100">
-                          {suggestions.map((item, idx) => {
-                            const name = item.name || item.itemName || item.อุปกรณ์ || '';
-                            const unit = item.unit || item.หน่วยนับ || item.หน่วย || '';
-                            return (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => handleSelectEquipmentSuggestion(item)}
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 flex justify-between items-center transition cursor-pointer"
-                              >
-                                <span className="font-medium text-slate-800">{name}</span>
-                                {unit && <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{unit}</span>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 📋 รายการสรุปอุปกรณ์ที่เลือกไว้ (สามารถลบ/ยกเลิกได้ก่อนบันทึก) */}
-                    <div>
-                      <div className="flex justify-between items-center mb-1.5">
-                        <label className="block text-[11px] font-bold text-slate-600">
-                          สรุปอุปกรณ์ที่ใช้ ({selectedEquipmentList.length} รายการ):
-                        </label>
-                        {selectedEquipmentList.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={handleClearAllEquipment}
-                            className="text-[10px] text-rose-600 hover:text-rose-700 hover:underline font-bold flex items-center gap-0.5 cursor-pointer"
-                            title="ยกเลิกอุปกรณ์ทั้งหมดที่เลือกไว้"
-                          >
-                            <Trash2 className="w-3 h-3" /> ยกเลิกทั้งหมด
-                          </button>
+                        {suggestions.length > 0 && (
+                          <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg mt-1 z-30 max-h-40 overflow-y-auto">
+                            {suggestions.map((item, idx) => {
+                              const name = item.name || item.itemName || item.อุปกรณ์;
+                              const unit = item.unit || item.หน่วย || 'หน่วย';
+                              return (
+                                <div
+                                  key={idx}
+                                  onClick={() => handleSelectEquipmentSuggestion(item)}
+                                  className="p-2.5 hover:bg-blue-50 text-xs text-slate-700 cursor-pointer border-b border-slate-100 flex justify-between"
+                                >
+                                  <span className="font-medium">{name}</span>
+                                  <span className="text-[10px] text-slate-400">({unit})</span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
 
-                      {selectedEquipmentList.length === 0 ? (
-                        <p className="text-[11px] text-slate-400 italic bg-white p-2.5 rounded-xl border border-dashed border-slate-200 text-center">
-                          ยังไม่ได้เลือกอุปกรณ์ (พิมพ์ค้นหาแล้วกดปุ่ม "เพิ่ม")
-                        </p>
-                      ) : (
-                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                      <input
+                        type="number"
+                        min="1"
+                        value={equipmentQuantity}
+                        onChange={(e) => setEquipmentQuantity(e.target.value)}
+                        className="w-16 bg-white border border-slate-200 rounded-xl px-2 py-2 text-xs text-center font-bold"
+                        title="จำนวน"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={handleAddEquipmentToList}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" /> เพิ่ม
+                      </button>
+                    </div>
+
+                    {selectedEquipmentList.length > 0 && (
+                      <div className="space-y-1.5 pt-2">
+                        <div className="flex justify-between items-center text-[11px] text-slate-500 font-bold">
+                          <span>รายการที่เลือก ({selectedEquipmentList.length} รายการ):</span>
+                          <button type="button" onClick={handleClearAllEquipment} className="text-rose-600 hover:underline">ล้างทั้งหมด</button>
+                        </div>
+                        <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
                           {selectedEquipmentList.map((item) => (
-                            <div key={item.id} className="bg-white px-3 py-2 rounded-xl border border-slate-200 flex justify-between items-center text-xs shadow-2xs">
-                              <span className="font-medium text-slate-800 flex-1 truncate mr-2">
-                                • {item.name}
-                              </span>
+                            <div key={item.id} className="bg-white border border-slate-200 p-2 rounded-xl flex justify-between items-center text-xs">
+                              <span className="font-medium text-slate-800">{item.name}</span>
                               <div className="flex items-center gap-2">
-                                <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md text-[11px]">
-                                  {item.quantity} {item.unit}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveEquipmentItem(item.id)}
-                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                  title="ยกเลิกอุปกรณ์ชิ้นนี้"
-                                >
+                                <span className="font-bold text-blue-600 font-mono">{item.quantity} {item.unit}</span>
+                                <button type="button" onClick={() => handleRemoveEquipmentItem(item.id)} className="text-slate-400 hover:text-rose-600">
                                   <X className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
                           ))}
                         </div>
-                      )}
-
-                      <textarea
-                        rows="2"
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        placeholder="หมายเหตุ หรือสรุปอุปกรณ์เพิ่มเติม (ถ้ามี)..."
-                        className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
-                      />
-                    </div>
+                      </div>
+                    )}
                   </div>
-                </div>
+                </>
               )}
 
-              {/* 📸 ส่วนแนบรูปถ่ายการทำงาน (รองรับหลายรูป + พรีวิว + ลบแต่ละรูปได้) */}
+              {/* 📸 ส่วนอัปโหลดรูปภาพ */}
               <div className="space-y-3 pt-2 border-t border-slate-100">
-                <label className="block text-xs font-bold text-slate-700">แนบรูปถ่ายการทำงาน *</label>
-
-                <div className="space-y-3">
-                  {[
-                    { key: 'before', label: '1. รูปถ่ายก่อนซ่อม', req: true },
-                    { key: 'inProgress', label: '2. รูปถ่ายระหว่างซ่อม', req: false },
-                    { key: 'after', label: '3. รูปถ่ายหลังซ่อมเสร็จ', req: !isUnrepairable }
-                  ].map((imgCat) => (
-                    <div key={imgCat.key} className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold text-slate-700">
-                          {imgCat.label} {imgCat.req && <span className="text-rose-500">*</span>}
-                        </span>
-                        <label className="bg-white border border-slate-200 hover:bg-blue-50 text-blue-600 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition">
-                          <Camera className="w-3.5 h-3.5" /> เพิ่มรูปภาพ
-                          <input
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            onChange={(e) => handleMultipleImagesChange(imgCat.key, e.target.files)}
-                            className="hidden"
-                          />
-                        </label>
-                      </div>
-
-                      {/* แสดงรายการรูปภาพที่อัปโหลด (พรีวิวหลายรูป + ปุ่มลบแต่ละรูป) */}
-                      {images[imgCat.key].length === 0 ? (
-                        <p className="text-[11px] text-slate-400 italic text-center py-2">
-                          ยังไม่มีรูปภาพ (คลิกปุ่ม "เพิ่มรูปภาพ" ด้านบน)
-                        </p>
-                      ) : (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                          {images[imgCat.key].map((imgUrl, index) => (
-                            <div key={index} className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square bg-white shadow-2xs">
-                              <img 
-                                src={imgUrl} 
-                                alt={`${imgCat.label} ${index + 1}`} 
-                                className="w-full h-full object-cover"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveImage(imgCat.key, index)}
-                                className="absolute top-1.5 right-1.5 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-md transition cursor-pointer"
-                                title="ลบรูปนี้"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded font-mono">
-                                #{index + 1}
-                              </span>
-                            </div>
-                          ))}
+                {[
+                  { key: 'before', label: '📸 รูปภาพก่อนซ่อม' },
+                  { key: 'inProgress', label: '📸 รูปภาพระหว่างซ่อม' },
+                  { key: 'after', label: '📸 รูปภาพหลังซ่อมเสร็จ' }
+                ].map((cat) => (
+                  <div key={cat.key} className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700">{cat.label}</label>
+                    <div className="flex flex-wrap gap-2">
+                      {images[cat.key].map((imgUrl, idx) => (
+                        <div key={idx} className="relative w-16 h-16 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                          <img src={imgUrl} alt="Preview" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveImage(cat.key, idx)}
+                            className="absolute top-1 right-1 bg-rose-600 text-white p-0.5 rounded-full shadow-md"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
                         </div>
-                      )}
+                      ))}
+
+                      <label className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50 flex flex-col items-center justify-center text-slate-400 hover:text-blue-600 cursor-pointer transition">
+                        <Camera className="w-5 h-5 mb-1" />
+                        <span className="text-[9px] font-bold">เพิ่มรูป</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => handleMultipleImagesChange(cat.key, e.target.files)}
+                        />
+                      </label>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
 
-              {/* 📍 พิกัด GPS หน้างาน */}
-              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                    <Navigation className="w-3.5 h-3.5 text-blue-600" /> พิกัดสถานที่ซ่อม (GPS)
+              {/* 📍 พิกัด GPS */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex justify-between items-center">
+                <div>
+                  <span className="text-xs font-bold text-slate-700 block">พิกัด GPS หน้างาน</span>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    {coords.lat && coords.lng ? `${coords.lat}, ${coords.lng}` : (selectedJob.latitude ? `${selectedJob.latitude}, ${selectedJob.longitude}` : 'ยังไม่ได้ระบุพิกัด')}
                   </span>
-                  <button
-                    type="button"
-                    onClick={handleGetGPS}
-                    disabled={isGettingLocation}
-                    className="bg-white border border-slate-200 text-blue-600 px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 hover:bg-blue-50 transition cursor-pointer"
-                  >
-                    {isGettingLocation ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3 text-rose-500" />}
-                    {coords.lat ? 'ดึงพิกัดใหม่' : 'กดดึงพิกัด GPS'}
-                  </button>
                 </div>
-
-                {coords.lat && (
-                  <p className="text-[11px] font-mono font-semibold text-slate-600 bg-white p-2 rounded-xl border border-slate-100">
-                    📍 Lat: {coords.lat}, Lng: {coords.lng}
-                  </p>
-                )}
-              </div>
-
-              {/* ปุ่มบันทึกการส่งงาน */}
-              <div className="pt-2">
                 <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className={`w-full text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer ${
-                    isUnrepairable 
-                      ? 'bg-purple-600 hover:bg-purple-700' 
-                      : 'bg-emerald-600 hover:bg-emerald-700'
-                  }`}
+                  type="button"
+                  onClick={handleGetGPS}
+                  disabled={isGettingLocation}
+                  className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm cursor-pointer disabled:opacity-50"
                 >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>กำลังบันทึกข้อมูล...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4" />
-                      <span>{isUnrepairable ? 'ยืนยันบันทึกรายงานซ่อมไม่ได้' : 'ยืนยันปิดงานซ่อม'}</span>
-                    </>
-                  )}
+                  {isGettingLocation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
+                  ดึงพิกัด GPS
                 </button>
               </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className={`w-full text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition ${
+                  isUnrepairable ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                } disabled:opacity-50`}
+              >
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {isUnrepairable ? 'ยืนยันบันทึกรายงานซ่อมไม่ได้' : 'ยืนยันปิดงานซ่อม (ส่งรายงาน)'}
+              </button>
             </form>
           </div>
         )}
       </div>
-
-      {/* 🔴 Modal สำหรับเพิ่ม/แก้ไข ใบงานด่วนหน้างาน (Ad-hoc Job) */}
-      {isAdHocModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                <PlusCircle className="w-5 h-5 text-rose-600" />
-                {editingJob ? 'แก้ไขข้อมูลใบแจ้งซ่อม' : 'เปิดใบงานด่วนหน้างาน'}
-              </h4>
-              <button onClick={() => setIsAdHocModalOpen(false)} className="cursor-pointer">
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveAdHocJob} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่รับแจ้ง (รหัสอ้างอิง) *</label>
-                <input 
-                  type="text"
-                  value={adHocData.receivedNo}
-                  onChange={(e) => setAdHocData(prev => ({ ...prev, receivedNo: e.target.value }))}
-                  required
-                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold text-blue-600 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อผู้แจ้ง/ผู้พบเห็น</label>
-                  <input 
-                    type="text"
-                    value={adHocData.reporterName}
-                    onChange={(e) => setAdHocData(prev => ({ ...prev, reporterName: e.target.value }))}
-                    placeholder="ไม่ระบุใส่ว่างไว้ได้"
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">เบอร์โทรศัพท์</label>
-                  <input 
-                    type="text"
-                    value={adHocData.phone}
-                    onChange={(e) => setAdHocData(prev => ({ ...prev, phone: e.target.value }))}
-                    placeholder="ไม่ระบุใส่ว่างไว้ได้"
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">สถานที่เกิดเหตุ / จุดสังเกต *</label>
-                <textarea 
-                  rows="2"
-                  value={adHocData.location}
-                  onChange={(e) => setAdHocData(prev => ({ ...prev, location: e.target.value }))}
-                  placeholder="ระบุชื่อถนน ซอย หรือสถานที่ใกล้เคียง..."
-                  required
-                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">หัวข้อปัญหา *</label>
-                <select
-                  value={adHocData.complaintTopicType}
-                  onChange={(e) => setAdHocData(prev => ({ ...prev, complaintTopicType: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="ท่อแตกรั่ว">ท่อแตกรั่ว</option>
-                  <option value="น้ำไม่ไหล/น้ำไหลอ่อน">น้ำไม่ไหล/น้ำไหลอ่อน</option>
-                  <option value="อื่นๆ">อื่นๆ (ระบุเพิ่มเติม)</option>
-                </select>
-              </div>
-
-              {adHocData.complaintTopicType === 'อื่นๆ' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">ระบุหัวข้อปัญหาเพิ่มเติม *</label>
-                  <input 
-                    type="text"
-                    value={adHocData.customComplaintTopic}
-                    onChange={(e) => setAdHocData(prev => ({ ...prev, customComplaintTopic: e.target.value }))}
-                    placeholder="ระบุปัญหา..."
-                    required
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">ระดับความเร่งด่วน *</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['ปกติ', 'ด่วน', 'ด่วนมาก'].map((level) => (
-                    <button
-                      key={level}
-                      type="button"
-                      onClick={() => setAdHocData(prev => ({ ...prev, urgency: level }))}
-                      className={`py-2 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
-                        adHocData.urgency === level 
-                          ? level === 'ด่วนมาก' ? 'bg-rose-600 text-white border-rose-600' :
-                            level === 'ด่วน' ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-700 text-white border-slate-700'
-                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {level}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAdHocModalOpen(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl cursor-pointer"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer"
-                >
-                  {editingJob ? 'บันทึกการแก้ไข' : 'สร้างและเริ่มบันทึกงาน'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
