@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, ShieldAlert, Search, Loader2, Plus, AlertCircle, XCircle, RotateCcw, Image as ImageIcon, Save } from 'lucide-react';
+import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, ShieldAlert, Search, Loader2, Plus, AlertCircle, XCircle, RotateCcw, Image as ImageIcon, Save, Check } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 import { saveJobToFirebase } from '../services/firebase';
 
@@ -52,6 +52,9 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const [equipmentQuantity, setEquipmentQuantity] = useState(1);
   const [selectedEquipmentList, setSelectedEquipmentList] = useState([]);
   const [notes, setNotes] = useState('');
+
+  // 💧 State เพิ่มเติม: เช็คบ็อกซ์น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์
+  const [isNoEquipmentUsed, setIsNoEquipmentUsed] = useState(false);
 
   // ⚠️ State เพิ่มเติมสำหรับกรณีไม่สามารถซ่อมได้
   const [isUnrepairable, setIsUnrepairable] = useState(false);
@@ -158,7 +161,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const handleSelectEquipmentSuggestion = (item) => {
     const itemName = item.name || item.itemName || item.อุปกรณ์ || '';
     setSelectedEquipmentItem(item);
-    setSearchTerm(itemName); // 🛠️ แก้ไขจาก SearchTerm -> setSearchTerm
+    setSearchTerm(itemName);
     setSuggestions([]);
   };
 
@@ -205,6 +208,18 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     if (selectedEquipmentList.length === 0) return;
     if (window.confirm("คุณต้องการยกเลิกอุปกรณ์ที่เลือกทั้งหมดใช่หรือไม่?")) {
       setSelectedEquipmentList([]);
+      setNotes('');
+    }
+  };
+
+  // จัดการเมื่อเปลี่ยนสถานะเช็คบ็อกซ์ไม่ได้ใช้อุปกรณ์
+  const handleToggleNoEquipment = (checked) => {
+    setIsNoEquipmentUsed(checked);
+    if (checked) {
+      setSelectedEquipmentList([]);
+      setSearchTerm('');
+      setNotes('น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์');
+    } else {
       setNotes('');
     }
   };
@@ -521,6 +536,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         setIsAdHocModalOpen(false);
         setSelectedJob(newAdHocJob);
         setIsUnrepairable(false);
+        setIsNoEquipmentUsed(false);
         setCoords({ lat: null, lng: null });
         alert("สร้างเลขที่รับแจ้งสำเร็จ! กรุณาถ่ายภาพและบันทึกผลการซ่อม");
       } catch (err) {
@@ -552,6 +568,16 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       }
     }
 
+    // กำหนดข้อความหมายเหตุตามเงื่อนไขที่เลือก
+    let finalNotes = '';
+    if (isUnrepairable) {
+      finalNotes = `❌ ไม่สามารถซ่อมได้เนื่องจาก: ${finalReason}\nรายละเอียด: ${unrepairableDetails.trim()}`;
+    } else if (isNoEquipmentUsed) {
+      finalNotes = 'น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์';
+    } else {
+      finalNotes = notes || `ใช้อุปกรณ์: ท่อ ${pipeType} ขนาด ${pipeSize} มม.`;
+    }
+
     const jobDataPayload = {
       action: "archive_job",
       jobData: {
@@ -563,17 +589,15 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         phone: selectedJob.phone || '-',
         location: selectedJob.location || '-',
         issueType: selectedJob.complaintTopic || selectedJob.issueType || 'ท่อแตกรั่ว',
-        pipeType: isUnrepairable ? '-' : pipeType,
-        pipeSize: isUnrepairable ? '-' : pipeSize,
+        pipeType: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeType,
+        pipeSize: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeSize,
         description: selectedJob.details || '-',
         technician: currentTeam,
         status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
         beforeImgBase64: images.before,
         inProgImgBase64: images.inProgress,
         afterImgBase64: images.after,
-        notes: isUnrepairable 
-          ? `❌ ไม่สามารถซ่อมได้เนื่องจาก: ${finalReason}\nรายละเอียด: ${unrepairableDetails.trim()}` 
-          : (notes || `ใช้อุปกรณ์: ท่อ ${pipeType} ขนาด ${pipeSize} มม.`),
+        notes: finalNotes,
         closedAt: currentDateTime,
         completedAt: currentDateTime,
         latitude: coords.lat || selectedJob.latitude || '',
@@ -598,6 +622,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       setNotes('');
       setSelectedEquipmentList([]);
       setIsUnrepairable(false);
+      setIsNoEquipmentUsed(false);
       setUnrepairableDetails('');
       setCustomUnrepairableReason('');
       setPipeType('HDPE');
@@ -805,6 +830,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                             onClick={() => {
                               setSelectedJob(job);
                               setIsUnrepairable(false);
+                              setIsNoEquipmentUsed(false);
                               setCoords({ lat: null, lng: null });
                             }}
                             className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
@@ -818,6 +844,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                             onClick={() => {
                               setSelectedJob(job);
                               setIsUnrepairable(false);
+                              setIsNoEquipmentUsed(false);
                               setCoords({ lat: null, lng: null });
                             }}
                             className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
@@ -900,7 +927,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs space-y-1">
               <p><strong>ผู้แจ้ง:</strong> {editingPhotoJob.reporterName || '-'} ({editingPhotoJob.phone || '-'})</p>
               <p><strong>หัวข้อ:</strong> {editingPhotoJob.complaintTopic || editingPhotoJob.issueType || '-'}</p>
-              {editingPhotoJob.pipeType && <p><strong>ชนิด/ขนาดท่อ:</strong> ท่อ {editingPhotoJob.pipeType} {editingPhotoJob.pipeSize} มม.</p>}
+              {editingPhotoJob.pipeType && editingPhotoJob.pipeType !== '-' && <p><strong>ชนิด/ขนาดท่อ:</strong> ท่อ {editingPhotoJob.pipeType} {editingPhotoJob.pipeSize} มม.</p>}
               {editingPhotoJob.notes && <p className="text-slate-600"><strong>หมายเหตุ/อุปกรณ์:</strong> {editingPhotoJob.notes}</p>}
             </div>
 
@@ -1032,67 +1059,96 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
             </div>
 
             <form onSubmit={handleSubmitFix} className="space-y-4">
-              <div className={`p-3.5 rounded-2xl border transition-all ${
-                isUnrepairable ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 border-slate-200'
-              }`}>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input 
-                    type="checkbox"
-                    checked={isUnrepairable}
-                    onChange={(e) => setIsUnrepairable(e.target.checked)}
-                    className="w-5 h-5 text-rose-600 rounded-lg focus:ring-rose-500 border-slate-300 cursor-pointer"
-                  />
-                  <div>
-                    <span className={`text-xs font-bold block ${isUnrepairable ? 'text-rose-700' : 'text-slate-700'}`}>
-                      ⚠️ ไม่สามารถดำเนินการซ่อมได้ในขณะนี้
-                    </span>
-                    <span className="text-[10px] text-slate-500">ติ๊กถูกหากพบอุปสรรคที่ไม่สามารถดำเนินการซ่อมเสร็จได้</span>
-                  </div>
-                </label>
-
-                {isUnrepairable && (
-                  <div className="mt-3 space-y-3 pt-3 border-t border-rose-200">
+              {/* 💧 ตัวเลือก 1: น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์ */}
+              {!isUnrepairable && (
+                <div className={`p-3.5 rounded-2xl border transition-all ${
+                  isNoEquipmentUsed ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox"
+                      checked={isNoEquipmentUsed}
+                      onChange={(e) => handleToggleNoEquipment(e.target.checked)}
+                      className="w-5 h-5 text-emerald-600 rounded-lg focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                    />
                     <div>
-                      <label className="block text-xs font-bold text-rose-800 mb-1">สาเหตุอุปสรรคที่ไม่สามารถซ่อมได้ *</label>
-                      <select
-                        value={unrepairableReasonType}
-                        onChange={(e) => setUnrepairableReasonType(e.target.value)}
-                        className="w-full bg-white border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-rose-500 text-slate-800 outline-none"
-                      >
-                        {unrepairableReasons.map((r) => (
-                          <option key={r} value={r}>{r}</option>
-                        ))}
-                      </select>
+                      <span className={`text-xs font-bold block ${isNoEquipmentUsed ? 'text-emerald-700' : 'text-slate-700'}`}>
+                        💧 น้ำไหลปกติแล้ว / ไม่ได้ใช้อุปกรณ์ซ่อม
+                      </span>
+                      <span className="text-[10px] text-slate-500">ติ๊กถูกหากตรวจสอบแล้วพบว่าน้ำไหลปกติและไม่ได้ใช้อุปกรณ์ใดๆ</span>
                     </div>
+                  </label>
+                </div>
+              )}
 
-                    {unrepairableReasonType === 'อื่นๆ (ระบุในรายละเอียด)' && (
+              {/* ⚠️ ตัวเลือก 2: ไม่สามารถซ่อมได้ */}
+              {!isNoEquipmentUsed && (
+                <div className={`p-3.5 rounded-2xl border transition-all ${
+                  isUnrepairable ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox"
+                      checked={isUnrepairable}
+                      onChange={(e) => {
+                        setIsUnrepairable(e.target.checked);
+                        if (e.target.checked) setIsNoEquipmentUsed(false);
+                      }}
+                      className="w-5 h-5 text-rose-600 rounded-lg focus:ring-rose-500 border-slate-300 cursor-pointer"
+                    />
+                    <div>
+                      <span className={`text-xs font-bold block ${isUnrepairable ? 'text-rose-700' : 'text-slate-700'}`}>
+                        ⚠️ ไม่สามารถดำเนินการซ่อมได้ในขณะนี้
+                      </span>
+                      <span className="text-[10px] text-slate-500">ติ๊กถูกหากพบอุปสรรคที่ไม่สามารถดำเนินการซ่อมเสร็จได้</span>
+                    </div>
+                  </label>
+
+                  {isUnrepairable && (
+                    <div className="mt-3 space-y-3 pt-3 border-t border-rose-200">
                       <div>
-                        <label className="block text-xs font-bold text-rose-800 mb-1">ระบุสาเหตุอื่นๆ *</label>
-                        <input
-                          type="text"
-                          value={customUnrepairableReason}
-                          onChange={(e) => setCustomUnrepairableReason(e.target.value)}
-                          placeholder="กรอกสาเหตุที่ไม่สามารถซ่อมได้..."
+                        <label className="block text-xs font-bold text-rose-800 mb-1">สาเหตุอุปสรรคที่ไม่สามารถซ่อมได้ *</label>
+                        <select
+                          value={unrepairableReasonType}
+                          onChange={(e) => setUnrepairableReasonType(e.target.value)}
+                          className="w-full bg-white border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-rose-500 text-slate-800 outline-none"
+                        >
+                          {unrepairableReasons.map((r) => (
+                            <option key={r} value={r}>{r}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {unrepairableReasonType === 'อื่นๆ (ระบุในรายละเอียด)' && (
+                        <div>
+                          <label className="block text-xs font-bold text-rose-800 mb-1">ระบุสาเหตุอื่นๆ *</label>
+                          <input
+                            type="text"
+                            value={customUnrepairableReason}
+                            onChange={(e) => setCustomUnrepairableReason(e.target.value)}
+                            placeholder="กรอกสาเหตุที่ไม่สามารถซ่อมได้..."
+                            className="w-full bg-white border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-rose-500 text-slate-800 outline-none"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-xs font-bold text-rose-800 mb-1">รายละเอียดเพิ่มเติม/แนวทางแก้ไข *</label>
+                        <textarea
+                          rows="2"
+                          value={unrepairableDetails}
+                          onChange={(e) => setUnrepairableDetails(e.target.value)}
+                          placeholder="ระบุสิ่งที่ต้องการการสนับสนุน เช่น ต้องการรถขุด, ประสานงานดับน้ำ..."
                           className="w-full bg-white border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-rose-500 text-slate-800 outline-none"
                         />
                       </div>
-                    )}
-
-                    <div>
-                      <label className="block text-xs font-bold text-rose-800 mb-1">รายละเอียดเพิ่มเติม/แนวทางแก้ไข *</label>
-                      <textarea
-                        rows="2"
-                        value={unrepairableDetails}
-                        onChange={(e) => setUnrepairableDetails(e.target.value)}
-                        placeholder="ระบุสิ่งที่ต้องการการสนับสนุน เช่น ต้องการรถขุด, ประสานงานดับน้ำ..."
-                        className="w-full bg-white border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-rose-500 text-slate-800 outline-none"
-                      />
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
-              {!isUnrepairable && (
+              {/* ชนิดท่อและขนาดท่อ (แสดงเมื่อไม่ได้เลือกซ่อมไม่ได้ และไม่ได้เลือกไม่ต้องใช้อุปกรณ์) */}
+              {!isUnrepairable && !isNoEquipmentUsed && (
                 <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">ชนิดท่อที่ซ่อม *</label>
@@ -1121,7 +1177,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {!isUnrepairable && (
+              {/* ระบบเลือกอุปกรณ์จาก Google Sheets (แสดงเมื่อไม่ได้เลือกซ่อมไม่ได้ และไม่ได้เลือกไม่ต้องใช้อุปกรณ์) */}
+              {!isUnrepairable && !isNoEquipmentUsed && (
                 <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
                   <div className="flex justify-between items-center">
                     <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
@@ -1202,6 +1259,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
+              {/* แนบรูปภาพ 3 ระยะ */}
               <div className="space-y-3">
                 <label className="block text-xs font-bold text-slate-700">📸 แนบรูปภาพปฏิบัติงาน *</label>
 
@@ -1262,6 +1320,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               </div>
 
+              {/* ดึงตำแหน่งพิกัด GPS */}
               <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex justify-between items-center">
                 <div>
                   <span className="text-xs font-bold text-slate-700 block">📍 พิกัดหน้างาน (GPS)</span>
