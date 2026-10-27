@@ -49,7 +49,9 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const [searchTerm, setSearchTerm] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [selectedEquipmentItem, setSelectedEquipmentItem] = useState(null);
-  const [equipmentQuantity, setEquipmentQuantity] = useState(1);
+  
+  // ✏️ ปรับเป็น String รองรับการพิมพ์อินพุตข้อความตามต้องการ
+  const [equipmentQuantity, setEquipmentQuantity] = useState('1'); 
   const [selectedEquipmentList, setSelectedEquipmentList] = useState([]);
   const [notes, setNotes] = useState('');
 
@@ -112,6 +114,26 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     return [];
   };
 
+  // ☁️ ฟังก์ชันอัปโหลด Base64 ไปสร้างเป็นไฟล์เก็บใน Google Drive
+  const uploadImagesToDrive = async (imgObj) => {
+    try {
+      const response = await fetch(WEB_APP_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "upload_images",
+          images: imgObj
+        })
+      });
+      const resData = await response.json();
+      if (resData.status === "success" && resData.imageUrls) {
+        return resData.imageUrls;
+      }
+    } catch (err) {
+      console.error("Failed to upload images to Drive:", err);
+    }
+    return imgObj;
+  };
+
   // 🌐 ดึงข้อมูลรายการอุปกรณ์จาก Google Sheets
   useEffect(() => {
     const fetchEquipmentFromSheets = async () => {
@@ -165,6 +187,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setSuggestions([]);
   };
 
+  // 🛠️ ปรับระบบเพิ่มอุปกรณ์ ให้จัดฟอร์แมตข้อความแบบ : [จำนวน] [หน่วย]
   const handleAddEquipmentToList = () => {
     if (!searchTerm.trim()) {
       alert("กรุณาพิมพ์หรือเลือกชื่ออุปกรณ์");
@@ -182,25 +205,26 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     const newItem = {
       id: Date.now(),
       name: itemName,
-      quantity: Number(equipmentQuantity) || 1,
+      quantity: String(equipmentQuantity).trim() || '1',
       unit: itemUnit
     };
 
     const updatedList = [...selectedEquipmentList, newItem];
     setSelectedEquipmentList(updatedList);
 
-    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join('\n');
+    // รูปแบบการบันทึก: ข้อต่อตรง HDPE 110 มม. : 1 ตัว
+    const summaryText = updatedList.map(i => `${i.name} : ${i.quantity} ${i.unit}`).join('\n');
     setNotes(summaryText);
 
     setSearchTerm('');
     setSelectedEquipmentItem(null);
-    setEquipmentQuantity(1);
+    setEquipmentQuantity('1');
   };
 
   const handleRemoveEquipmentItem = (id) => {
     const updatedList = selectedEquipmentList.filter(item => item.id !== id);
     setSelectedEquipmentList(updatedList);
-    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join('\n');
+    const summaryText = updatedList.map(i => `${i.name} : ${i.quantity} ${i.unit}`).join('\n');
     setNotes(summaryText);
   };
 
@@ -212,7 +236,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // จัดการเมื่อเปลี่ยนสถานะเช็คบ็อกซ์ไม่ได้ใช้อุปกรณ์
   const handleToggleNoEquipment = (checked) => {
     setIsNoEquipmentUsed(checked);
     if (checked) {
@@ -383,14 +406,16 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
     setIsSubmitting(true);
     try {
+      const driveUrls = await uploadImagesToDrive(images);
+
       const updatedData = {
         ...editingPhotoJob,
-        beforeImgBase64: images.before,
-        inProgImgBase64: images.inProgress,
-        afterImgBase64: images.after,
-        beforeImg: images.before,
-        inProgImg: images.inProgress,
-        afterImg: images.after
+        beforeImgBase64: driveUrls.before,
+        inProgImgBase64: driveUrls.inProgress,
+        afterImgBase64: driveUrls.after,
+        beforeImg: driveUrls.before,
+        inProgImg: driveUrls.inProgress,
+        afterImg: driveUrls.after
       };
 
       const jobDataPayload = {
@@ -408,9 +433,9 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
           description: editingPhotoJob.details || '-',
           technician: currentTeam,
           status: editingPhotoJob.status || 'COMPLETED',
-          beforeImgBase64: images.before,
-          inProgImgBase64: images.inProgress,
-          afterImgBase64: images.after,
+          beforeImgBase64: driveUrls.before,
+          inProgImgBase64: driveUrls.inProgress,
+          afterImgBase64: driveUrls.after,
           notes: editingPhotoJob.notes || '-',
           closedAt: editingPhotoJob.closedAt || editingPhotoJob.completedAt || new Date().toLocaleString("th-TH")
         }
@@ -568,7 +593,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       }
     }
 
-    // กำหนดข้อความหมายเหตุตามเงื่อนไขที่เลือก
     let finalNotes = '';
     if (isUnrepairable) {
       finalNotes = `❌ ไม่สามารถซ่อมได้เนื่องจาก: ${finalReason}\nรายละเอียด: ${unrepairableDetails.trim()}`;
@@ -578,34 +602,36 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       finalNotes = notes || `ใช้อุปกรณ์: ท่อ ${pipeType} ขนาด ${pipeSize} มม.`;
     }
 
-    const jobDataPayload = {
-      action: "archive_job",
-      jobData: {
-        id: selectedJob.id,
-        receivedNo: selectedJob.receivedNo || selectedJob.id,
-        timestamp: selectedJob.receivedAt || selectedJob.timestamp || currentDateTime,
-        receivedAt: selectedJob.receivedAt || selectedJob.timestamp || '-',
-        reporterName: selectedJob.reporterName || 'ไม่ระบุชื่อ',
-        phone: selectedJob.phone || '-',
-        location: selectedJob.location || '-',
-        issueType: selectedJob.complaintTopic || selectedJob.issueType || 'ท่อแตกรั่ว',
-        pipeType: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeType,
-        pipeSize: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeSize,
-        description: selectedJob.details || '-',
-        technician: currentTeam,
-        status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
-        beforeImgBase64: images.before,
-        inProgImgBase64: images.inProgress,
-        afterImgBase64: images.after,
-        notes: finalNotes,
-        closedAt: currentDateTime,
-        completedAt: currentDateTime,
-        latitude: coords.lat || selectedJob.latitude || '',
-        longitude: coords.lng || selectedJob.longitude || ''
-      }
-    };
-
     try {
+      const driveUrls = await uploadImagesToDrive(images);
+
+      const jobDataPayload = {
+        action: "archive_job",
+        jobData: {
+          id: selectedJob.id,
+          receivedNo: selectedJob.receivedNo || selectedJob.id,
+          timestamp: selectedJob.receivedAt || selectedJob.timestamp || currentDateTime,
+          receivedAt: selectedJob.receivedAt || selectedJob.timestamp || '-',
+          reporterName: selectedJob.reporterName || 'ไม่ระบุชื่อ',
+          phone: selectedJob.phone || '-',
+          location: selectedJob.location || '-',
+          issueType: selectedJob.complaintTopic || selectedJob.issueType || 'ท่อแตกรั่ว',
+          pipeType: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeType,
+          pipeSize: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeSize,
+          description: selectedJob.details || '-',
+          technician: currentTeam,
+          status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
+          beforeImgBase64: driveUrls.before,
+          inProgImgBase64: driveUrls.inProgress,
+          afterImgBase64: driveUrls.after,
+          notes: finalNotes,
+          closedAt: currentDateTime,
+          completedAt: currentDateTime,
+          latitude: coords.lat || selectedJob.latitude || '',
+          longitude: coords.lng || selectedJob.longitude || ''
+        }
+      };
+
       await onUpdateJobStatus(selectedJob.id, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
 
       alert(isUnrepairable 
@@ -1147,7 +1173,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {/* ชนิดท่อและขนาดท่อ (แสดงเมื่อไม่ได้เลือกซ่อมไม่ได้ และไม่ได้เลือกไม่ต้องใช้อุปกรณ์) */}
+              {/* ชนิดท่อและขนาดท่อ */}
               {!isUnrepairable && !isNoEquipmentUsed && (
                 <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                   <div>
@@ -1177,7 +1203,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {/* ระบบเลือกอุปกรณ์จาก Google Sheets (แสดงเมื่อไม่ได้เลือกซ่อมไม่ได้ และไม่ได้เลือกไม่ต้องใช้อุปกรณ์) */}
+              {/* 🛠️ ระบบเลือกอุปกรณ์จาก Google Sheets (ปรับอินพุตจำนวนเป็นข้อความให้กรอกเอง) */}
               {!isUnrepairable && !isNoEquipmentUsed && (
                 <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
                   <div className="flex justify-between items-center">
@@ -1222,13 +1248,16 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                         )}
                       </div>
 
-                      <input
-                        type="number"
-                        min="1"
-                        value={equipmentQuantity}
-                        onChange={(e) => setEquipmentQuantity(e.target.value)}
-                        className="w-16 bg-white border border-slate-200 rounded-xl px-2 py-2 text-xs font-bold text-center focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
-                      />
+                      {/* ✏️ ช่องกรอกจำนวนแบบ Text ให้พิมพ์อิสระ (เช่น 1, 0.5, 1.5) */}
+                      <div className="relative w-20 flex items-center">
+                        <input
+                          type="text"
+                          value={equipmentQuantity}
+                          onChange={(e) => setEquipmentQuantity(e.target.value)}
+                          placeholder="จำนวน"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-2 py-2 text-xs font-bold text-center focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                        />
+                      </div>
 
                       <button
                         type="button"
@@ -1243,7 +1272,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                       <div className="space-y-1.5 pt-2">
                         {selectedEquipmentList.map((item) => (
                           <div key={item.id} className="bg-white p-2 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
-                            <span className="font-semibold text-slate-700">{item.name} x {item.quantity} {item.unit}</span>
+                            <span className="font-semibold text-slate-700">{item.name} : {item.quantity} {item.unit}</span>
                             <button
                               type="button"
                               onClick={() => handleRemoveEquipmentItem(item.id)}
