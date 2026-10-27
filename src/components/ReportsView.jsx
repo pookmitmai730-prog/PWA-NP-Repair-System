@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon } from 'lucide-react';
 
 export default function ReportsView({ jobs }) {
   const [reportType, setReportType] = useState('all');
@@ -12,6 +12,9 @@ export default function ReportsView({ jobs }) {
   // State สำหรับควบคุม Modal กรอกเลข Smart 1662 ก่อนสั่งพิมพ์
   const [selectedJobForPrint, setSelectedJobForPrint] = useState(null);
   const [smart1662Input, setSmart1662Input] = useState('');
+
+  // 🖼️ State สำหรับ Modal จัดการ/ดาวน์โหลดรูปภาพ
+  const [selectedJobForPhotos, setSelectedJobForPhotos] = useState(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -51,7 +54,7 @@ export default function ReportsView({ jobs }) {
         }
       }
 
-      // 2. กรองตามคำค้นหา (เลขรับแจ้ง, เลข Smart 1662, ผู้แจ้ง, เบอร์โทร, สถานที่, ทีมช่าง, ชนิดท่อ)
+      // 2. กรองตามคำค้นหา
       if (tableSearchTerm.trim()) {
         const term = tableSearchTerm.trim().toLowerCase();
         const matchNo = (job.receivedNo || job.id || '').toLowerCase().includes(term);
@@ -80,13 +83,11 @@ export default function ReportsView({ jobs }) {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentJobs = filteredJobs.slice(startIndex, startIndex + itemsPerPage);
 
-  // เปลี่ยนแท็บเวลาให้รีเซ็ตหน้า Pagination กลับไปหน้า 1 เสมอ
   const handleTabChange = (type) => {
     setReportType(type);
     setCurrentPage(1);
   };
 
-  // สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง
   const teamSummary = filteredJobs
     .filter(j => j.status === 'COMPLETED')
     .reduce((acc, job) => {
@@ -94,19 +95,16 @@ export default function ReportsView({ jobs }) {
       if (techName.includes('(')) {
         techName = techName.split('(')[0].trim();
       }
-      
       acc[techName] = (acc[techName] || 0) + 1;
       return acc;
     }, {});
 
-  // 📊 สรุปชนิดท่อและขนาดท่อที่ใช้ซ่อม (ตามเงื่อนไขเวลาที่เลือก)
   const pipeSummary = filteredJobs
     .filter(j => j.status === 'COMPLETED')
     .reduce((acc, job) => {
       const type = job.pipeType || 'ไม่ระบุชนิด';
       const size = job.pipeSize ? `${job.pipeSize} มม.` : 'ไม่ระบุขนาด';
       const key = `${type} (ขนาด ${size})`;
-      
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
@@ -123,6 +121,25 @@ export default function ReportsView({ jobs }) {
       console.error("Error parsing images:", e);
     }
     return [];
+  };
+
+  // 📥 ฟังก์ชันดาวน์โหลดไฟล์ภาพลงเครื่องคอมพิวเตอร์/มือถือ
+  const handleDownloadSingleImage = async (url, filename) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename || 'repair-image.jpg';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      // กรณีติด CORS ให้เปิดภาพในแท็บใหม่แทนเพื่อให้ผู้ใช้บันทึกภาพได้
+      window.open(url, '_blank');
+    }
   };
 
   const handleExportCSV = () => {
@@ -482,7 +499,7 @@ export default function ReportsView({ jobs }) {
           )}
         </div>
 
-        {/* 🛠️ สรุปชนิดท่อและขนาดท่อที่ใช้ซ่อม (ใหม่) */}
+        {/* 🛠️ สรุปชนิดท่อและขนาดท่อที่ใช้ซ่อม */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
           <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
             <Layers className="w-4 h-4 text-orange-600" />
@@ -551,13 +568,14 @@ export default function ReportsView({ jobs }) {
                 <th className="p-4 font-semibold">หัวข้อร้องเรียน</th>
                 <th className="p-4 font-semibold">บริเวณที่เกิดเหตุ / ชนิดท่อ</th>
                 <th className="p-4 font-semibold text-center">สถานะ</th>
+                <th className="p-4 font-semibold text-center">รูปภาพหน้างาน</th>
                 <th className="p-4 font-semibold text-center">พิมพ์รายงาน A4</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {currentJobs.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="text-center py-12 text-slate-400">
+                  <td colSpan="7" className="text-center py-12 text-slate-400">
                     <p className="text-sm font-bold">ไม่พบข้อมูลใบแจ้งซ่อมตามคำค้นหานี้</p>
                     <p className="text-xs text-slate-400 mt-1">ลองเปลี่ยนคำค้นหา หรือเลือกช่วงเวลาอื่น</p>
                   </td>
@@ -604,6 +622,17 @@ export default function ReportsView({ jobs }) {
                          job.status === 'IN_PROGRESS' ? 'กำลังซ่อม' : 
                          job.status === 'DISPATCHED' ? 'จ่ายงานแล้ว' : 'รอดำเนินการ'}
                       </span>
+                    </td>
+
+                    {/* 🖼️ ปุ่มเปิดดู/ดาวน์โหลดรูปภาพ */}
+                    <td className="p-4 text-center">
+                      <button
+                        onClick={() => setSelectedJobForPhotos(job)}
+                        title="ดูและดาวน์โหลดรูปภาพ"
+                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 p-2 rounded-xl font-bold inline-flex items-center justify-center gap-1 shadow-2xs transition active:scale-95 cursor-pointer text-xs"
+                      >
+                        <ImageIcon className="w-4 h-4" /> ดูรูป
+                      </button>
                     </td>
 
                     <td className="p-4 text-center">
@@ -654,6 +683,69 @@ export default function ReportsView({ jobs }) {
         )}
       </div>
 
+      {/* 🖼️ Modal แสดงและดาวน์โหลดรูปภาพประจำใบงาน */}
+      {selectedJobForPhotos && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                  <ImageIcon className="w-5 h-5 text-indigo-600" />
+                  รูปภาพปฏิบัติงาน: <span className="font-mono text-blue-600">{selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}</span>
+                </h4>
+                <p className="text-xs text-slate-500">{selectedJobForPhotos.location}</p>
+              </div>
+              <button onClick={() => setSelectedJobForPhotos(null)} className="cursor-pointer text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {[
+                { title: '📸 รูปภาพก่อนซ่อม', imgs: parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg) },
+                { title: '📸 รูปภาพระหว่างซ่อม', imgs: parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg) },
+                { title: '📸 รูปภาพหลังซ่อมเสร็จ', imgs: parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg) }
+              ].map((cat, idx) => (
+                <div key={idx} className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-700">{cat.title} ({cat.imgs.length} รูป)</span>
+                  </div>
+
+                  {cat.imgs.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 italic text-center py-2">ไม่มีรูปภาพในหมวดนี้</p>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {cat.imgs.map((url, imgIdx) => (
+                        <div key={imgIdx} className="bg-white rounded-xl overflow-hidden border border-slate-200 shadow-2xs space-y-1.5 p-2">
+                          <div className="aspect-square rounded-lg overflow-hidden bg-slate-100">
+                            <img src={url} alt="Repair" className="w-full h-full object-cover" />
+                          </div>
+                          <button
+                            onClick={() => handleDownloadSingleImage(url, `${selectedJobForPhotos.receivedNo || 'job'}_${idx}_${imgIdx + 1}.jpg`)}
+                            className="w-full bg-slate-800 hover:bg-slate-900 text-white text-[10px] font-bold py-1.5 rounded-lg flex items-center justify-center gap-1 transition cursor-pointer"
+                          >
+                            <Download className="w-3 h-3" /> ดาวน์โหลดรูปนี้
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={() => setSelectedJobForPhotos(null)}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl cursor-pointer"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal ป้อนเลข Smart 1662 ก่อนเปิดหน้าต่างปริ้นท์ */}
       {selectedJobForPrint && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
@@ -696,14 +788,15 @@ export default function ReportsView({ jobs }) {
               </button>
               <button
                 onClick={handleConfirmAndOpenReport}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer"
               >
-                <Printer className="w-4 h-4" /> เปิดรายงาน A4
+                ยืนยันและเปิดรายงาน A4
               </button>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }
