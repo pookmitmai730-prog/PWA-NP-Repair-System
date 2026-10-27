@@ -420,7 +420,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 📝 บันทึกผลการปฏิบัติงาน (ตัดการเรียก fetch ซ้ำออก เหลือผ่าน onUpdateJobStatus ทางเดียว)
+  // 📝 บันทึกผลการปฏิบัติงาน (ส่ง Array รูปภาพทั้งหมดไปยัง backend)
   const handleSubmitFix = async (e) => {
     e.preventDefault();
     if (!selectedJob) return;
@@ -459,9 +459,12 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         description: selectedJob.details || '-',
         technician: currentTeam,
         status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
-        beforeImgBase64: images.before.length > 0 ? images.before[0] : '',
-        inProgImgBase64: images.inProgress.length > 0 ? images.inProgress[0] : '',
-        afterImgBase64: images.after.length > 0 ? images.after[0] : '',
+        
+        // ✅ ส่ง Array รูปภาพทั้งหมดไปประมวลผล (รองรับหลายรูป)
+        beforeImgBase64: images.before,
+        inProgImgBase64: images.inProgress,
+        afterImgBase64: images.after,
+
         notes: isUnrepairable 
           ? `❌ ไม่สามารถซ่อมได้เนื่องจาก: ${finalReason}\nรายละเอียด: ${unrepairableDetails.trim()}` 
           : (notes || `ใช้อุปกรณ์: ท่อ ${pipeType} ขนาด ${pipeSize} มม.`),
@@ -473,7 +476,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     };
 
     try {
-      // ✅ ส่งคำขอผ่าน onUpdateJobStatus ทางเดียว เพื่อป้องกันการบันทึกซ้ำและยิง Telegram เบิ้ล
       await onUpdateJobStatus(selectedJob.id, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
 
       alert(isUnrepairable 
@@ -898,7 +900,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </>
               )}
 
-              {/* 📸 ส่วนอัปโหลดรูปภาพ */}
+              {/* 📸 ส่วนอัปโหลดรูปภาพ (รองรับหลายรูป) */}
               <div className="space-y-3 pt-2 border-t border-slate-100">
                 {[
                   { key: 'before', label: '📸 รูปภาพก่อนซ่อม' },
