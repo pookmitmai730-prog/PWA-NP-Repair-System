@@ -21,9 +21,9 @@ export default function ReportsView({ jobs }) {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // 📅 ฟังก์ชันแปลงวันที่ซ่อมเสร็จ (completedAt) หรือใช้วันรับแจ้งเป็นสำรอง
+  // 📅 ฟังก์ชันแปลงวันที่โดยอิงตาม "วันเวลาที่รับแจ้ง" เป็นหลัก
   const parseJobDate = (job) => {
-    const rawDate = job.completedAt || job.closedAt || job.receivedAt || job.createdAt;
+    const rawDate = job.receivedAt || job.createdAt || job.completedAt;
     if (!rawDate) return new Date(0);
 
     if (rawDate.includes('/')) {
@@ -38,9 +38,12 @@ export default function ReportsView({ jobs }) {
   };
 
   const getFilteredJobs = () => {
+    if (!jobs || !Array.isArray(jobs)) return [];
+
     const now = new Date();
-    return jobs.filter(job => {
-      // 1. กรองตามเงื่อนไขเวลา (อิงจากวันที่ซ่อมเสร็จ/อัปเดต)
+
+    // 1. กรองข้อมูลตามเงื่อนไขเวลาและคำค้นหา
+    const filtered = jobs.filter(job => {
       if (reportType !== 'all') {
         const jobDate = parseJobDate(job);
         const jobDateStr = jobDate.toISOString().split('T')[0];
@@ -58,7 +61,6 @@ export default function ReportsView({ jobs }) {
         }
       }
 
-      // 2. กรองตามคำค้นหา
       if (tableSearchTerm.trim()) {
         const term = tableSearchTerm.trim().toLowerCase();
         const matchNo = (job.receivedNo || job.id || '').toLowerCase().includes(term);
@@ -75,7 +77,19 @@ export default function ReportsView({ jobs }) {
       }
 
       return true;
-    }).sort((a, b) => parseJobDate(b) - parseJobDate(a));
+    });
+
+    // 2. ป้องกันข้อมูลซ้ำ (Deduplication) โดยใช้ receivedNo หรือ id ที่ไม่ซ้ำกัน
+    const uniqueMap = new Map();
+    filtered.forEach(job => {
+      const uniqueKey = job.receivedNo || job.id || JSON.stringify(job);
+      if (!uniqueMap.has(uniqueKey)) {
+        uniqueMap.set(uniqueKey, job);
+      }
+    });
+
+    // 3. แปลงกลับเป็น Array และเรียงลำดับจากล่าสุดไปเก่าสุด
+    return Array.from(uniqueMap.values()).sort((a, b) => parseJobDate(b) - parseJobDate(a));
   };
 
   const filteredJobs = getFilteredJobs();
@@ -447,7 +461,7 @@ export default function ReportsView({ jobs }) {
             <TrendingUp className="w-6 h-6 text-blue-600" />
             รายงานผลการปฏิบัติงานซ่อมท่อประปา
           </h2>
-          <p className="text-xs text-slate-500 mt-1">กปภ.สาขานครพนม - ติดตามสถิติและการดำเนินงาน (อิงตามช่วงเวลาแล้วเสร็จ)</p>
+          <p className="text-xs text-slate-500 mt-1">กปภ.สาขานครพนม - ติดตามสถิติและการดำเนินงาน (อิงตามวันที่รับแจ้ง)</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -625,7 +639,7 @@ export default function ReportsView({ jobs }) {
                 </tr>
               ) : (
                 currentJobs.map((job) => (
-                  <tr key={job.id} className="hover:bg-slate-50/80 transition">
+                  <tr key={job.id || job.receivedNo} className="hover:bg-slate-50/80 transition">
                     <td className="p-4">
                       <span className="font-mono font-bold text-blue-600">{job.receivedNo || job.id}</span>
                       <p className="text-[11px] text-slate-400 mt-0.5">แจ้ง: {job.receivedAt || job.createdAt}</p>
@@ -748,12 +762,12 @@ export default function ReportsView({ jobs }) {
                 <p className="text-center py-8 text-xs text-slate-400">ไม่มีรายการงานที่ไม่สามารถซ่อมได้ในช่วงเวลานี้</p>
               ) : (
                 unrepairableJobsList.map((job) => (
-                  <div key={job.id} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-2 relative">
+                  <div key={job.id || job.receivedNo} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-2 relative">
                     <div className="flex justify-between items-start">
                       <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">
                         {job.receivedNo || job.id}
                       </span>
-                      <span className="text-[10px] text-slate-400">อัปเดต: {job.completedAt || job.receivedAt}</span>
+                      <span className="text-[10px] text-slate-400">แจ้ง: {job.receivedAt || job.createdAt}</span>
                     </div>
 
                     <div>
