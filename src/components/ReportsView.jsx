@@ -21,9 +21,9 @@ export default function ReportsView({ jobs }) {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // 📅 ฟังก์ชันแปลงวันที่โดยอิงตาม "วันเวลาที่รับแจ้ง" เป็นหลักตามเงื่อนไขใหม่
+  // 📅 ฟังก์ชันแปลงวันที่ซ่อมเสร็จ (completedAt) หรือใช้วันรับแจ้งเป็นสำรอง
   const parseJobDate = (job) => {
-    const rawDate = job.receivedAt || job.createdAt || job.completedAt;
+    const rawDate = job.completedAt || job.closedAt || job.receivedAt || job.createdAt;
     if (!rawDate) return new Date(0);
 
     if (rawDate.includes('/')) {
@@ -40,7 +40,7 @@ export default function ReportsView({ jobs }) {
   const getFilteredJobs = () => {
     const now = new Date();
     return jobs.filter(job => {
-      // 1. กรองตามเงื่อนไขเวลา (อิงจากวันที่รับแจ้ง)
+      // 1. กรองตามเงื่อนไขเวลา (อิงจากวันที่ซ่อมเสร็จ/อัปเดต)
       if (reportType !== 'all') {
         const jobDate = parseJobDate(job);
         const jobDateStr = jobDate.toISOString().split('T')[0];
@@ -447,7 +447,7 @@ export default function ReportsView({ jobs }) {
             <TrendingUp className="w-6 h-6 text-blue-600" />
             รายงานผลการปฏิบัติงานซ่อมท่อประปา
           </h2>
-          <p className="text-xs text-slate-500 mt-1">กปภ.สาขานครพนม - ติดตามสถิติและการดำเนินงาน (อิงตามวันที่รับแจ้ง)</p>
+          <p className="text-xs text-slate-500 mt-1">กปภ.สาขานครพนม - ติดตามสถิติและการดำเนินงาน (อิงตามช่วงเวลาแล้วเสร็จ)</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -753,7 +753,7 @@ export default function ReportsView({ jobs }) {
                       <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">
                         {job.receivedNo || job.id}
                       </span>
-                      <span className="text-[10px] text-slate-400">แจ้ง: {job.receivedAt || job.createdAt}</span>
+                      <span className="text-[10px] text-slate-400">อัปเดต: {job.completedAt || job.receivedAt}</span>
                     </div>
 
                     <div>
