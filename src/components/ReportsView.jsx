@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { 
-  Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, 
-  Eye, X, Download, Printer, Info, Hash, Users, Search, 
-  ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2 
+  TrendingUp, FileText, Eye, X, Download, Printer, Info, 
+  Users, Search, ChevronLeft, ChevronRight, Layers, 
+  Image, ShieldAlert, Trash2 
 } from 'lucide-react';
-// นำเข้า Database และฟังก์ชัน remove, ref จาก Firebase (ตรวจสอบ path ให้ตรงกับโปรเจกต์ของคุณ)
-import { db } from '../firebase'; 
+
+// ✅ แก้ไข Path ให้ถูกต้องตามที่ตั้งใน src/services/firebase.js
+import { db } from '../services/firebase'; 
 import { ref, remove } from 'firebase/database';
 
 export default function ReportsView({ jobs, currentUser }) {
@@ -186,7 +187,6 @@ export default function ReportsView({ jobs, currentUser }) {
   const handleConfirmDelete = async () => {
     if (!jobToDelete) return;
     
-    // ดึงรหัสอ้างอิงหลัก เช่น "JOB-003478" จากฟิลด์ id หรือ receivedNo
     const targetKey = jobToDelete.id || jobToDelete.receivedNo || jobToDelete.firebaseKey;
     
     if (!targetKey) {
@@ -196,17 +196,17 @@ export default function ReportsView({ jobs, currentUser }) {
     }
 
     try {
-      // 1. 🗑️ ลบออกจาก Firebase Realtime Database (Node: repairs)
+      // 1. 🗑️ ลบออกจาก Firebase Realtime Database
       const jobRef = ref(db, `repairs/${targetKey}`); 
       await remove(jobRef);
       
-      // 2. 🌐 ลบออกจาก Google Sheets ผ่าน Apps Script Web App API
+      // 2. 🌐 ลบออกจาก Google Sheets ผ่าน Web App API ของคุณ
       const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec"; 
       
       if (GOOGLE_SCRIPT_URL) {
         await fetch(GOOGLE_SCRIPT_URL, {
           method: "POST",
-          mode: "no-cors", // ป้องกันปัญหา CORS
+          mode: "no-cors",
           headers: {
             "Content-Type": "application/json",
           },
@@ -215,8 +215,6 @@ export default function ReportsView({ jobs, currentUser }) {
       }
 
       alert(`🗑️ ลบข้อมูล ${targetKey} ออกจากทั้ง Firebase และ Google Sheets เรียบร้อยแล้ว`);
-      
-      // รีเฟรชหน้าเว็บอัตโนมัติเพื่อให้ตารางอัปเดตข้อมูลล่าสุดทันที
       window.location.reload(); 
     } catch (error) {
       console.error("Error deleting job: ", error);
@@ -345,131 +343,32 @@ export default function ReportsView({ jobs, currentUser }) {
         <title>ตัวอย่างก่อนพิมพ์</title>
         <meta charset="UTF-8">
         <style>
-          @page {
-            size: A4 portrait;
-            margin: 12mm;
-          }
-          body { 
-            font-family: 'Sarabun', 'Tahoma', sans-serif; 
-            margin: 0; 
-            padding: 15px; 
-            color: #1e293b; 
-            background: #fff; 
-            -webkit-print-color-adjust: exact;
-          }
-          .container { 
-            max-width: 750px; 
-            margin: 0 auto; 
-            background: white; 
-          }
-          .header-wrapper { 
-            display: flex; 
-            align-items: center; 
-            justify-content: space-between; 
-            border-bottom: 2px solid #2563eb; 
-            padding-bottom: 10px; 
-            margin-bottom: 15px; 
-          }
+          @page { size: A4 portrait; margin: 12mm; }
+          body { font-family: 'Sarabun', 'Tahoma', sans-serif; margin: 0; padding: 15px; color: #1e293b; background: #fff; -webkit-print-color-adjust: exact; }
+          .container { max-width: 750px; margin: 0 auto; background: white; }
+          .header-wrapper { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 15px; }
           .logo { width: 60px; height: 60px; object-fit: contain; }
           .header-text { flex-grow: 1; text-align: center; margin-right: 60px; }
           .header-text h1 { font-size: 18px; margin: 0; color: #0f172a; font-weight: bold; }
           .header-text h2 { font-size: 14px; margin: 4px 0 0 0; color: #2563eb; font-weight: bold; }
-          
-          .info-box { 
-            background: #f8fafc; 
-            border: 1px solid #cbd5e1; 
-            padding: 12px 15px; 
-            border-radius: 8px; 
-            margin-bottom: 15px; 
-            font-size: 12px; 
-            line-height: 1.6; 
-          }
-          .info-row { 
-            display: flex; 
-            justify-content: space-between; 
-            margin-top: 6px; 
-            border-top: 1px solid #e2e8f0; 
-            padding-top: 6px; 
-          }
-
-          .section-block {
-            page-break-inside: avoid;
-            margin-bottom: 15px;
-          }
-
-          .section-title { 
-            font-weight: bold; 
-            font-size: 12px; 
-            background: #e2e8f0; 
-            color: #1e293b;
-            padding: 6px 10px; 
-            margin-bottom: 8px; 
-            border-radius: 5px; 
-            text-transform: uppercase; 
-          }
-          
-          .img-grid { 
-            display: grid; 
-            grid-template-columns: repeat(3, 1fr); 
-            gap: 8px; 
-          }
-          .img-card { 
-            border: 1px solid #cbd5e1; 
-            border-radius: 6px; 
-            overflow: hidden; 
-            height: 130px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            background: #f1f5f9; 
-            page-break-inside: avoid;
-          }
+          .info-box { background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px 15px; border-radius: 8px; margin-bottom: 15px; font-size: 12px; line-height: 1.6; }
+          .info-row { display: flex; justify-content: space-between; margin-top: 6px; border-top: 1px solid #e2e8f0; padding-top: 6px; }
+          .section-block { page-break-inside: avoid; margin-bottom: 15px; }
+          .section-title { font-weight: bold; font-size: 12px; background: #e2e8f0; color: #1e293b; padding: 6px 10px; margin-bottom: 8px; border-radius: 5px; text-transform: uppercase; }
+          .img-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+          .img-card { border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; height: 130px; display: flex; align-items: center; justify-content: center; background: #f1f5f9; page-break-inside: avoid; }
           .img-card img { width: 100%; height: 100%; object-fit: cover; }
-          
-          .no-img { 
-            font-size: 11px; 
-            color: #94a3b8; 
-            text-align: center; 
-            padding: 12px; 
-            border: 1px dashed #cbd5e1; 
-            border-radius: 6px; 
-          }
-
-          .signature-section { 
-            margin-top: 30px; 
-            display: flex; 
-            justify-content: flex-end; 
-            page-break-inside: avoid;
-          }
+          .no-img { font-size: 11px; color: #94a3b8; text-align: center; padding: 12px; border: 1px dashed #cbd5e1; border-radius: 6px; }
+          .signature-section { margin-top: 30px; display: flex; justify-content: flex-end; page-break-inside: avoid; }
           .signature-box { text-align: center; width: 240px; font-size: 12px; line-height: 1.8; }
-          
-          .print-btn { 
-            display: block; 
-            width: 100%; 
-            background: #059669; 
-            color: white; 
-            border: none; 
-            padding: 10px; 
-            font-size: 13px; 
-            font-weight: bold; 
-            border-radius: 8px; 
-            cursor: pointer; 
-            margin-bottom: 15px; 
-            text-align: center; 
-          }
+          .print-btn { display: block; width: 100%; background: #059669; color: white; border: none; padding: 10px; font-size: 13px; font-weight: bold; border-radius: 8px; cursor: pointer; margin-bottom: 15px; text-align: center; }
           .print-btn:hover { background: #047857; }
-
-          @media print {
-            .print-btn { display: none; }
-            body { padding: 0; background: none; }
-            .container { border: none; padding: 0; width: 100%; }
-          }
+          @media print { .print-btn { display: none; } body { padding: 0; background: none; } .container { border: none; padding: 0; width: 100%; } }
         </style>
       </head>
       <body>
         <div class="container">
           <button class="print-btn" onclick="window.print()">🖨️ พิมพ์ / บันทึกเป็น PDF (A4)</button>
-          
           <div class="header-wrapper">
             <img src="${logoPath}" alt="โลโก้ กปภ." class="logo" onerror="this.style.display='none'" />
             <div class="header-text">
@@ -477,26 +376,22 @@ export default function ReportsView({ jobs, currentUser }) {
               <h2>รายงานผลการปฏิบัติงานซ่อมท่อประปา</h2>
             </div>
           </div>
-
           <div class="info-box">
             <div><strong>เลขที่รับแจ้ง:</strong> <span style="font-family: monospace; color: #2563eb; font-weight: bold;">${job.id || job.receivedNo}</span></div>
             ${job.smart1662No ? `<div><strong>เลขที่ปิดงานซ่อม Smart 1662:</strong> <span style="font-family: monospace; color: #0891b2; font-weight: bold;">${job.smart1662No}</span></div>` : ''}
             <div><strong>สถานที่ซ่อม:</strong> ${job.location || '-'}</div>
-
             ${job.pipeType || job.pipeSize ? `
               <div style="margin-top: 6px; border-top: 1px solid #e2e8f0; padding-top: 6px;">
                 <strong>วัสดุท่อที่ซ่อม:</strong> 
                 <span style="color: #ea580c; font-weight: bold;">ท่อชนิด ${job.pipeType || 'ไม่ระบุ'} ขนาด ${job.pipeSize ? job.pipeSize + ' มม.' : 'ไม่ระบุ'}</span>
               </div>
             ` : ''}
-
             ${job.latitude && job.longitude ? `
               <div><strong>พิกัด GPS โลเคชั่น:</strong> 
                 <span style="font-family: monospace; color: #059669; font-weight: bold;">${job.latitude}, ${job.longitude}</span>
                 <a href="https://www.google.com/maps?q=${job.latitude},${job.longitude}" target="_blank" style="margin-left: 10px; color: #2563eb; text-decoration: none; font-size: 11px;">[🗺️ เปิดดูแผนที่ Google Maps]</a>
               </div>
             ` : ''}
-
             <div class="info-row">
               <span><strong>ผู้แจ้ง:</strong> ${job.reporterName || job.complainantInfo || '-'} (${job.phone || job.complainantInfo || '-'})</span>
               <span><strong>ทีมช่างซ่อม:</strong> ${job.technician || '-'}</span>
@@ -506,32 +401,27 @@ export default function ReportsView({ jobs, currentUser }) {
               <span><strong>วันเวลาแล้วเสร็จ:</strong> <span style="color: #059669; font-weight: bold;">${job.completedAt || 'ยังไม่ปิดงาน'}</span></span>
             </div>
           </div>
-
           <div class="section-block">
             <div class="section-title">ภาพก่อนซ่อม (${imagesBefore.length} รูป)</div>
             ${imagesBefore.length > 0 
               ? `<div class="img-grid">${imagesBefore.map(src => `<div class="img-card"><img src="${src}" /></div>`).join('')}</div>` 
               : '<div class="no-img">ไม่มีรูปภาพก่อนซ่อม</div>'}
           </div>
-
           <div class="section-block">
             <div class="section-title">ภาพระหว่างซ่อม (${imagesInProg.length} รูป)</div>
             ${imagesInProg.length > 0 
               ? `<div class="img-grid">${imagesInProg.map(src => `<div class="img-card"><img src="${src}" /></div>`).join('')}</div>` 
               : '<div class="no-img">ไม่มีรูปภาพระหว่างซ่อม</div>'}
           </div>
-
           <div class="section-block">
             <div class="section-title">ภาพหลังซ่อมเสร็จ (${imagesAfter.length} รูป)</div>
             ${imagesAfter.length > 0 
               ? `<div class="img-grid">${imagesAfter.map(src => `<div class="img-card"><img src="${src}" /></div>`).join('')}</div>` 
               : '<div class="no-img">ไม่มีรูปภาพหลังซ่อม</div>'}
           </div>
-
           <div class="info-box section-block" style="margin-top: 15px;">
             <strong>อุปกรณ์ที่ใช้:</strong> ${job.notes || job.description || '-'}
           </div>
-
           <div class="signature-section">
             <div class="signature-box">
               <p>ลงชื่อ........................................................</p>
@@ -606,7 +496,6 @@ export default function ReportsView({ jobs, currentUser }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* 📊 สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
           <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
             <Users className="w-4 h-4 text-indigo-600" />
@@ -629,7 +518,6 @@ export default function ReportsView({ jobs, currentUser }) {
           )}
         </div>
 
-        {/* 🛠️ สรุปชนิดและขนาดท่อที่ใช้ซ่อม */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
           <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
             <Layers className="w-4 h-4 text-orange-600" />
@@ -652,7 +540,6 @@ export default function ReportsView({ jobs, currentUser }) {
           )}
         </div>
 
-        {/* ⚠️ สรุปงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
           <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-rose-600" />
@@ -677,8 +564,6 @@ export default function ReportsView({ jobs, currentUser }) {
       </div>
 
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-        
-        {/* 🔎 ส่วนหัวตาราง พร้อมเท็กซ์บ็อกซ์ค้นหาใบงาน */}
         <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50">
           <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
             <FileText className="w-5 h-5 text-blue-600" />
@@ -686,7 +571,6 @@ export default function ReportsView({ jobs, currentUser }) {
           </h3>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-            {/* 🔍 ช่องค้นหาใบงาน */}
             <div className="relative w-full sm:w-72">
               <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                 <Search className="w-4 h-4" />
@@ -784,14 +668,13 @@ export default function ReportsView({ jobs, currentUser }) {
                       </span>
                     </td>
 
-                    {/* 🖼️ ปุ่มเปิดดู/ดาวน์โหลดรูปภาพ */}
                     <td className="p-4 text-center">
                       <button
                         onClick={() => setSelectedJobForPhotos(job)}
                         title="ดูและดาวน์โหลดรูปภาพ"
                         className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 p-2 rounded-xl font-bold inline-flex items-center justify-center gap-1 shadow-2xs transition active:scale-95 cursor-pointer text-xs"
                       >
-                        <ImageIcon className="w-4 h-4" /> ดูรูป
+                        <Image className="w-4 h-4" /> ดูรูป
                       </button>
                     </td>
 
@@ -805,7 +688,6 @@ export default function ReportsView({ jobs, currentUser }) {
                       </button>
                     </td>
 
-                    {/* 🗑️ ปุ่มลบข้อมูล */}
                     <td className="p-4 text-center">
                       <button
                         onClick={() => handleRequestDelete(job)}
@@ -822,7 +704,6 @@ export default function ReportsView({ jobs, currentUser }) {
           </table>
         </div>
 
-        {/* 📄 แถบควบคุมการแบ่งหน้า */}
         {filteredJobs.length > 0 && (
           <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/50">
             <span className="text-xs text-slate-500 font-medium">
@@ -854,7 +735,6 @@ export default function ReportsView({ jobs, currentUser }) {
         )}
       </div>
 
-      {/* ⚠️ MODAL แสดงรายละเอียดงานที่ไม่สามารถดำเนินการได้ */}
       {isUnrepairableModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
@@ -908,7 +788,6 @@ export default function ReportsView({ jobs, currentUser }) {
         </div>
       )}
 
-      {/* 🗑️ MODAL ยืนยันการลบข้อมูล */}
       {jobToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 space-y-4">
@@ -948,7 +827,6 @@ export default function ReportsView({ jobs, currentUser }) {
         </div>
       )}
 
-      {/* 🖼️ MODAL แสดงและดาวน์โหลดรูปภาพหน้างาน */}
       {selectedJobForPhotos && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -963,7 +841,6 @@ export default function ReportsView({ jobs, currentUser }) {
             </div>
 
             <div className="p-5 overflow-y-auto space-y-5 flex-1 bg-slate-50">
-              {/* ภาพก่อนซ่อม */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-amber-500"></span> ภาพก่อนซ่อม ({parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg).length} รูป)
@@ -989,7 +866,6 @@ export default function ReportsView({ jobs, currentUser }) {
                 )}
               </div>
 
-              {/* ภาพระหว่างซ่อม */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-blue-500"></span> ภาพระหว่างซ่อม ({parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg).length} รูป)
@@ -1015,7 +891,6 @@ export default function ReportsView({ jobs, currentUser }) {
                 )}
               </div>
 
-              {/* ภาพหลังซ่อมเสร็จ */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-500"></span> ภาพหลังซ่อมเสร็จ ({parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg).length} รูป)
@@ -1054,7 +929,6 @@ export default function ReportsView({ jobs, currentUser }) {
         </div>
       )}
 
-      {/* 🖨️ Modal กรอกเลข Smart 1662 ก่อนพิมพ์รายงาน */}
       {selectedJobForPrint && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 space-y-4">
