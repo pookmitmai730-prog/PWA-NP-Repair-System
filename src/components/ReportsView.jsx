@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2 } from 'lucide-react';
-// 📌 1. นำเข้า Database และฟังก์ชัน remove, ref จาก Firebase (ปรับ path ตามโครงสร้างโปรเจกต์ของคุณ เช่น '../firebaseConfig')
-import { db } from '../firebase'; // <-- ⚠️ ตรวจสอบ path ให้ตรงกับไฟล์ตั้งค่า Firebase ของคุณ
+// 📌 นำเข้า Database และฟังก์ชัน remove, ref จาก Firebase (ตรวจสอบ path ให้ตรงกับโปรเจกต์ของคุณ)
+import { db } from '../firebase'; 
 import { ref, remove } from 'firebase/database';
 
 export default function ReportsView({ jobs, currentUser }) {
@@ -151,7 +151,7 @@ export default function ReportsView({ jobs, currentUser }) {
     setJobToDelete(job);
   };
 
-  // 🗑️ ฟังก์ชันลบข้อมูลออกจาก Firebase จริงๆ
+  // 🗑️ ฟังก์ชันลบข้อมูลออกจาก Firebase จริง (อ้างอิง Node ชื่อ 'repairs')
   const handleConfirmDelete = async () => {
     if (!jobToDelete) return;
     
@@ -165,11 +165,11 @@ export default function ReportsView({ jobs, currentUser }) {
     }
 
     try {
-      // 📌 ปรับชื่อ Path ใน Firebase ให้ตรงกับตารางข้อมูลของคุณ (เช่น 'repairJobs' หรือ 'jobs')
-      const jobRef = ref(db, `repairJobs/${targetKey}`); 
+      // 📌 ใช้ Node 'repairs' ตามที่คุณแจ้ง
+      const jobRef = ref(db, `repairs/${targetKey}`); 
       await remove(jobRef);
       
-      alert("🗑️ ลบข้อมูลออกจากฐานข้อมูล Firebase สำเร็จแล้ว");
+      alert("🗑️ ลบข้อมูลออกจากฐานข้อมูล Firebase (repairs) สำเร็จแล้ว");
     } catch (error) {
       console.error("Error deleting job from Firebase: ", error);
       alert("❌ เกิดข้อผิดพลาดในการลบข้อมูล: " + error.message);
@@ -605,7 +605,7 @@ export default function ReportsView({ jobs, currentUser }) {
           )}
         </div>
 
-        {/* ⚠️ สรุปงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) - วางต่อท้ายสรุปท่อ */}
+        {/* ⚠️ สรุปงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
           <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-rose-600" />
@@ -758,7 +758,7 @@ export default function ReportsView({ jobs, currentUser }) {
                       </button>
                     </td>
 
-                    {/* 🗑️ ปุ่มลบข้อมูล (ตรวจสอบสิทธิ์แอดมิน) */}
+                    {/* 🗑️ ปุ่มลบข้อมูล */}
                     <td className="p-4 text-center">
                       <button
                         onClick={() => handleRequestDelete(job)}
@@ -775,7 +775,7 @@ export default function ReportsView({ jobs, currentUser }) {
           </table>
         </div>
 
-        {/* 📄 แถบควบคุมการแบ่งหน้า (Pagination Controls) */}
+        {/* 📄 แถบควบคุมการแบ่งหน้า */}
         {filteredJobs.length > 0 && (
           <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/50">
             <span className="text-xs text-slate-500 font-medium">
@@ -807,7 +807,7 @@ export default function ReportsView({ jobs, currentUser }) {
         )}
       </div>
 
-      {/* ⚠️ MODAL แสดงรายละเอียดงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) */}
+      {/* ⚠️ MODAL แสดงรายละเอียดงานที่ไม่สามารถดำเนินการได้ */}
       {isUnrepairableModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
@@ -871,7 +871,7 @@ export default function ReportsView({ jobs, currentUser }) {
               </div>
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">ยืนยันการลบข้อมูลใบงาน</h3>
-                <p className="text-[11px] text-slate-500">การกระทำนี้จะลบข้อมูลออกจากฐานข้อมูล Firebase ทันที</p>
+                <p className="text-[11px] text-slate-500">ข้อมูลจะถูกลบออกจาก Firebase ทันที</p>
               </div>
             </div>
 
