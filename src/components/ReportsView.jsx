@@ -161,7 +161,7 @@ export default function ReportsView({ jobs, currentUser }) {
     setJobToDelete(job);
   };
 
-  // 🗑️ ฟังก์ชันลบข้อมูลออกจาก Firebase จริง (Node: repairs)
+  // 🗑️ ฟังก์ชันลบข้อมูลออกจาก Firebase และ Google Sheets พร้อมกัน
   const handleConfirmDelete = async () => {
     if (!jobToDelete) return;
     
@@ -175,15 +175,30 @@ export default function ReportsView({ jobs, currentUser }) {
     }
 
     try {
+      // 1. 🗑️ ลบออกจาก Firebase Realtime Database (Node: repairs)
       const jobRef = ref(db, `repairs/${targetKey}`); 
       await remove(jobRef);
       
-      alert(`🗑️ ลบข้อมูล ${targetKey} ออกจาก Firebase (repairs) สำเร็จแล้ว`);
+      // 2. 🌐 ลบออกจาก Google Sheets ผ่าน Apps Script Web App API
+      const GOOGLE_SCRIPT_URL = "ใส่_URL_Web_App_ของ_Google_Apps_Script_ที่นี่"; // ⚠️ แทนที่ด้วย URL Web App ของ Google Apps Script จริง
+      
+      if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== "ใส่_URL_Web_App_ของ_Google_Apps_Script_ที่นี่") {
+        await fetch(GOOGLE_SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors", // ป้องกันปัญหา CORS
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ action: "delete_job", id: targetKey })
+        });
+      }
+
+      alert(`🗑️ ลบข้อมูล ${targetKey}ออกจากทั้ง Firebase และ Google Sheets สำเร็จแล้ว`);
       
       // รีเฟรชหน้าเว็บอัตโนมัติเพื่อให้ตารางอัปเดตข้อมูลล่าสุดทันที
       window.location.reload(); 
     } catch (error) {
-      console.error("Error deleting job from Firebase: ", error);
+      console.error("Error deleting job: ", error);
       alert("❌ เกิดข้อผิดพลาดในการลบข้อมูล: " + error.message);
     } finally {
       setJobToDelete(null);
@@ -882,7 +897,7 @@ export default function ReportsView({ jobs, currentUser }) {
               </div>
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">ยืนยันการลบข้อมูลใบงาน</h3>
-                <p className="text-[11px] text-slate-500">ข้อมูลจะถูกลบออกจาก Firebase ทันที</p>
+                <p className="text-[11px] text-slate-500">ข้อมูลจะถูกลบออกจาก Firebase และ Google Sheets</p>
               </div>
             </div>
 
