@@ -183,7 +183,7 @@ export default function ReportsView({ jobs, currentUser }) {
       // (คุณสามารถใส่ URL Web App ตรงๆ หรือใช้ Environment Variable จาก Vercel เช่น import.meta.env.VITE_GAS_URL)
       const GOOGLE_SCRIPT_URL = "ใส่_URL_Web_App_ของ_Google_Apps_Script_ที่นี่"; 
       
-      if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== "AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA") {
+      if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec") {
         await fetch(GOOGLE_SCRIPT_URL, {
           method: "POST",
           mode: "no-cors", // ป้องกันปัญหา CORS
