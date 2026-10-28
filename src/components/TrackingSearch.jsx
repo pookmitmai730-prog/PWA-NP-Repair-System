@@ -4,7 +4,7 @@ import {
   User, MapPin, Package, ShieldCheck, ArrowRight, Activity, Wrench, Users
 } from 'lucide-react';
 
-export default function TrackingSearch({ jobs }) {
+export default function TrackingSearch({ jobs, teams }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResult, setSearchResult] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
@@ -13,6 +13,30 @@ export default function TrackingSearch({ jobs }) {
   const formatThaiDateTime = (dateTimeStr) => {
     if (!dateTimeStr) return '-';
     return String(dateTimeStr).replace('T', ' ');
+  };
+
+  // 🔍 ฟังก์ชันค้นหาเบอร์โทรศัพท์ของทีมช่างจากข้อมูลผู้รับจ้าง (teams) ในระบบแอดมิน
+  const getTeamPhone = (job) => {
+    // ถ้าในใบงานมี techPhone อยู่แล้ว ให้ใช้ค่านั้นก่อน
+    if (job.techPhone && job.techPhone !== '-') {
+      return job.techPhone;
+    }
+
+    // ถ้าไม่มี ให้ดึงชื่อทีมช่างจากงาน
+    const teamName = job.techName || job.technician;
+    if (!teamName || !teams || !Array.isArray(teams)) return '-';
+
+    // ค้นหาในรายชื่อ teams ที่แอดมินบันทึกข้อมูลผู้รับจ้างไว้
+    const matchedTeam = teams.find(t => {
+      const tName = typeof t === 'string' ? t : (t.teamName || t.name);
+      return tName && teamName.includes(tName);
+    });
+
+    if (matchedTeam && typeof matchedTeam === 'object') {
+      return matchedTeam.phone || matchedTeam.tel || matchedTeam.phoneNumber || '-';
+    }
+
+    return '-';
   };
 
   const handleSearch = (e) => {
@@ -48,7 +72,7 @@ export default function TrackingSearch({ jobs }) {
       label: 'รับแจ้งเรื่อง', 
       desc: 'บันทึกคำร้องเข้าระบบ', 
       icon: Clock,
-      time: formatThaiDateTime(searchResult?.receivedAt || searchResult?.createdAt) // 🕒 ใช้ฟังก์ชันแปลงเวลา
+      time: formatThaiDateTime(searchResult?.receivedAt || searchResult?.createdAt)
     },
     { 
       step: 2, 
@@ -181,7 +205,7 @@ export default function TrackingSearch({ jobs }) {
               <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-4 sm:p-5 space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                   
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <div className="flex items-start gap-2">
                       <Wrench className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
                       <div>
@@ -198,16 +222,22 @@ export default function TrackingSearch({ jobs }) {
                       </div>
                     </div>
 
-                    {searchResult.status !== 'PENDING' && (
-                      <div className="bg-blue-950/40 border border-blue-900/50 p-3 rounded-xl space-y-1">
+                    {/* 🛠️ ส่วนแสดงข้อมูลทีมช่างและเบอร์โทรที่ดึงมาจากข้อมูลผู้รับจ้าง (teams) */}
+                    {(searchResult.technician || searchResult.techName) && (
+                      <div className="bg-blue-950/40 border border-blue-900/50 p-3 rounded-xl space-y-1.5">
                         <span className="text-[10px] text-cyan-400 uppercase font-bold block flex items-center gap-1">
                           <Users className="w-3.5 h-3.5" /> ทีมช่างผู้รับผิดชอบ
                         </span>
                         <p className="font-bold text-slate-200">{searchResult.techName || searchResult.technician}</p>
-                        {searchResult.techPhone && searchResult.techPhone !== '-' && (
-                          <p className="text-emerald-400 font-mono text-[11px] flex items-center gap-1">
-                            <Phone className="w-3 h-3" /> โทร: {searchResult.techPhone}
-                          </p>
+                        {getTeamPhone(searchResult) !== '-' ? (
+                          <a 
+                            href={`tel:${getTeamPhone(searchResult)}`} 
+                            className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 font-mono text-[11px] font-bold bg-emerald-950/50 px-2 py-0.5 rounded-md border border-emerald-800/50 transition"
+                          >
+                            <Phone className="w-3 h-3" /> โทร: {getTeamPhone(searchResult)}
+                          </a>
+                        ) : (
+                          <p className="text-slate-500 font-mono text-[10px]">เบอร์โทรศัพท์ผู้รับจ้าง: ไม่ระบุ</p>
                         )}
                       </div>
                     )}
@@ -225,7 +255,7 @@ export default function TrackingSearch({ jobs }) {
                     <div className="flex items-center gap-2">
                       <Phone className="w-4 h-4 text-emerald-400 shrink-0" />
                       <div>
-                        <span className="text-[10px] text-slate-500 uppercase font-bold block">เบอร์โทรศัพท์</span>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">เบอร์โทรศัพท์ผู้แจ้ง</span>
                         <p className="font-mono text-emerald-400 font-bold">{searchResult.phone}</p>
                       </div>
                     </div>
