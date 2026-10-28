@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2 } from 'lucide-react';
+import { 
+  Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, 
+  Eye, X, Download, Printer, Info, Hash, Users, Search, 
+  ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2 
+} from 'lucide-react';
 // นำเข้า Database และฟังก์ชัน remove, ref จาก Firebase (ตรวจสอบ path ให้ตรงกับโปรเจกต์ของคุณ)
 import { db } from '../firebase'; 
 import { ref, remove } from 'firebase/database';
@@ -27,20 +31,36 @@ export default function ReportsView({ jobs, currentUser }) {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // 📅 ฟังก์ชันแปลงวันที่โดยอิงตาม "วันเวลาที่รับแจ้ง" เป็นหลัก
+  // 📅 ฟังก์ชันแปลงวันที่โดยอิงตาม "วันเวลาที่รับแจ้ง" เป็นหลัก (เซฟการแปลง ป้องกัน Error/Crash)
   const parseJobDate = (job) => {
+    if (!job) return new Date(0);
+
     const rawDate = job.receivedAt || job.createdAt || job.completedAt;
     if (!rawDate) return new Date(0);
 
-    if (rawDate.includes('/')) {
-      const parts = rawDate.split(' ')[0].split('/');
-      if (parts.length === 3) {
-        let year = parseInt(parts[2], 10);
-        if (year > 2400) year -= 543;
-        return new Date(`${year}-${parts[1]}-${parts[0]}`);
+    try {
+      const dateStr = String(rawDate).trim();
+
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split(' ')[0].split('/');
+        if (parts.length === 3) {
+          let year = parseInt(parts[2], 10);
+          if (isNaN(year)) return new Date(0);
+          if (year > 2400) year -= 543; // แปลง พ.ศ. เป็น ค.ศ.
+
+          const month = parseInt(parts[1], 10);
+          const day = parseInt(parts[0], 10);
+
+          return new Date(year, month - 1, day);
+        }
       }
+
+      const parsedDate = new Date(dateStr);
+      return isNaN(parsedDate.getTime()) ? new Date(0) : parsedDate;
+    } catch (e) {
+      console.error("Error parsing date:", e);
+      return new Date(0);
     }
-    return new Date(rawDate);
   };
 
   const getFilteredJobs = () => {
@@ -62,6 +82,7 @@ export default function ReportsView({ jobs, currentUser }) {
     const filtered = jobsArray.filter(job => {
       if (reportType !== 'all') {
         const jobDate = parseJobDate(job);
+        if (jobDate.getTime() === 0) return false;
         const jobDateStr = jobDate.toISOString().split('T')[0];
 
         if (reportType === 'daily') {
@@ -180,12 +201,15 @@ export default function ReportsView({ jobs, currentUser }) {
       await remove(jobRef);
       
       // 2. 🌐 ลบออกจาก Google Sheets ผ่าน Apps Script Web App API
-      const GOOGLE_SCRIPT_URL = ""; 
+      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec"; 
       
       if (GOOGLE_SCRIPT_URL) {
         await fetch(GOOGLE_SCRIPT_URL, {
           method: "POST",
-          mode: "no-cors", // ป้องกันปัญหา CORS โดยตัด headers ออก
+          mode: "no-cors", // ป้องกันปัญหา CORS
+          headers: {
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({ action: "delete_job", id: targetKey })
         });
       }
