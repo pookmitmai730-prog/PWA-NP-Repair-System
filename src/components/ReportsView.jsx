@@ -46,13 +46,12 @@ export default function ReportsView({ jobs, currentUser }) {
   const getFilteredJobs = () => {
     if (!jobs) return [];
 
-    // หาก jobs เป็น Object (กรณีดึงตรงมาจาก Firebase snapshot.val()) ให้แปลงเป็น Array โดยเก็บ Key ไว้เป็น firebaseKey
     let jobsArray = [];
     if (Array.isArray(jobs)) {
       jobsArray = jobs;
     } else if (typeof jobs === 'object' && jobs !== null) {
       jobsArray = Object.entries(jobs).map(([key, value]) => ({
-        firebaseKey: key, // เก็บคีย์จริงใน Firebase ไว้ตรงนี้
+        firebaseKey: key, 
         ...value
       }));
     }
@@ -162,25 +161,27 @@ export default function ReportsView({ jobs, currentUser }) {
     setJobToDelete(job);
   };
 
-  // 🗑️ ฟังก์ชันลบข้อมูลออกจาก Firebase จริง (อ้างอิง Node ชื่อ 'repairs' โดยใช้ id หรือ firebaseKey)
+  // 🗑️ ฟังก์ชันลบข้อมูลออกจาก Firebase จริง (Node: repairs)
   const handleConfirmDelete = async () => {
     if (!jobToDelete) return;
     
-    // ดึง Key ให้ตรงกับโครงสร้างข้อมูล (เช่น "JOB-003478" จากฟิลด์ id หรือ firebaseKey)
-    const targetKey = jobToDelete.firebaseKey || jobToDelete.id || jobToDelete.receivedNo;
+    // ดึงรหัสอ้างอิงหลัก เช่น "JOB-003478" จากฟิลด์ id หรือ receivedNo
+    const targetKey = jobToDelete.id || jobToDelete.receivedNo || jobToDelete.firebaseKey;
     
     if (!targetKey) {
-      alert("⚠️ ไม่พบรหัสอ้างอิง (ID / Key) สำหรับลบข้อมูลในฐานข้อมูล");
+      alert("⚠️ ไม่พบรหัสอ้างอิงสำหรับลบข้อมูลในฐานข้อมูล");
       setJobToDelete(null);
       return;
     }
 
     try {
-      // ชี้ไปที่ Node 'repairs' และตามด้วย ID ของงาน เช่น repairs/JOB-003478
       const jobRef = ref(db, `repairs/${targetKey}`); 
       await remove(jobRef);
       
-      alert(`🗑️ ลบข้อมูล ${targetKey}ออกจากฐานข้อมูล Firebase (repairs) สำเร็จแล้ว`);
+      alert(`🗑️ ลบข้อมูล ${targetKey} ออกจาก Firebase (repairs) สำเร็จแล้ว`);
+      
+      // รีเฟรชหน้าเว็บอัตโนมัติเพื่อให้ตารางอัปเดตข้อมูลล่าสุดทันที
+      window.location.reload(); 
     } catch (error) {
       console.error("Error deleting job from Firebase: ", error);
       alert("❌ เกิดข้อผิดพลาดในการลบข้อมูล: " + error.message);
@@ -250,8 +251,8 @@ export default function ReportsView({ jobs, currentUser }) {
         `"${job.smart1662No || ""}"`,
         `"${job.receivedAt || job.createdAt || ""}"`,
         `"${job.completedAt || ""}"`,
-        `"${job.reporterName || ""}"`,
-        `"${job.phone || ""}"`,
+        `"${job.reporterName || job.complainantInfo || ""}"`,
+        `"${job.phone || job.complainantInfo || ""}"`,
         `"${(job.location || "").replace(/"/g, '""')}"`,
         `"${job.latitude || ""}"`,
         `"${job.longitude || ""}"`,
@@ -461,7 +462,7 @@ export default function ReportsView({ jobs, currentUser }) {
             ` : ''}
 
             <div class="info-row">
-              <span><strong>ผู้แจ้ง:</strong> ${job.reporterName || '-'} (${job.phone || '-'})</span>
+              <span><strong>ผู้แจ้ง:</strong> ${job.reporterName || job.complainantInfo || '-'} (${job.phone || job.complainantInfo || '-'})</span>
               <span><strong>ทีมช่างซ่อม:</strong> ${job.technician || '-'}</span>
             </div>
             <div class="info-row">
