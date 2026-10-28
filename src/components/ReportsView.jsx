@@ -180,7 +180,7 @@ export default function ReportsView({ jobs, currentUser }) {
       await remove(jobRef);
       
       // 2. 🌐 ลบออกจาก Google Sheets ผ่าน Apps Script Web App API
-      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec"; 
+      const GOOGLE_SCRIPT_URL = ""; 
       
       if (GOOGLE_SCRIPT_URL) {
         await fetch(GOOGLE_SCRIPT_URL, {
