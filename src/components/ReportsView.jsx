@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2 } from 'lucide-react';
+// นำเข้า Database และฟังก์ชัน remove, ref จาก Firebase (ตรวจสอบ path ให้ตรงกับโปรเจกต์ของคุณ)
+import { db } from '../firebase'; 
+import { ref, remove } from 'firebase/database';
 
-export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
+export default function ReportsView({ jobs, currentUser }) {
   const [reportType, setReportType] = useState('all');
   
   // 🔍 State สำหรับช่องค้นหาและระบบแบ่งหน้า (Pagination)
@@ -41,12 +44,22 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
   };
 
   const getFilteredJobs = () => {
-    if (!jobs || !Array.isArray(jobs)) return [];
+    if (!jobs) return [];
+
+    let jobsArray = [];
+    if (Array.isArray(jobs)) {
+      jobsArray = jobs;
+    } else if (typeof jobs === 'object' && jobs !== null) {
+      jobsArray = Object.entries(jobs).map(([key, value]) => ({
+        firebaseKey: key, 
+        ...value
+      }));
+    }
 
     const now = new Date();
 
     // 1. กรองข้อมูลตามเงื่อนไขเวลาและคำค้นหา
-    const filtered = jobs.filter(job => {
+    const filtered = jobsArray.filter(job => {
       if (reportType !== 'all') {
         const jobDate = parseJobDate(job);
         const jobDateStr = jobDate.toISOString().split('T')[0];
@@ -83,10 +96,10 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
       return true;
     });
 
-    // 2. ป้องกันข้อมูลซ้ำ (Deduplication) บนหน้า UI โดยใช้ receivedNo หรือ id ที่ไม่ซ้ำกัน
+    // 2. ป้องกันข้อมูลซ้ำ (Deduplication) บนหน้า UI
     const uniqueMap = new Map();
     filtered.forEach(job => {
-      const uniqueKey = job.receivedNo || job.id || JSON.stringify(job);
+      const uniqueKey = job.id || job.receivedNo || JSON.stringify(job);
       if (!uniqueMap.has(uniqueKey)) {
         uniqueMap.set(uniqueKey, job);
       }
@@ -100,7 +113,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
   const completedCount = filteredJobs.filter(j => j.status === 'COMPLETED').length;
   const inProgressCount = filteredJobs.filter(j => j.status === 'DISPATCHED' || j.status === 'IN_PROGRESS').length;
   
-  // ⚠️ รายการงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) ตามช่วงเวลา
+  // ⚠️ รายการงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE)
   const unrepairableJobsList = filteredJobs.filter(j => j.status === 'UNREPAIRABLE');
 
   // 📄 ระบบแบ่งหน้า (Pagination Logic)
@@ -134,7 +147,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
       return acc;
     }, {});
 
-  // 🔒 ฟังก์ชันตรวจสอบสิทธิ์แอดมินก่อนอนุญาตให้ลบข้อมูล (เผื่อเชื่อมโยงกับฟอร์มแอดมินในอนาคต)
+  // 🔒 ฟังก์ชันตรวจสอบสิทธิ์แอดมินก่อนอนุญาตให้ลบข้อมูล
   const checkAdminPermission = () => {
     if (currentUser && currentUser.role === 'viewer') {
       alert("❌ คุณไม่มีสิทธิ์ในการลบข้อมูล (สิทธิ์ของคุณเป็นผู้ดูรายงาน)");
@@ -148,22 +161,51 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
     setJobToDelete(job);
   };
 
-  const handleConfirmDelete = () => {
+  // 🗑️ ฟังก์ชันลบข้อมูลออกจากทั้ง Firebase และ Google Sheets พร้อมกัน
+  const handleConfirmDelete = async () => {
     if (!jobToDelete) return;
     
-    // ดึง Key จริงใน Firebase สำหรับใช้อ้างอิงลบข้อมูลในฐานข้อมูล
-    const targetKey = jobToDelete.firebaseKey || jobToDelete.dbKey || jobToDelete.id;
-    if (onDeleteJob) {
-      onDeleteJob(targetKey, jobToDelete);
-    } else {
-      console.warn("ยังไม่ได้ผูกฟังก์ชัน onDeleteJob เข้ากับ component แม่", jobToDelete);
-      alert(`จำลองการลบข้อมูลสำเร็จ (ID: ${targetKey})`);
+    // ดึงรหัสอ้างอิงหลัก เช่น "JOB-003478" จากฟิลด์ id หรือ receivedNo
+    const targetKey = jobToDelete.id || jobToDelete.receivedNo || jobToDelete.firebaseKey;
+    
+    if (!targetKey) {
+      alert("⚠️ ไม่พบรหัสอ้างอิงสำหรับลบข้อมูลในระบบ");
+      setJobToDelete(null);
+      return;
     }
 
-    setJobToDelete(null);
+    try {
+      // 1. 🗑️ ลบออกจาก Firebase Realtime Database (Node: repairs)
+      const jobRef = ref(db, `repairs/${targetKey}`); 
+      await remove(jobRef);
+      
+      // 2. 🌐 ลบออกจาก Google Sheets ผ่าน Apps Script Web App API
+      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec"; 
+      
+      if (GOOGLE_SCRIPT_URL) {
+        await fetch(GOOGLE_SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors", // ป้องกันปัญหา CORS
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ action: "delete_job", id: targetKey })
+        });
+      }
+
+      alert(`🗑️ ลบข้อมูล ${targetKey} ออกจากทั้ง Firebase และ Google Sheets เรียบร้อยแล้ว`);
+      
+      // รีเฟรชหน้าเว็บอัตโนมัติเพื่อให้ตารางอัปเดตข้อมูลล่าสุดทันที
+      window.location.reload(); 
+    } catch (error) {
+      console.error("Error deleting job: ", error);
+      alert("❌ เกิดข้อผิดพลาดในการลบข้อมูล: " + error.message);
+    } finally {
+      setJobToDelete(null);
+    }
   };
 
-  // 📸 ฟังก์ชันแปลงและแยกรูปภาพให้รองรับทั้ง Array, JSON, และ String ที่คั่นด้วยบรรทัดใหม่หรือจุลภาค
+  // 📸 ฟังก์ชันแปลงและแยกรูปภาพ
   const parseImages = (imgData) => {
     if (!imgData) return [];
     try {
@@ -191,7 +233,6 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
     return [];
   };
 
-  // 📥 ฟังก์ชันดาวน์โหลดไฟล์ภาพลงเครื่องคอมพิวเตอร์/มือถือ
   const handleDownloadSingleImage = async (url, filename) => {
     try {
       const response = await fetch(url);
@@ -215,18 +256,18 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
       return;
     }
 
-    const headers = ["FirebaseKey", "ReceivedNo", "Smart1662No", "CreatedAt", "CompletedAt", "ReporterName", "Phone", "Location", "Latitude", "Longitude", "ComplaintTopic", "PipeType", "PipeSize", "Technician", "Status", "Notes"];
+    const headers = ["ID", "ReceivedNo", "Smart1662No", "CreatedAt", "CompletedAt", "ReporterName", "Phone", "Location", "Latitude", "Longitude", "ComplaintTopic", "PipeType", "PipeSize", "Technician", "Status", "Notes"];
     const csvRows = [headers.join(",")];
 
     filteredJobs.forEach(job => {
       const row = [
-        `"${job.firebaseKey || job.dbKey || job.id || ""}"`,
-        `"${job.receivedNo || job.id || ""}"`,
+        `"${job.id || job.receivedNo || ""}"`,
+        `"${job.receivedNo || ""}"`,
         `"${job.smart1662No || ""}"`,
         `"${job.receivedAt || job.createdAt || ""}"`,
         `"${job.completedAt || ""}"`,
-        `"${job.reporterName || ""}"`,
-        `"${job.phone || ""}"`,
+        `"${job.reporterName || job.complainantInfo || ""}"`,
+        `"${job.phone || job.complainantInfo || ""}"`,
         `"${(job.location || "").replace(/"/g, '""')}"`,
         `"${job.latitude || ""}"`,
         `"${job.longitude || ""}"`,
@@ -417,7 +458,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
           </div>
 
           <div class="info-box">
-            <div><strong>เลขที่รับแจ้ง:</strong> <span style="font-family: monospace; color: #2563eb; font-weight: bold;">${job.receivedNo || job.id}</span></div>
+            <div><strong>เลขที่รับแจ้ง:</strong> <span style="font-family: monospace; color: #2563eb; font-weight: bold;">${job.id || job.receivedNo}</span></div>
             ${job.smart1662No ? `<div><strong>เลขที่ปิดงานซ่อม Smart 1662:</strong> <span style="font-family: monospace; color: #0891b2; font-weight: bold;">${job.smart1662No}</span></div>` : ''}
             <div><strong>สถานที่ซ่อม:</strong> ${job.location || '-'}</div>
 
@@ -436,7 +477,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
             ` : ''}
 
             <div class="info-row">
-              <span><strong>ผู้แจ้ง:</strong> ${job.reporterName || '-'} (${job.phone || '-'})</span>
+              <span><strong>ผู้แจ้ง:</strong> ${job.reporterName || job.complainantInfo || '-'} (${job.phone || job.complainantInfo || '-'})</span>
               <span><strong>ทีมช่างซ่อม:</strong> ${job.technician || '-'}</span>
             </div>
             <div class="info-row">
@@ -590,7 +631,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
           )}
         </div>
 
-        {/* ⚠️ สรุปงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) - วางต่อท้ายสรุปท่อ */}
+        {/* ⚠️ สรุปงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
           <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-rose-600" />
@@ -654,7 +695,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 border-b border-slate-100">
-                <th className="p-4 font-semibold">เลขที่รับแจ้ง / DB Key</th>
+                <th className="p-4 font-semibold">เลขที่รับแจ้ง / ID</th>
                 <th className="p-4 font-semibold">ผู้แจ้ง / เบอร์โทร</th>
                 <th className="p-4 font-semibold">หัวข้อร้องเรียน</th>
                 <th className="p-4 font-semibold">บริเวณที่เกิดเหตุ / ชนิดท่อ</th>
@@ -674,11 +715,11 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
                 </tr>
               ) : (
                 currentJobs.map((job) => (
-                  <tr key={job.firebaseKey || job.dbKey || job.id || job.receivedNo} className="hover:bg-slate-50/80 transition">
+                  <tr key={job.id || job.firebaseKey || job.receivedNo} className="hover:bg-slate-50/80 transition">
                     <td className="p-4">
-                      <span className="font-mono font-bold text-blue-600">{job.receivedNo || job.id}</span>
-                      <p className="text-[10px] font-mono text-slate-400 mt-0.5" title="Firebase Unique Key">
-                        Key: {job.firebaseKey || job.dbKey || job.id || '-'}
+                      <span className="font-mono font-bold text-blue-600">{job.id || job.receivedNo}</span>
+                      <p className="text-[10px] font-mono text-slate-400 mt-0.5" title="Firebase Key/ID">
+                        Key: {job.id || job.firebaseKey || '-'}
                       </p>
                       <p className="text-[11px] text-slate-400 mt-0.5">แจ้ง: {job.receivedAt || job.createdAt}</p>
                       {job.completedAt && (
@@ -686,8 +727,8 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
                       )}
                     </td>
                     <td className="p-4">
-                      <p className="font-bold text-slate-800">{job.reporterName}</p>
-                      <p className="text-slate-500 font-mono">{job.phone}</p>
+                      <p className="font-bold text-slate-800">{job.reporterName || job.complainantInfo || 'ไม่ระบุชื่อ'}</p>
+                      <p className="text-slate-500 font-mono">{job.phone || job.complainantInfo || '-'}</p>
                     </td>
                     <td className="p-4 font-medium text-slate-700 max-w-xs truncate">
                       {job.complaintTopic || job.issueType}
@@ -743,7 +784,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
                       </button>
                     </td>
 
-                    {/* 🗑️ ปุ่มลบข้อมูล (ตรวจสอบสิทธิ์แอดมิน) */}
+                    {/* 🗑️ ปุ่มลบข้อมูล */}
                     <td className="p-4 text-center">
                       <button
                         onClick={() => handleRequestDelete(job)}
@@ -760,7 +801,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
           </table>
         </div>
 
-        {/* 📄 แถบควบคุมการแบ่งหน้า (Pagination Controls) */}
+        {/* 📄 แถบควบคุมการแบ่งหน้า */}
         {filteredJobs.length > 0 && (
           <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/50">
             <span className="text-xs text-slate-500 font-medium">
@@ -792,7 +833,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
         )}
       </div>
 
-      {/* ⚠️ MODAL แสดงรายละเอียดงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) */}
+      {/* ⚠️ MODAL แสดงรายละเอียดงานที่ไม่สามารถดำเนินการได้ */}
       {isUnrepairableModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
@@ -811,10 +852,10 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
                 <p className="text-center py-8 text-xs text-slate-400">ไม่มีรายการงานที่ไม่สามารถซ่อมได้ในช่วงเวลานี้</p>
               ) : (
                 unrepairableJobsList.map((job) => (
-                  <div key={job.firebaseKey || job.dbKey || job.id || job.receivedNo} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-2 relative">
+                  <div key={job.id || job.firebaseKey || job.receivedNo} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-2 relative">
                     <div className="flex justify-between items-start">
                       <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">
-                        {job.receivedNo || job.id}
+                        {job.id || job.receivedNo}
                       </span>
                       <span className="text-[10px] text-slate-400">แจ้ง: {job.receivedAt || job.createdAt}</span>
                     </div>
@@ -822,7 +863,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
                     <div>
                       <h4 className="font-bold text-slate-800 text-xs">{job.complaintTopic || job.issueType}</h4>
                       <p className="text-xs text-slate-600 mt-0.5"><strong>สถานที่:</strong> {job.location}</p>
-                      <p className="text-xs text-slate-600"><strong>ผู้แจ้ง:</strong> {job.reporterName} ({job.phone})</p>
+                      <p className="text-xs text-slate-600"><strong>ผู้แจ้ง:</strong> {job.reporterName || job.complainantInfo || '-'} ({job.phone || job.complainantInfo || '-'})</p>
                     </div>
 
                     <div className="bg-rose-50 p-3 rounded-xl border border-rose-100 text-xs text-rose-900 space-y-1">
@@ -856,14 +897,14 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
               </div>
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">ยืนยันการลบข้อมูลใบงาน</h3>
-                <p className="text-[11px] text-slate-500">การกระทำนี้จะลบข้อมูลออกจากฐานข้อมูลทันที</p>
+                <p className="text-[11px] text-slate-500">ข้อมูลจะถูกลบออกจาก Firebase และ Google Sheets</p>
               </div>
             </div>
 
             <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs space-y-1.5 font-medium">
-              <div><strong className="text-slate-500">เลขที่รับแจ้ง:</strong> <span className="font-mono text-blue-600">{jobToDelete.receivedNo || jobToDelete.id}</span></div>
+              <div><strong className="text-slate-500">เลขที่รับแจ้ง (ID):</strong> <span className="font-mono text-blue-600">{jobToDelete.id || jobToDelete.receivedNo}</span></div>
               <div><strong className="text-slate-500">สถานที่:</strong> {jobToDelete.location || '-'}</div>
-              <div><strong className="text-slate-500">ผู้แจ้ง:</strong> {jobToDelete.reporterName || '-'}</div>
+              <div><strong className="text-slate-500">ผู้แจ้ง:</strong> {jobToDelete.reporterName || jobToDelete.complainantInfo || '-'}</div>
             </div>
 
             <div className="pt-2 flex gap-2">
@@ -892,7 +933,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
           <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-5 bg-gradient-to-r from-slate-900 to-blue-900 text-white flex justify-between items-center">
               <div>
-                <h3 className="font-bold text-sm">รูปภาพปฏิบัติงาน: <span className="font-mono text-cyan-400">{selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}</span></h3>
+                <h3 className="font-bold text-sm">รูปภาพปฏิบัติงาน: <span className="font-mono text-cyan-400">{selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}</span></h3>
                 <p className="text-[11px] text-slate-300 truncate max-w-sm">{selectedJobForPhotos.location}</p>
               </div>
               <button onClick={() => setSelectedJobForPhotos(null)} className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-600 text-white transition cursor-pointer">
@@ -917,7 +958,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
                           <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
                             <Eye className="w-4 h-4" />
                           </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `BEFORE_${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
+                          <button onClick={() => handleDownloadSingleImage(url, `BEFORE_${selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
                             <Download className="w-4 h-4" />
                           </button>
                         </div>
@@ -943,7 +984,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
                           <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
                             <Eye className="w-4 h-4" />
                           </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `INPROG_${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
+                          <button onClick={() => handleDownloadSingleImage(url, `INPROG_${selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
                             <Download className="w-4 h-4" />
                           </button>
                         </div>
@@ -969,7 +1010,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
                           <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
                             <Eye className="w-4 h-4" />
                           </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `AFTER_${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
+                          <button onClick={() => handleDownloadSingleImage(url, `AFTER_${selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
                             <Download className="w-4 h-4" />
                           </button>
                         </div>
@@ -1008,7 +1049,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
 
             <div className="space-y-3">
               <p className="text-xs text-slate-500">
-                เลขที่ใบรับแจ้ง: <strong className="text-blue-600 font-mono">{selectedJobForPrint.receivedNo || selectedJobForPrint.id}</strong>
+                เลขที่ใบรับแจ้ง: <strong className="text-blue-600 font-mono">{selectedJobForPrint.id || selectedJobForPrint.receivedNo}</strong>
               </p>
 
               <div>
