@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2 } from 'lucide-react';
+// 📌 1. นำเข้า Database และฟังก์ชัน remove, ref จาก Firebase (ปรับ path ตามโครงสร้างโปรเจกต์ของคุณ เช่น '../firebaseConfig')
+import { db } from '../firebase'; // <-- ⚠️ ตรวจสอบ path ให้ตรงกับไฟล์ตั้งค่า Firebase ของคุณ
+import { ref, remove } from 'firebase/database';
 
-export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
+export default function ReportsView({ jobs, currentUser }) {
   const [reportType, setReportType] = useState('all');
   
   // 🔍 State สำหรับช่องค้นหาและระบบแบ่งหน้า (Pagination)
@@ -83,7 +86,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
       return true;
     });
 
-    // 2. ป้องกันข้อมูลซ้ำ (Deduplication) บนหน้า UI โดยใช้ receivedNo หรือ id ที่ไม่ซ้ำกัน
+    // 2. ป้องกันข้อมูลซ้ำ (Deduplication) บนหน้า UI
     const uniqueMap = new Map();
     filtered.forEach(job => {
       const uniqueKey = job.receivedNo || job.id || JSON.stringify(job);
@@ -134,7 +137,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
       return acc;
     }, {});
 
-  // 🔒 ฟังก์ชันตรวจสอบสิทธิ์แอดมินก่อนอนุญาตให้ลบข้อมูล (เผื่อเชื่อมโยงกับฟอร์มแอดมินในอนาคต)
+  // 🔒 ฟังก์ชันตรวจสอบสิทธิ์แอดมินก่อนอนุญาตให้ลบข้อมูล
   const checkAdminPermission = () => {
     if (currentUser && currentUser.role === 'viewer') {
       alert("❌ คุณไม่มีสิทธิ์ในการลบข้อมูล (สิทธิ์ของคุณเป็นผู้ดูรายงาน)");
@@ -148,19 +151,31 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
     setJobToDelete(job);
   };
 
-  const handleConfirmDelete = () => {
+  // 🗑️ ฟังก์ชันลบข้อมูลออกจาก Firebase จริงๆ
+  const handleConfirmDelete = async () => {
     if (!jobToDelete) return;
     
-    // ดึง Key จริงใน Firebase สำหรับใช้อ้างอิงลบข้อมูลในฐานข้อมูล
+    // ดึง Key จริงใน Firebase (รองรับชื่อตัวแปร firebaseKey, dbKey หรือ id)
     const targetKey = jobToDelete.firebaseKey || jobToDelete.dbKey || jobToDelete.id;
-    if (onDeleteJob) {
-      onDeleteJob(targetKey, jobToDelete);
-    } else {
-      console.warn("ยังไม่ได้ผูกฟังก์ชัน onDeleteJob เข้ากับ component แม่", jobToDelete);
-      alert(`จำลองการลบข้อมูลสำเร็จ (ID: ${targetKey})`);
+    
+    if (!targetKey) {
+      alert("⚠️ ไม่พบรหัสอ้างอิง (Key) สำหรับลบข้อมูลในฐานข้อมูล");
+      setJobToDelete(null);
+      return;
     }
 
-    setJobToDelete(null);
+    try {
+      // 📌 ปรับชื่อ Path ใน Firebase ให้ตรงกับตารางข้อมูลของคุณ (เช่น 'repairJobs' หรือ 'jobs')
+      const jobRef = ref(db, `repairJobs/${targetKey}`); 
+      await remove(jobRef);
+      
+      alert("🗑️ ลบข้อมูลออกจากฐานข้อมูล Firebase สำเร็จแล้ว");
+    } catch (error) {
+      console.error("Error deleting job from Firebase: ", error);
+      alert("❌ เกิดข้อผิดพลาดในการลบข้อมูล: " + error.message);
+    } finally {
+      setJobToDelete(null);
+    }
   };
 
   // 📸 ฟังก์ชันแปลงและแยกรูปภาพให้รองรับทั้ง Array, JSON, และ String ที่คั่นด้วยบรรทัดใหม่หรือจุลภาค
@@ -856,7 +871,7 @@ export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
               </div>
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">ยืนยันการลบข้อมูลใบงาน</h3>
-                <p className="text-[11px] text-slate-500">การกระทำนี้จะลบข้อมูลออกจากฐานข้อมูลทันที</p>
+                <p className="text-[11px] text-slate-500">การกระทำนี้จะลบข้อมูลออกจากฐานข้อมูล Firebase ทันที</p>
               </div>
             </div>
 
