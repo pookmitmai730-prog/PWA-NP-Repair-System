@@ -235,7 +235,7 @@ export default function App() {
     }, 1000);
   };
 
-  // 1. หน้า Portal เลือกสิทธิ์ (ส่ง jobs={jobs} เพื่อให้ค้นหาจากหน้าแรกได้ทันที)
+  // 1. หน้า Portal เลือกสิทธิ์
   if (userRole === 'portal') {
     return (
       <RolePortal 
@@ -362,8 +362,9 @@ export default function App() {
         </>
       )}
 
+      {/* 🟢 แก้ไขจุดนี้: ส่ง currentUser={{ role: userRole }} เข้าไปยัง ReportsView */}
       {currentView === 'reports' && (
-        <ReportsView jobs={jobs} />
+        <ReportsView jobs={jobs} currentUser={{ role: userRole }} />
       )}
 
       {currentView === 'field' && (
