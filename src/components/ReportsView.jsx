@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert } from 'lucide-react';
+import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2 } from 'lucide-react';
 
-export default function ReportsView({ jobs }) {
+export default function ReportsView({ jobs, onDeleteJob, currentUser }) {
   const [reportType, setReportType] = useState('all');
   
   // 🔍 State สำหรับช่องค้นหาและระบบแบ่งหน้า (Pagination)
@@ -18,6 +18,9 @@ export default function ReportsView({ jobs }) {
 
   // ⚠️ State สำหรับ Modal แสดงรายละเอียดงานซ่อมไม่ได้
   const [isUnrepairableModalOpen, setIsUnrepairableModalOpen] = useState(false);
+
+  // 🗑️ State สำหรับ Modal ยืนยันการลบข้อมูล
+  const [jobToDelete, setJobToDelete] = useState(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -70,8 +73,9 @@ export default function ReportsView({ jobs }) {
         const matchLocation = (job.location || '').toLowerCase().includes(term);
         const matchTech = (job.technician || '').toLowerCase().includes(term);
         const matchPipe = (job.pipeType || '').toLowerCase().includes(term);
+        const matchFirebaseKey = (job.firebaseKey || job.dbKey || '').toLowerCase().includes(term);
 
-        if (!matchNo && !matchSmart && !matchName && !matchPhone && !matchLocation && !matchTech && !matchPipe) {
+        if (!matchNo && !matchSmart && !matchName && !matchPhone && !matchLocation && !matchTech && !matchPipe && !matchFirebaseKey) {
           return false;
         }
       }
@@ -79,7 +83,7 @@ export default function ReportsView({ jobs }) {
       return true;
     });
 
-    // 2. ป้องกันข้อมูลซ้ำ (Deduplication) โดยใช้ receivedNo หรือ id ที่ไม่ซ้ำกัน
+    // 2. ป้องกันข้อมูลซ้ำ (Deduplication) บนหน้า UI โดยใช้ receivedNo หรือ id ที่ไม่ซ้ำกัน
     const uniqueMap = new Map();
     filtered.forEach(job => {
       const uniqueKey = job.receivedNo || job.id || JSON.stringify(job);
@@ -129,6 +133,35 @@ export default function ReportsView({ jobs }) {
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
+
+  // 🔒 ฟังก์ชันตรวจสอบสิทธิ์แอดมินก่อนอนุญาตให้ลบข้อมูล (เผื่อเชื่อมโยงกับฟอร์มแอดมินในอนาคต)
+  const checkAdminPermission = () => {
+    if (currentUser && currentUser.role === 'viewer') {
+      alert("❌ คุณไม่มีสิทธิ์ในการลบข้อมูล (สิทธิ์ของคุณเป็นผู้ดูรายงาน)");
+      return false;
+    }
+    return true;
+  };
+
+  const handleRequestDelete = (job) => {
+    if (!checkAdminPermission()) return;
+    setJobToDelete(job);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!jobToDelete) return;
+    
+    // ดึง Key จริงใน Firebase สำหรับใช้อ้างอิงลบข้อมูลในฐานข้อมูล
+    const targetKey = jobToDelete.firebaseKey || jobToDelete.dbKey || jobToDelete.id;
+    if (onDeleteJob) {
+      onDeleteJob(targetKey, jobToDelete);
+    } else {
+      console.warn("ยังไม่ได้ผูกฟังก์ชัน onDeleteJob เข้ากับ component แม่", jobToDelete);
+      alert(`จำลองการลบข้อมูลสำเร็จ (ID: ${targetKey})`);
+    }
+
+    setJobToDelete(null);
+  };
 
   // 📸 ฟังก์ชันแปลงและแยกรูปภาพให้รองรับทั้ง Array, JSON, และ String ที่คั่นด้วยบรรทัดใหม่หรือจุลภาค
   const parseImages = (imgData) => {
@@ -182,11 +215,12 @@ export default function ReportsView({ jobs }) {
       return;
     }
 
-    const headers = ["ReceivedNo", "Smart1662No", "CreatedAt", "CompletedAt", "ReporterName", "Phone", "Location", "Latitude", "Longitude", "ComplaintTopic", "PipeType", "PipeSize", "Technician", "Status", "Notes"];
+    const headers = ["FirebaseKey", "ReceivedNo", "Smart1662No", "CreatedAt", "CompletedAt", "ReporterName", "Phone", "Location", "Latitude", "Longitude", "ComplaintTopic", "PipeType", "PipeSize", "Technician", "Status", "Notes"];
     const csvRows = [headers.join(",")];
 
     filteredJobs.forEach(job => {
       const row = [
+        `"${job.firebaseKey || job.dbKey || job.id || ""}"`,
         `"${job.receivedNo || job.id || ""}"`,
         `"${job.smart1662No || ""}"`,
         `"${job.receivedAt || job.createdAt || ""}"`,
@@ -620,28 +654,32 @@ export default function ReportsView({ jobs }) {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 border-b border-slate-100">
-                <th className="p-4 font-semibold">เลขที่รับแจ้ง</th>
+                <th className="p-4 font-semibold">เลขที่รับแจ้ง / DB Key</th>
                 <th className="p-4 font-semibold">ผู้แจ้ง / เบอร์โทร</th>
                 <th className="p-4 font-semibold">หัวข้อร้องเรียน</th>
                 <th className="p-4 font-semibold">บริเวณที่เกิดเหตุ / ชนิดท่อ</th>
                 <th className="p-4 font-semibold text-center">สถานะ</th>
                 <th className="p-4 font-semibold text-center">รูปภาพหน้างาน</th>
                 <th className="p-4 font-semibold text-center">พิมพ์รายงาน A4</th>
+                <th className="p-4 font-semibold text-center">จัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {currentJobs.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-12 text-slate-400">
+                  <td colSpan="8" className="text-center py-12 text-slate-400">
                     <p className="text-sm font-bold">ไม่พบข้อมูลใบแจ้งซ่อมตามคำค้นหานี้</p>
                     <p className="text-xs text-slate-400 mt-1">ลองเปลี่ยนคำค้นหา หรือเลือกช่วงเวลาอื่น</p>
                   </td>
                 </tr>
               ) : (
                 currentJobs.map((job) => (
-                  <tr key={job.id || job.receivedNo} className="hover:bg-slate-50/80 transition">
+                  <tr key={job.firebaseKey || job.dbKey || job.id || job.receivedNo} className="hover:bg-slate-50/80 transition">
                     <td className="p-4">
                       <span className="font-mono font-bold text-blue-600">{job.receivedNo || job.id}</span>
+                      <p className="text-[10px] font-mono text-slate-400 mt-0.5" title="Firebase Unique Key">
+                        Key: {job.firebaseKey || job.dbKey || job.id || '-'}
+                      </p>
                       <p className="text-[11px] text-slate-400 mt-0.5">แจ้ง: {job.receivedAt || job.createdAt}</p>
                       {job.completedAt && (
                         <p className="text-[10px] text-emerald-600 font-bold">เสร็จ: {job.completedAt}</p>
@@ -704,6 +742,17 @@ export default function ReportsView({ jobs }) {
                         <Printer className="w-4 h-4" />
                       </button>
                     </td>
+
+                    {/* 🗑️ ปุ่มลบข้อมูล (ตรวจสอบสิทธิ์แอดมิน) */}
+                    <td className="p-4 text-center">
+                      <button
+                        onClick={() => handleRequestDelete(job)}
+                        title="ลบข้อมูลใบงานนี้"
+                        className="bg-rose-50 hover:bg-rose-100 text-rose-600 p-2 rounded-xl font-bold inline-flex items-center justify-center shadow-2xs transition active:scale-95 cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -762,7 +811,7 @@ export default function ReportsView({ jobs }) {
                 <p className="text-center py-8 text-xs text-slate-400">ไม่มีรายการงานที่ไม่สามารถซ่อมได้ในช่วงเวลานี้</p>
               ) : (
                 unrepairableJobsList.map((job) => (
-                  <div key={job.id || job.receivedNo} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-2 relative">
+                  <div key={job.firebaseKey || job.dbKey || job.id || job.receivedNo} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-2 relative">
                     <div className="flex justify-between items-start">
                       <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">
                         {job.receivedNo || job.id}
@@ -791,6 +840,46 @@ export default function ReportsView({ jobs }) {
                 className="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2 rounded-xl text-xs font-bold cursor-pointer transition shadow-sm"
               >
                 ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🗑️ MODAL ยืนยันการลบข้อมูล */}
+      {jobToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">ยืนยันการลบข้อมูลใบงาน</h3>
+                <p className="text-[11px] text-slate-500">การกระทำนี้จะลบข้อมูลออกจากฐานข้อมูลทันที</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs space-y-1.5 font-medium">
+              <div><strong className="text-slate-500">เลขที่รับแจ้ง:</strong> <span className="font-mono text-blue-600">{jobToDelete.receivedNo || jobToDelete.id}</span></div>
+              <div><strong className="text-slate-500">สถานที่:</strong> {jobToDelete.location || '-'}</div>
+              <div><strong className="text-slate-500">ผู้แจ้ง:</strong> {jobToDelete.reporterName || '-'}</div>
+            </div>
+
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setJobToDelete(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" /> ยืนยันลบ
               </button>
             </div>
           </div>
