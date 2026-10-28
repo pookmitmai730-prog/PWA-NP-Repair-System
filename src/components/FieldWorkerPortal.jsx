@@ -4,7 +4,7 @@ import { compressImage } from '../utils/imageCompressor';
 import { saveJobToFirebase } from '../services/firebase';
 
 // 🌐 URL ของ Google Apps Script Web App
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec";
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwJ23IDzEVsHtSqPTKX7A1RpTs20qk04LrohJMcD27swbJ6hErog3i_xBEAe6Numb8gCw/exec";
 
 // รายการอุปกรณ์สำรอง (Fallback Data)
 const DEFAULT_EQUIPMENT_LIST = [
@@ -49,9 +49,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const [searchTerm, setSearchTerm] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [selectedEquipmentItem, setSelectedEquipmentItem] = useState(null);
-  
-  // ✏️ ปรับเป็น String รองรับการพิมพ์อินพุตข้อความตามต้องการ
-  const [equipmentQuantity, setEquipmentQuantity] = useState('1'); 
+  const [equipmentQuantity, setEquipmentQuantity] = useState(1);
   const [selectedEquipmentList, setSelectedEquipmentList] = useState([]);
   const [notes, setNotes] = useState('');
 
@@ -114,26 +112,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     return [];
   };
 
-  // ☁️ ฟังก์ชันอัปโหลด Base64 ไปสร้างเป็นไฟล์เก็บใน Google Drive
-  const uploadImagesToDrive = async (imgObj) => {
-    try {
-      const response = await fetch(WEB_APP_URL, {
-        method: "POST",
-        body: JSON.stringify({
-          action: "upload_images",
-          images: imgObj
-        })
-      });
-      const resData = await response.json();
-      if (resData.status === "success" && resData.imageUrls) {
-        return resData.imageUrls;
-      }
-    } catch (err) {
-      console.error("Failed to upload images to Drive:", err);
-    }
-    return imgObj;
-  };
-
   // 🌐 ดึงข้อมูลรายการอุปกรณ์จาก Google Sheets
   useEffect(() => {
     const fetchEquipmentFromSheets = async () => {
@@ -187,7 +165,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setSuggestions([]);
   };
 
-  // 🛠️ ปรับระบบเพิ่มอุปกรณ์ ให้จัดฟอร์แมตข้อความแบบ : [จำนวน] [หน่วย]
   const handleAddEquipmentToList = () => {
     if (!searchTerm.trim()) {
       alert("กรุณาพิมพ์หรือเลือกชื่ออุปกรณ์");
@@ -205,26 +182,25 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     const newItem = {
       id: Date.now(),
       name: itemName,
-      quantity: String(equipmentQuantity).trim() || '1',
+      quantity: Number(equipmentQuantity) || 1,
       unit: itemUnit
     };
 
     const updatedList = [...selectedEquipmentList, newItem];
     setSelectedEquipmentList(updatedList);
 
-    // รูปแบบการบันทึก: ข้อต่อตรง HDPE 110 มม. : 1 ตัว
-    const summaryText = updatedList.map(i => `${i.name} : ${i.quantity} ${i.unit}`).join('\n');
+    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join('\n');
     setNotes(summaryText);
 
     setSearchTerm('');
     setSelectedEquipmentItem(null);
-    setEquipmentQuantity('1');
+    setEquipmentQuantity(1);
   };
 
   const handleRemoveEquipmentItem = (id) => {
     const updatedList = selectedEquipmentList.filter(item => item.id !== id);
     setSelectedEquipmentList(updatedList);
-    const summaryText = updatedList.map(i => `${i.name} : ${i.quantity} ${i.unit}`).join('\n');
+    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join('\n');
     setNotes(summaryText);
   };
 
@@ -236,6 +212,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
+  // จัดการเมื่อเปลี่ยนสถานะเช็คบ็อกซ์ไม่ได้ใช้อุปกรณ์
   const handleToggleNoEquipment = (checked) => {
     setIsNoEquipmentUsed(checked);
     if (checked) {
@@ -398,24 +375,29 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       inProgress: parseImages(job.inProgImgBase64 || job.inProgImg || job.InProgImg),
       after: parseImages(job.afterImgBase64 || job.afterImg || job.AfterImg)
     });
+    // โหลดพิกัดเดิมมาใส่ใน State เพื่อให้แก้ไขได้
+    setCoords({
+      lat: job.latitude || '',
+      lng: job.longitude || ''
+    });
   };
 
-  // 📸 บันทึกการอัปเดตรูปภาพของใบงานที่ปิดแล้ว
+  // 📸 บันทึกการอัปเดตรูปภาพและพิกัดของใบงานที่ปิดแล้ว
   const handleSaveUpdatedPhotos = async () => {
     if (!editingPhotoJob) return;
 
     setIsSubmitting(true);
     try {
-      const driveUrls = await uploadImagesToDrive(images);
-
       const updatedData = {
         ...editingPhotoJob,
-        beforeImgBase64: driveUrls.before,
-        inProgImgBase64: driveUrls.inProgress,
-        afterImgBase64: driveUrls.after,
-        beforeImg: driveUrls.before,
-        inProgImg: driveUrls.inProgress,
-        afterImg: driveUrls.after
+        beforeImgBase64: images.before,
+        inProgImgBase64: images.inProgress,
+        afterImgBase64: images.after,
+        beforeImg: images.before,
+        inProgImg: images.inProgress,
+        afterImg: images.after,
+        latitude: coords.lat || '',
+        longitude: coords.lng || ''
       };
 
       const jobDataPayload = {
@@ -433,21 +415,24 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
           description: editingPhotoJob.details || '-',
           technician: currentTeam,
           status: editingPhotoJob.status || 'COMPLETED',
-          beforeImgBase64: driveUrls.before,
-          inProgImgBase64: driveUrls.inProgress,
-          afterImgBase64: driveUrls.after,
+          beforeImgBase64: images.before,
+          inProgImgBase64: images.inProgress,
+          afterImgBase64: images.after,
           notes: editingPhotoJob.notes || '-',
-          closedAt: editingPhotoJob.closedAt || editingPhotoJob.completedAt || new Date().toLocaleString("th-TH")
+          closedAt: editingPhotoJob.closedAt || editingPhotoJob.completedAt || new Date().toLocaleString("th-TH"),
+          latitude: coords.lat || '',
+          longitude: coords.lng || ''
         }
       };
 
       await onUpdateJobStatus(editingPhotoJob.id, editingPhotoJob.status, updatedData, jobDataPayload);
-      alert("อัปเดตรูปภาพใบงานเรียบร้อยแล้ว!");
+      alert("อัปเดตรูปภาพและพิกัดเรียบร้อยแล้ว!");
       setEditingPhotoJob(null);
       setImages({ before: [], inProgress: [], after: [] });
+      setCoords({ lat: null, lng: null });
     } catch (err) {
       console.error("Error updating photos:", err);
-      alert("เกิดข้อผิดพลาดในการบันทึกรูปภาพ");
+      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
     } finally {
       setIsSubmitting(false);
     }
@@ -562,7 +547,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         setSelectedJob(newAdHocJob);
         setIsUnrepairable(false);
         setIsNoEquipmentUsed(false);
-        setCoords({ lat: null, lng: null });
+        setCoords({ lat: newAdHocJob.latitude || null, lng: newAdHocJob.longitude || null });
         alert("สร้างเลขที่รับแจ้งสำเร็จ! กรุณาถ่ายภาพและบันทึกผลการซ่อม");
       } catch (err) {
         console.error("Error saving ad-hoc job:", err);
@@ -593,6 +578,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       }
     }
 
+    // กำหนดข้อความหมายเหตุตามเงื่อนไขที่เลือก
     let finalNotes = '';
     if (isUnrepairable) {
       finalNotes = `❌ ไม่สามารถซ่อมได้เนื่องจาก: ${finalReason}\nรายละเอียด: ${unrepairableDetails.trim()}`;
@@ -602,36 +588,34 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       finalNotes = notes || `ใช้อุปกรณ์: ท่อ ${pipeType} ขนาด ${pipeSize} มม.`;
     }
 
+    const jobDataPayload = {
+      action: "archive_job",
+      jobData: {
+        id: selectedJob.id,
+        receivedNo: selectedJob.receivedNo || selectedJob.id,
+        timestamp: selectedJob.receivedAt || selectedJob.timestamp || currentDateTime,
+        receivedAt: selectedJob.receivedAt || selectedJob.timestamp || '-',
+        reporterName: selectedJob.reporterName || 'ไม่ระบุชื่อ',
+        phone: selectedJob.phone || '-',
+        location: selectedJob.location || '-',
+        issueType: selectedJob.complaintTopic || selectedJob.issueType || 'ท่อแตกรั่ว',
+        pipeType: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeType,
+        pipeSize: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeSize,
+        description: selectedJob.details || '-',
+        technician: currentTeam,
+        status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
+        beforeImgBase64: images.before,
+        inProgImgBase64: images.inProgress,
+        afterImgBase64: images.after,
+        notes: finalNotes,
+        closedAt: currentDateTime,
+        completedAt: currentDateTime,
+        latitude: coords.lat || selectedJob.latitude || '',
+        longitude: coords.lng || selectedJob.longitude || ''
+      }
+    };
+
     try {
-      const driveUrls = await uploadImagesToDrive(images);
-
-      const jobDataPayload = {
-        action: "archive_job",
-        jobData: {
-          id: selectedJob.id,
-          receivedNo: selectedJob.receivedNo || selectedJob.id,
-          timestamp: selectedJob.receivedAt || selectedJob.timestamp || currentDateTime,
-          receivedAt: selectedJob.receivedAt || selectedJob.timestamp || '-',
-          reporterName: selectedJob.reporterName || 'ไม่ระบุชื่อ',
-          phone: selectedJob.phone || '-',
-          location: selectedJob.location || '-',
-          issueType: selectedJob.complaintTopic || selectedJob.issueType || 'ท่อแตกรั่ว',
-          pipeType: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeType,
-          pipeSize: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeSize,
-          description: selectedJob.details || '-',
-          technician: currentTeam,
-          status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
-          beforeImgBase64: driveUrls.before,
-          inProgImgBase64: driveUrls.inProgress,
-          afterImgBase64: driveUrls.after,
-          notes: finalNotes,
-          closedAt: currentDateTime,
-          completedAt: currentDateTime,
-          latitude: coords.lat || selectedJob.latitude || '',
-          longitude: coords.lng || selectedJob.longitude || ''
-        }
-      };
-
       await onUpdateJobStatus(selectedJob.id, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
 
       alert(isUnrepairable 
@@ -857,7 +841,10 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                               setSelectedJob(job);
                               setIsUnrepairable(false);
                               setIsNoEquipmentUsed(false);
-                              setCoords({ lat: null, lng: null });
+                              setCoords({ 
+                                lat: job.latitude || null, 
+                                lng: job.longitude || null 
+                              });
                             }}
                             className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
                           >
@@ -871,7 +858,10 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                               setSelectedJob(job);
                               setIsUnrepairable(false);
                               setIsNoEquipmentUsed(false);
-                              setCoords({ lat: null, lng: null });
+                              setCoords({ 
+                                lat: job.latitude || null, 
+                                lng: job.longitude || null 
+                              });
                             }}
                             className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
                           >
@@ -885,11 +875,11 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               )}
             </div>
 
-            {/* 📸 Section 2: จัดการรูปภาพใบงานที่ปิดแล้ว */}
+            {/* 📸 Section 2: จัดการรูปภาพและพิกัดใบงานที่ปิดแล้ว */}
             <div className="space-y-3 pt-4 border-t border-slate-200">
               <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
                 <ImageIcon className="w-4 h-4 text-indigo-600" />
-                จัดการแก้ไขรูปภาพใบงานที่ปิดแล้ว ({myCompletedJobs.length} งาน)
+                จัดการแก้ไขรูปภาพและพิกัดใบงานที่ปิดแล้ว ({myCompletedJobs.length} งาน)
               </h3>
 
               <div className="relative">
@@ -923,7 +913,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                         onClick={() => handleOpenEditPhotosModal(job)}
                         className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition cursor-pointer shrink-0"
                       >
-                        <Edit3 className="w-3.5 h-3.5" /> แก้ไขรูปภาพ
+                        <Edit3 className="w-3.5 h-3.5" /> แก้ไขรูป / พิกัด
                       </button>
                     </div>
                   ))}
@@ -932,13 +922,13 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
             </div>
           </div>
         ) : editingPhotoJob ? (
-          /* 🖼️ หน้าต่างแก้ไขรูปภาพสำหรับใบงานที่ปิดแล้ว */
+          /* 🖼️ หน้าต่างแก้ไขรูปภาพและพิกัด สำหรับใบงานที่ปิดแล้ว */
           <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-200 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div>
                 <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
                   <ImageIcon className="w-4 h-4 text-indigo-600" />
-                  แก้ไขรูปภาพใบงาน: <span className="font-mono text-blue-600">{editingPhotoJob.receivedNo || editingPhotoJob.id}</span>
+                  แก้ไขรูปและพิกัด: <span className="font-mono text-blue-600">{editingPhotoJob.receivedNo || editingPhotoJob.id}</span>
                 </h3>
                 <p className="text-xs text-slate-500 truncate max-w-[260px]">{editingPhotoJob.location}</p>
               </div>
@@ -955,6 +945,60 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               <p><strong>หัวข้อ:</strong> {editingPhotoJob.complaintTopic || editingPhotoJob.issueType || '-'}</p>
               {editingPhotoJob.pipeType && editingPhotoJob.pipeType !== '-' && <p><strong>ชนิด/ขนาดท่อ:</strong> ท่อ {editingPhotoJob.pipeType} {editingPhotoJob.pipeSize} มม.</p>}
               {editingPhotoJob.notes && <p className="text-slate-600"><strong>หมายเหตุ/อุปกรณ์:</strong> {editingPhotoJob.notes}</p>}
+            </div>
+
+            {/* 📍 ส่วนแก้ไขพิกัด GPS พร้อมปุ่มกดดูตำแหน่งก่อนบันทึก */}
+            <div className="bg-blue-50/60 p-3.5 rounded-2xl border border-blue-200 space-y-2.5">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-blue-900 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-blue-600" /> พิกัดจุดซ่อม (GPS)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleGetGPS}
+                  disabled={isGettingLocation}
+                  className="bg-blue-600 text-white hover:bg-blue-700 px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer shadow-xs"
+                >
+                  {isGettingLocation ? <Loader2 className="w-3 h-3 animate-spin" /> : <Navigation className="w-3 h-3" />}
+                  ดึงพิกัดปัจจุบัน
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-[10px] text-slate-500 block mb-0.5">ละติจูด (Latitude)</span>
+                  <input
+                    type="text"
+                    value={coords.lat || ''}
+                    onChange={(e) => setCoords({ ...coords, lat: e.target.value })}
+                    placeholder="เช่น 17.4135"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block mb-0.5">ลองจิจูด (Longitude)</span>
+                  <input
+                    type="text"
+                    value={coords.lng || ''}
+                    onChange={(e) => setCoords({ ...coords, lng: e.target.value })}
+                    placeholder="เช่น 104.7912"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {coords.lat && coords.lng && (
+                <div className="pt-1 text-right">
+                  <a
+                    href={`https://www.google.com/maps?q=${coords.lat},${coords.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline bg-white px-3 py-1 rounded-lg border border-blue-200 shadow-2xs"
+                  >
+                    🗺️ กดดูพิกัดนี้บน Google Maps (ตรวจสอบก่อนบันทึก)
+                  </a>
+                </div>
+              )}
             </div>
 
             <div className="space-y-4">
@@ -1067,7 +1111,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-2xl font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1 shadow-md disabled:opacity-50"
               >
                 {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                บันทึกการเปลี่ยนแปลงรูปภาพ
+                บันทึกการเปลี่ยนแปลงรูปและพิกัด
               </button>
             </div>
           </div>
@@ -1173,7 +1217,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {/* ชนิดท่อและขนาดท่อ */}
+              {/* ชนิดท่อและขนาดท่อ (แสดงเมื่อไม่ได้เลือกซ่อมไม่ได้ และไม่ได้เลือกไม่ต้องใช้อุปกรณ์) */}
               {!isUnrepairable && !isNoEquipmentUsed && (
                 <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                   <div>
@@ -1203,7 +1247,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {/* 🛠️ ระบบเลือกอุปกรณ์จาก Google Sheets (ปรับอินพุตจำนวนเป็นข้อความให้กรอกเอง) */}
+              {/* ระบบเลือกอุปกรณ์จาก Google Sheets (แสดงเมื่อไม่ได้เลือกซ่อมไม่ได้ และไม่ได้เลือกไม่ต้องใช้อุปกรณ์) */}
               {!isUnrepairable && !isNoEquipmentUsed && (
                 <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
                   <div className="flex justify-between items-center">
@@ -1248,16 +1292,13 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                         )}
                       </div>
 
-                      {/* ✏️ ช่องกรอกจำนวนแบบ Text ให้พิมพ์อิสระ (เช่น 1, 0.5, 1.5) */}
-                      <div className="relative w-20 flex items-center">
-                        <input
-                          type="text"
-                          value={equipmentQuantity}
-                          onChange={(e) => setEquipmentQuantity(e.target.value)}
-                          placeholder="จำนวน"
-                          className="w-full bg-white border border-slate-200 rounded-xl px-2 py-2 text-xs font-bold text-center focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
-                        />
-                      </div>
+                      <input
+                        type="number"
+                        min="1"
+                        value={equipmentQuantity}
+                        onChange={(e) => setEquipmentQuantity(e.target.value)}
+                        className="w-16 bg-white border border-slate-200 rounded-xl px-2 py-2 text-xs font-bold text-center focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                      />
 
                       <button
                         type="button"
@@ -1272,7 +1313,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                       <div className="space-y-1.5 pt-2">
                         {selectedEquipmentList.map((item) => (
                           <div key={item.id} className="bg-white p-2 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
-                            <span className="font-semibold text-slate-700">{item.name} : {item.quantity} {item.unit}</span>
+                            <span className="font-semibold text-slate-700">{item.name} x {item.quantity} {item.unit}</span>
                             <button
                               type="button"
                               onClick={() => handleRemoveEquipmentItem(item.id)}
@@ -1349,24 +1390,58 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               </div>
 
-              {/* ดึงตำแหน่งพิกัด GPS */}
-              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex justify-between items-center">
-                <div>
-                  <span className="text-xs font-bold text-slate-700 block">📍 พิกัดหน้างาน (GPS)</span>
-                  <span className="text-[10px] text-slate-500">
-                    {coords.lat && coords.lng ? `${coords.lat}, ${coords.lng}` : 'ยังไม่ได้ระบุพิกัด'}
-                  </span>
+              {/* 📍 ดึงพิกัด GPS พร้อมช่องแก้ไขและปุ่มกดดูแผนที่ */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-blue-600" /> พิกัดหน้างาน (GPS)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleGetGPS}
+                    disabled={isGettingLocation}
+                    className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                  >
+                    {isGettingLocation ? <Loader2 className="w-3 h-3 animate-spin" /> : <Navigation className="w-3 h-3" />}
+                    ดึงพิกัดปัจจุบัน
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleGetGPS}
-                  disabled={isGettingLocation}
-                  className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                >
-                  {isGettingLocation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
-                  ดึงพิกัด GPS
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block mb-0.5">ละติจูด (Latitude)</span>
+                    <input
+                      type="text"
+                      value={coords.lat || ''}
+                      onChange={(e) => setCoords({ ...coords, lat: e.target.value })}
+                      placeholder="เช่น 17.4135"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block mb-0.5">ลองจิจูด (Longitude)</span>
+                    <input
+                      type="text"
+                      value={coords.lng || ''}
+                      onChange={(e) => setCoords({ ...coords, lng: e.target.value })}
+                      placeholder="เช่น 104.7912"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {coords.lat && coords.lng && (
+                  <div className="pt-1 text-right">
+                    <a
+                      href={`https://www.google.com/maps?q=${coords.lat},${coords.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline bg-white px-3 py-1 rounded-lg border border-blue-200 shadow-2xs"
+                    >
+                      🗺️ กดดูพิกัดนี้บน Google Maps (ตรวจสอบก่อนบันทึก)
+                    </a>
+                  </div>
+                )}
               </div>
 
               <div className="pt-2 flex gap-2">
