@@ -15,7 +15,9 @@ const firebaseConfig = {
 
 const isConfigured = !firebaseConfig.apiKey.includes("YOUR_FIREBASE");
 
-let db = null;
+// 🔑 ทำการ export ตัวแปร db ออกมาตรงนี้เพื่อให้ไฟล์อื่นเรียกใช้งานได้
+export let db = null;
+
 if (isConfigured) {
   const app = initializeApp(firebaseConfig);
   db = getDatabase(app);
