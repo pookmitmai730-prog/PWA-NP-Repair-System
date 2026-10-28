@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2 } from 'lucide-react';
-// 📌 นำเข้า Database และฟังก์ชัน remove, ref จาก Firebase (ตรวจสอบ path ให้ตรงกับโปรเจกต์ของคุณ)
+// นำเข้า Database และฟังก์ชัน remove, ref จาก Firebase (ตรวจสอบ path ให้ตรงกับโปรเจกต์ของคุณ)
 import { db } from '../firebase'; 
 import { ref, remove } from 'firebase/database';
 
@@ -44,12 +44,23 @@ export default function ReportsView({ jobs, currentUser }) {
   };
 
   const getFilteredJobs = () => {
-    if (!jobs || !Array.isArray(jobs)) return [];
+    if (!jobs) return [];
+
+    // หาก jobs เป็น Object (กรณีดึงตรงมาจาก Firebase snapshot.val()) ให้แปลงเป็น Array โดยเก็บ Key ไว้เป็น firebaseKey
+    let jobsArray = [];
+    if (Array.isArray(jobs)) {
+      jobsArray = jobs;
+    } else if (typeof jobs === 'object' && jobs !== null) {
+      jobsArray = Object.entries(jobs).map(([key, value]) => ({
+        firebaseKey: key, // เก็บคีย์จริงใน Firebase ไว้ตรงนี้
+        ...value
+      }));
+    }
 
     const now = new Date();
 
     // 1. กรองข้อมูลตามเงื่อนไขเวลาและคำค้นหา
-    const filtered = jobs.filter(job => {
+    const filtered = jobsArray.filter(job => {
       if (reportType !== 'all') {
         const jobDate = parseJobDate(job);
         const jobDateStr = jobDate.toISOString().split('T')[0];
@@ -89,7 +100,7 @@ export default function ReportsView({ jobs, currentUser }) {
     // 2. ป้องกันข้อมูลซ้ำ (Deduplication) บนหน้า UI
     const uniqueMap = new Map();
     filtered.forEach(job => {
-      const uniqueKey = job.receivedNo || job.id || JSON.stringify(job);
+      const uniqueKey = job.id || job.receivedNo || JSON.stringify(job);
       if (!uniqueMap.has(uniqueKey)) {
         uniqueMap.set(uniqueKey, job);
       }
@@ -103,7 +114,7 @@ export default function ReportsView({ jobs, currentUser }) {
   const completedCount = filteredJobs.filter(j => j.status === 'COMPLETED').length;
   const inProgressCount = filteredJobs.filter(j => j.status === 'DISPATCHED' || j.status === 'IN_PROGRESS').length;
   
-  // ⚠️ รายการงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) ตามช่วงเวลา
+  // ⚠️ รายการงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE)
   const unrepairableJobsList = filteredJobs.filter(j => j.status === 'UNREPAIRABLE');
 
   // 📄 ระบบแบ่งหน้า (Pagination Logic)
@@ -151,25 +162,25 @@ export default function ReportsView({ jobs, currentUser }) {
     setJobToDelete(job);
   };
 
-  // 🗑️ ฟังก์ชันลบข้อมูลออกจาก Firebase จริง (อ้างอิง Node ชื่อ 'repairs')
+  // 🗑️ ฟังก์ชันลบข้อมูลออกจาก Firebase จริง (อ้างอิง Node ชื่อ 'repairs' โดยใช้ id หรือ firebaseKey)
   const handleConfirmDelete = async () => {
     if (!jobToDelete) return;
     
-    // ดึง Key จริงใน Firebase (รองรับชื่อตัวแปร firebaseKey, dbKey หรือ id)
-    const targetKey = jobToDelete.firebaseKey || jobToDelete.dbKey || jobToDelete.id;
+    // ดึง Key ให้ตรงกับโครงสร้างข้อมูล (เช่น "JOB-003478" จากฟิลด์ id หรือ firebaseKey)
+    const targetKey = jobToDelete.firebaseKey || jobToDelete.id || jobToDelete.receivedNo;
     
     if (!targetKey) {
-      alert("⚠️ ไม่พบรหัสอ้างอิง (Key) สำหรับลบข้อมูลในฐานข้อมูล");
+      alert("⚠️ ไม่พบรหัสอ้างอิง (ID / Key) สำหรับลบข้อมูลในฐานข้อมูล");
       setJobToDelete(null);
       return;
     }
 
     try {
-      // 📌 ใช้ Node 'repairs' ตามที่คุณแจ้ง
+      // ชี้ไปที่ Node 'repairs' และตามด้วย ID ของงาน เช่น repairs/JOB-003478
       const jobRef = ref(db, `repairs/${targetKey}`); 
       await remove(jobRef);
       
-      alert("🗑️ ลบข้อมูลออกจากฐานข้อมูล Firebase (repairs) สำเร็จแล้ว");
+      alert(`🗑️ ลบข้อมูล ${targetKey}ออกจากฐานข้อมูล Firebase (repairs) สำเร็จแล้ว`);
     } catch (error) {
       console.error("Error deleting job from Firebase: ", error);
       alert("❌ เกิดข้อผิดพลาดในการลบข้อมูล: " + error.message);
@@ -178,7 +189,7 @@ export default function ReportsView({ jobs, currentUser }) {
     }
   };
 
-  // 📸 ฟังก์ชันแปลงและแยกรูปภาพให้รองรับทั้ง Array, JSON, และ String ที่คั่นด้วยบรรทัดใหม่หรือจุลภาค
+  // 📸 ฟังก์ชันแปลงและแยกรูปภาพ
   const parseImages = (imgData) => {
     if (!imgData) return [];
     try {
@@ -206,7 +217,6 @@ export default function ReportsView({ jobs, currentUser }) {
     return [];
   };
 
-  // 📥 ฟังก์ชันดาวน์โหลดไฟล์ภาพลงเครื่องคอมพิวเตอร์/มือถือ
   const handleDownloadSingleImage = async (url, filename) => {
     try {
       const response = await fetch(url);
@@ -230,13 +240,13 @@ export default function ReportsView({ jobs, currentUser }) {
       return;
     }
 
-    const headers = ["FirebaseKey", "ReceivedNo", "Smart1662No", "CreatedAt", "CompletedAt", "ReporterName", "Phone", "Location", "Latitude", "Longitude", "ComplaintTopic", "PipeType", "PipeSize", "Technician", "Status", "Notes"];
+    const headers = ["ID", "ReceivedNo", "Smart1662No", "CreatedAt", "CompletedAt", "ReporterName", "Phone", "Location", "Latitude", "Longitude", "ComplaintTopic", "PipeType", "PipeSize", "Technician", "Status", "Notes"];
     const csvRows = [headers.join(",")];
 
     filteredJobs.forEach(job => {
       const row = [
-        `"${job.firebaseKey || job.dbKey || job.id || ""}"`,
-        `"${job.receivedNo || job.id || ""}"`,
+        `"${job.id || job.receivedNo || ""}"`,
+        `"${job.receivedNo || ""}"`,
         `"${job.smart1662No || ""}"`,
         `"${job.receivedAt || job.createdAt || ""}"`,
         `"${job.completedAt || ""}"`,
@@ -432,7 +442,7 @@ export default function ReportsView({ jobs, currentUser }) {
           </div>
 
           <div class="info-box">
-            <div><strong>เลขที่รับแจ้ง:</strong> <span style="font-family: monospace; color: #2563eb; font-weight: bold;">${job.receivedNo || job.id}</span></div>
+            <div><strong>เลขที่รับแจ้ง:</strong> <span style="font-family: monospace; color: #2563eb; font-weight: bold;">${job.id || job.receivedNo}</span></div>
             ${job.smart1662No ? `<div><strong>เลขที่ปิดงานซ่อม Smart 1662:</strong> <span style="font-family: monospace; color: #0891b2; font-weight: bold;">${job.smart1662No}</span></div>` : ''}
             <div><strong>สถานที่ซ่อม:</strong> ${job.location || '-'}</div>
 
@@ -669,7 +679,7 @@ export default function ReportsView({ jobs, currentUser }) {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 border-b border-slate-100">
-                <th className="p-4 font-semibold">เลขที่รับแจ้ง / DB Key</th>
+                <th className="p-4 font-semibold">เลขที่รับแจ้ง / ID</th>
                 <th className="p-4 font-semibold">ผู้แจ้ง / เบอร์โทร</th>
                 <th className="p-4 font-semibold">หัวข้อร้องเรียน</th>
                 <th className="p-4 font-semibold">บริเวณที่เกิดเหตุ / ชนิดท่อ</th>
@@ -689,11 +699,11 @@ export default function ReportsView({ jobs, currentUser }) {
                 </tr>
               ) : (
                 currentJobs.map((job) => (
-                  <tr key={job.firebaseKey || job.dbKey || job.id || job.receivedNo} className="hover:bg-slate-50/80 transition">
+                  <tr key={job.id || job.firebaseKey || job.receivedNo} className="hover:bg-slate-50/80 transition">
                     <td className="p-4">
-                      <span className="font-mono font-bold text-blue-600">{job.receivedNo || job.id}</span>
-                      <p className="text-[10px] font-mono text-slate-400 mt-0.5" title="Firebase Unique Key">
-                        Key: {job.firebaseKey || job.dbKey || job.id || '-'}
+                      <span className="font-mono font-bold text-blue-600">{job.id || job.receivedNo}</span>
+                      <p className="text-[10px] font-mono text-slate-400 mt-0.5" title="Firebase Key/ID">
+                        Key: {job.id || job.firebaseKey || '-'}
                       </p>
                       <p className="text-[11px] text-slate-400 mt-0.5">แจ้ง: {job.receivedAt || job.createdAt}</p>
                       {job.completedAt && (
@@ -701,8 +711,8 @@ export default function ReportsView({ jobs, currentUser }) {
                       )}
                     </td>
                     <td className="p-4">
-                      <p className="font-bold text-slate-800">{job.reporterName}</p>
-                      <p className="text-slate-500 font-mono">{job.phone}</p>
+                      <p className="font-bold text-slate-800">{job.reporterName || job.complainantInfo || 'ไม่ระบุชื่อ'}</p>
+                      <p className="text-slate-500 font-mono">{job.phone || job.complainantInfo || '-'}</p>
                     </td>
                     <td className="p-4 font-medium text-slate-700 max-w-xs truncate">
                       {job.complaintTopic || job.issueType}
@@ -826,10 +836,10 @@ export default function ReportsView({ jobs, currentUser }) {
                 <p className="text-center py-8 text-xs text-slate-400">ไม่มีรายการงานที่ไม่สามารถซ่อมได้ในช่วงเวลานี้</p>
               ) : (
                 unrepairableJobsList.map((job) => (
-                  <div key={job.firebaseKey || job.dbKey || job.id || job.receivedNo} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-2 relative">
+                  <div key={job.id || job.firebaseKey || job.receivedNo} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-2 relative">
                     <div className="flex justify-between items-start">
                       <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">
-                        {job.receivedNo || job.id}
+                        {job.id || job.receivedNo}
                       </span>
                       <span className="text-[10px] text-slate-400">แจ้ง: {job.receivedAt || job.createdAt}</span>
                     </div>
@@ -837,7 +847,7 @@ export default function ReportsView({ jobs, currentUser }) {
                     <div>
                       <h4 className="font-bold text-slate-800 text-xs">{job.complaintTopic || job.issueType}</h4>
                       <p className="text-xs text-slate-600 mt-0.5"><strong>สถานที่:</strong> {job.location}</p>
-                      <p className="text-xs text-slate-600"><strong>ผู้แจ้ง:</strong> {job.reporterName} ({job.phone})</p>
+                      <p className="text-xs text-slate-600"><strong>ผู้แจ้ง:</strong> {job.reporterName || job.complainantInfo || '-'} ({job.phone || job.complainantInfo || '-'})</p>
                     </div>
 
                     <div className="bg-rose-50 p-3 rounded-xl border border-rose-100 text-xs text-rose-900 space-y-1">
@@ -876,9 +886,9 @@ export default function ReportsView({ jobs, currentUser }) {
             </div>
 
             <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs space-y-1.5 font-medium">
-              <div><strong className="text-slate-500">เลขที่รับแจ้ง:</strong> <span className="font-mono text-blue-600">{jobToDelete.receivedNo || jobToDelete.id}</span></div>
+              <div><strong className="text-slate-500">เลขที่รับแจ้ง (ID):</strong> <span className="font-mono text-blue-600">{jobToDelete.id || jobToDelete.receivedNo}</span></div>
               <div><strong className="text-slate-500">สถานที่:</strong> {jobToDelete.location || '-'}</div>
-              <div><strong className="text-slate-500">ผู้แจ้ง:</strong> {jobToDelete.reporterName || '-'}</div>
+              <div><strong className="text-slate-500">ผู้แจ้ง:</strong> {jobToDelete.reporterName || jobToDelete.complainantInfo || '-'}</div>
             </div>
 
             <div className="pt-2 flex gap-2">
@@ -907,7 +917,7 @@ export default function ReportsView({ jobs, currentUser }) {
           <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-5 bg-gradient-to-r from-slate-900 to-blue-900 text-white flex justify-between items-center">
               <div>
-                <h3 className="font-bold text-sm">รูปภาพปฏิบัติงาน: <span className="font-mono text-cyan-400">{selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}</span></h3>
+                <h3 className="font-bold text-sm">รูปภาพปฏิบัติงาน: <span className="font-mono text-cyan-400">{selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}</span></h3>
                 <p className="text-[11px] text-slate-300 truncate max-w-sm">{selectedJobForPhotos.location}</p>
               </div>
               <button onClick={() => setSelectedJobForPhotos(null)} className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-600 text-white transition cursor-pointer">
@@ -932,7 +942,7 @@ export default function ReportsView({ jobs, currentUser }) {
                           <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
                             <Eye className="w-4 h-4" />
                           </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `BEFORE_${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
+                          <button onClick={() => handleDownloadSingleImage(url, `BEFORE_${selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
                             <Download className="w-4 h-4" />
                           </button>
                         </div>
@@ -958,7 +968,7 @@ export default function ReportsView({ jobs, currentUser }) {
                           <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
                             <Eye className="w-4 h-4" />
                           </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `INPROG_${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
+                          <button onClick={() => handleDownloadSingleImage(url, `INPROG_${selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
                             <Download className="w-4 h-4" />
                           </button>
                         </div>
@@ -984,7 +994,7 @@ export default function ReportsView({ jobs, currentUser }) {
                           <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
                             <Eye className="w-4 h-4" />
                           </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `AFTER_${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
+                          <button onClick={() => handleDownloadSingleImage(url, `AFTER_${selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
                             <Download className="w-4 h-4" />
                           </button>
                         </div>
@@ -1023,7 +1033,7 @@ export default function ReportsView({ jobs, currentUser }) {
 
             <div className="space-y-3">
               <p className="text-xs text-slate-500">
-                เลขที่ใบรับแจ้ง: <strong className="text-blue-600 font-mono">{selectedJobForPrint.receivedNo || selectedJobForPrint.id}</strong>
+                เลขที่ใบรับแจ้ง: <strong className="text-blue-600 font-mono">{selectedJobForPrint.id || selectedJobForPrint.receivedNo}</strong>
               </p>
 
               <div>
