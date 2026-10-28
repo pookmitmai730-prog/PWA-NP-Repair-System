@@ -4,7 +4,7 @@ import { compressImage } from '../utils/imageCompressor';
 import { saveJobToFirebase } from '../services/firebase';
 
 // 🌐 URL ของ Google Apps Script Web App
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwJ23IDzEVsHtSqPTKX7A1RpTs20qk04LrohJMcD27swbJ6hErog3i_xBEAe6Numb8gCw/exec";
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec";
 
 // รายการอุปกรณ์สำรอง (Fallback Data)
 const DEFAULT_EQUIPMENT_LIST = [
