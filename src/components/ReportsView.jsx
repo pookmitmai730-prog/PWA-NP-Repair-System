@@ -1,212 +1,92 @@
-import React, { useState } from 'react';
-import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2 } from 'lucide-react';
-// นำเข้า Database และฟังก์ชัน remove, ref จาก Firebase (ตรวจสอบ path ให้ตรงกับโปรเจกต์ของคุณ)
-import { db } from '../firebase'; 
-import { ref, remove } from 'firebase/database';
+import React, { useState, useEffect } from 'react';
+import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, ShieldAlert, Search, Loader2, Plus, AlertCircle, XCircle, RotateCcw, Image as ImageIcon, Save, Check } from 'lucide-react';
+import { compressImage } from '../utils/imageCompressor';
+import { saveJobToFirebase } from '../services/firebase';
 
-export default function ReportsView({ jobs, currentUser }) {
-  const [reportType, setReportType] = useState('all');
+// 🌐 URL ของ Google Apps Script Web App
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwJ23IDzEVsHtSqPTKX7A1RpTs20qk04LrohJMcD27swbJ6hErog3i_xBEAe6Numb8gCw/exec";
+
+// รายการอุปกรณ์สำรอง (Fallback Data)
+const DEFAULT_EQUIPMENT_LIST = [
+  { id: 'EQ-001', name: 'ข้อต่อตรง HDPE 110 มม.', unit: 'ตัว' },
+  { id: 'EQ-002', name: 'ท่อ HDPE ขนาด 110 มม.', unit: 'เมตร' },
+  { id: 'EQ-003', name: 'เทปพันเกลียว', unit: 'ม้วน' },
+  { id: 'EQ-004', name: 'กาวทาท่อ PVC', unit: 'กระป๋อง' },
+  { id: 'EQ-005', name: 'ข้อต่อตรง PVC 2 นิ้ว', unit: 'ตัว' },
+  { id: 'EQ-006', name: 'ประตูน้ำทองเหลือง 1 นิ้ว', unit: 'ตัว' },
+  { id: 'EQ-007', name: 'หน้าจานเหล็ก 110 มม.', unit: 'ชุด' },
+];
+
+export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLogout, onJobCreated, onDeleteJob }) {
+  const [currentTeam, setCurrentTeam] = useState(localStorage.getItem('pwa_worker_team') || '');
+  const [selectedJob, setSelectedJob] = useState(null);
   
-  // 🔍 State สำหรับช่องค้นหาและระบบแบ่งหน้า (Pagination)
-  const [tableSearchTerm, setTableSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-
-  // State สำหรับควบคุม Modal กรอกเลข Smart 1662 ก่อนสั่งพิมพ์
-  const [selectedJobForPrint, setSelectedJobForPrint] = useState(null);
-  const [smart1662Input, setSmart1662Input] = useState('');
-
-  // 🖼️ State สำหรับ Modal จัดการ/ดาวน์โหลดรูปภาพ
-  const [selectedJobForPhotos, setSelectedJobForPhotos] = useState(null);
-
-  // ⚠️ State สำหรับ Modal แสดงรายละเอียดงานซ่อมไม่ได้
-  const [isUnrepairableModalOpen, setIsUnrepairableModalOpen] = useState(false);
-
-  // 🗑️ State สำหรับ Modal ยืนยันการลบข้อมูล
-  const [jobToDelete, setJobToDelete] = useState(null);
-
-  const todayStr = new Date().toISOString().split('T')[0];
-
-  // 📅 ฟังก์ชันแปลงวันที่โดยอิงตาม "วันเวลาที่รับแจ้ง" เป็นหลัก
-  const parseJobDate = (job) => {
-    const rawDate = job.receivedAt || job.createdAt || job.completedAt;
-    if (!rawDate) return new Date(0);
-
-    if (rawDate.includes('/')) {
-      const parts = rawDate.split(' ')[0].split('/');
-      if (parts.length === 3) {
-        let year = parseInt(parts[2], 10);
-        if (year > 2400) year -= 543;
-        return new Date(`${year}-${parts[1]}-${parts[0]}`);
-      }
-    }
-    return new Date(rawDate);
-  };
-
-  const getFilteredJobs = () => {
-    if (!jobs) return [];
-
-    let jobsArray = [];
-    if (Array.isArray(jobs)) {
-      jobsArray = jobs;
-    } else if (typeof jobs === 'object' && jobs !== null) {
-      jobsArray = Object.entries(jobs).map(([key, value]) => ({
-        firebaseKey: key, 
-        ...value
-      }));
-    }
-
-    const now = new Date();
-
-    // 1. กรองข้อมูลตามเงื่อนไขเวลาและคำค้นหา
-    const filtered = jobsArray.filter(job => {
-      if (reportType !== 'all') {
-        const jobDate = parseJobDate(job);
-        const jobDateStr = jobDate.toISOString().split('T')[0];
-
-        if (reportType === 'daily') {
-          if (jobDateStr !== todayStr) return false;
-        } else if (reportType === 'weekly') {
-          const diffTime = Math.abs(now - jobDate);
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          if (diffDays > 7) return false;
-        } else if (reportType === 'monthly') {
-          if (jobDate.getMonth() !== now.getMonth() || jobDate.getFullYear() !== now.getFullYear()) return false;
-        } else if (reportType === 'yearly') {
-          if (jobDate.getFullYear() !== now.getFullYear()) return false;
-        }
-      }
-
-      if (tableSearchTerm.trim()) {
-        const term = tableSearchTerm.trim().toLowerCase();
-        const matchNo = (job.receivedNo || job.id || '').toLowerCase().includes(term);
-        const matchSmart = (job.smart1662No || '').toLowerCase().includes(term);
-        const matchName = (job.reporterName || '').toLowerCase().includes(term);
-        const matchPhone = (job.phone || '').toLowerCase().includes(term);
-        const matchLocation = (job.location || '').toLowerCase().includes(term);
-        const matchTech = (job.technician || '').toLowerCase().includes(term);
-        const matchPipe = (job.pipeType || '').toLowerCase().includes(term);
-        const matchFirebaseKey = (job.firebaseKey || job.dbKey || '').toLowerCase().includes(term);
-
-        if (!matchNo && !matchSmart && !matchName && !matchPhone && !matchLocation && !matchTech && !matchPipe && !matchFirebaseKey) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-
-    // 2. ป้องกันข้อมูลซ้ำ (Deduplication) บนหน้า UI
-    const uniqueMap = new Map();
-    filtered.forEach(job => {
-      const uniqueKey = job.id || job.receivedNo || JSON.stringify(job);
-      if (!uniqueMap.has(uniqueKey)) {
-        uniqueMap.set(uniqueKey, job);
-      }
-    });
-
-    // 3. แปลงกลับเป็น Array และเรียงลำดับจากล่าสุดไปเก่าสุด
-    return Array.from(uniqueMap.values()).sort((a, b) => parseJobDate(b) - parseJobDate(a));
-  };
-
-  const filteredJobs = getFilteredJobs();
-  const completedCount = filteredJobs.filter(j => j.status === 'COMPLETED').length;
-  const inProgressCount = filteredJobs.filter(j => j.status === 'DISPATCHED' || j.status === 'IN_PROGRESS').length;
+  // State สำหรับเปิด Modal เพิ่มใบงานด่วนหน้างาน (Ad-hoc Job)
+  const [isAdHocModalOpen, setIsAdHocModalOpen] = useState(false);
   
-  // ⚠️ รายการงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE)
-  const unrepairableJobsList = filteredJobs.filter(j => j.status === 'UNREPAIRABLE');
+  // State สำหรับแก้ไขงานเดิม (Editing Job)
+  const [editingJob, setEditingJob] = useState(null);
 
-  // 📄 ระบบแบ่งหน้า (Pagination Logic)
-  const totalPages = Math.ceil(filteredJobs.length / itemsPerPage) || 1;
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentJobs = filteredJobs.slice(startIndex, startIndex + itemsPerPage);
+  // 📸 State สำหรับระบบค้นหาและแก้ไขรูปภาพใบงานที่ปิดแล้ว
+  const [completedSearchTerm, setCompletedSearchTerm] = useState('');
+  const [editingPhotoJob, setEditingPhotoJob] = useState(null);
 
-  const handleTabChange = (type) => {
-    setReportType(type);
-    setCurrentPage(1);
-  };
+  const [adHocData, setAdHocData] = useState({
+    receivedNo: '',
+    reporterName: '',
+    phone: '',
+    location: '',
+    complaintTopicType: 'ท่อแตกรั่ว',
+    customComplaintTopic: '',
+    urgency: 'ด่วน'
+  });
 
-  const teamSummary = filteredJobs
-    .filter(j => j.status === 'COMPLETED')
-    .reduce((acc, job) => {
-      let techName = job.techName || job.technician || 'ไม่ระบุทีม';
-      if (techName.includes('(')) {
-        techName = techName.split('(')[0].trim();
-      }
-      acc[techName] = (acc[techName] || 0) + 1;
-      return acc;
-    }, {});
+  const [images, setImages] = useState({ before: [], inProgress: [], after: [] });
+  
+  // 🛠️ State สำหรับระบบเลือกอุปกรณ์จาก Google Sheets
+  const [equipmentList, setEquipmentList] = useState(DEFAULT_EQUIPMENT_LIST);
+  const [isLoadingEquipment, setIsLoadingEquipment] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [selectedEquipmentItem, setSelectedEquipmentItem] = useState(null);
+  
+  // ✏️ ปรับเป็น String รองรับการพิมพ์อินพุตข้อความตามต้องการ
+  const [equipmentQuantity, setEquipmentQuantity] = useState('1'); 
+  const [selectedEquipmentList, setSelectedEquipmentList] = useState([]);
+  const [notes, setNotes] = useState('');
 
-  const pipeSummary = filteredJobs
-    .filter(j => j.status === 'COMPLETED')
-    .reduce((acc, job) => {
-      const type = job.pipeType || 'ไม่ระบุชนิด';
-      const size = job.pipeSize ? `${job.pipeSize} มม.` : 'ไม่ระบุขนาด';
-      const key = `${type} (ขนาด ${size})`;
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
+  // 💧 State เพิ่มเติม: เช็คบ็อกซ์น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์
+  const [isNoEquipmentUsed, setIsNoEquipmentUsed] = useState(false);
 
-  // 🔒 ฟังก์ชันตรวจสอบสิทธิ์แอดมินก่อนอนุญาตให้ลบข้อมูล
-  const checkAdminPermission = () => {
-    if (currentUser && currentUser.role === 'viewer') {
-      alert("❌ คุณไม่มีสิทธิ์ในการลบข้อมูล (สิทธิ์ของคุณเป็นผู้ดูรายงาน)");
-      return false;
-    }
-    return true;
-  };
+  // ⚠️ State เพิ่มเติมสำหรับกรณีไม่สามารถซ่อมได้
+  const [isUnrepairable, setIsUnrepairable] = useState(false);
+  const [unrepairableReasonType, setUnrepairableReasonType] = useState('ติดสิ่งกีดขวาง/โครงสร้างอาคาร/สิ่งปลูกสร้าง');
+  const [customUnrepairableReason, setCustomUnrepairableReason] = useState('');
+  const [unrepairableDetails, setUnrepairableDetails] = useState('');
 
-  const handleRequestDelete = (job) => {
-    if (!checkAdminPermission()) return;
-    setJobToDelete(job);
-  };
+  // State สำหรับชนิดท่อและขนาดท่อ
+  const [pipeType, setPipeType] = useState('HDPE');
+  const [pipeSize, setPipeSize] = useState('110');
 
-  // 🗑️ ฟังก์ชันลบข้อมูลออกจากทั้ง Firebase และ Google Sheets พร้อมกัน
-  const handleConfirmDelete = async () => {
-    if (!jobToDelete) return;
-    
-    // ดึงรหัสอ้างอิงหลัก เช่น "JOB-003478" จากฟิลด์ id หรือ receivedNo
-    const targetKey = jobToDelete.id || jobToDelete.receivedNo || jobToDelete.firebaseKey;
-    
-    if (!targetKey) {
-      alert("⚠️ ไม่พบรหัสอ้างอิงสำหรับลบข้อมูลในระบบ");
-      setJobToDelete(null);
-      return;
-    }
+  const [coords, setCoords] = useState({ lat: null, lng: null });
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-    try {
-      // 1. 🗑️ ลบออกจาก Firebase Realtime Database (Node: repairs)
-      const jobRef = ref(db, `repairs/${targetKey}`); 
-      await remove(jobRef);
-      
-      // 2. 🌐 ลบออกจาก Google Sheets ผ่าน Apps Script Web App API
-      // (คุณสามารถใส่ URL Web App ตรงๆ หรือใช้ Environment Variable จาก Vercel เช่น import.meta.env.VITE_GAS_URL)
-      const GOOGLE_SCRIPT_URL = "ใส่_URL_Web_App_ของ_Google_Apps_Script_ที่นี่"; 
-      
-      if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec") {
-        await fetch(GOOGLE_SCRIPT_URL, {
-          method: "POST",
-          mode: "no-cors", // ป้องกันปัญหา CORS
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ action: "delete_job", id: targetKey })
-        });
-      }
+  const pipeTypes = ['PB', 'PVC', 'AC', 'HDPE', 'GS', 'SP'];
+  const pipeSizes = ['20', '25', '40', '50', '100', '110', '150', '160', '200', '225', '250', '280', '300', '315', '400', '630'];
 
-      alert(`🗑️ ลบข้อมูล ${targetKey} ออกจากทั้ง Firebase และ Google Sheets เรียบร้อยแล้ว`);
-      
-      // รีเฟรชหน้าเว็บอัตโนมัติเพื่อให้ตารางอัปเดตข้อมูลล่าสุดทันที
-      window.location.reload(); 
-    } catch (error) {
-      console.error("Error deleting job: ", error);
-      alert("❌ เกิดข้อผิดพลาดในการลบข้อมูล: " + error.message);
-    } finally {
-      setJobToDelete(null);
-    }
-  };
+  const unrepairableReasons = [
+    'ติดสิ่งกีดขวาง/โครงสร้างอาคาร/สิ่งปลูกสร้าง',
+    'จำเป็นต้องใช้เครื่องจักรใหญ่/รถขุด (ตักเปิดหน้าดิน)',
+    'ต้องประสานตัดท่อเมนใหญ่/ดับน้ำพื้นที่กว้าง',
+    'ท่อวางลึกเกินศักยภาพเครื่องมือช่างภาคสนาม',
+    'รอหนังสืออนุญาตรื้อถอน/ขุดเจาะจากทางหลวงหรือท้องถิ่น',
+    'พบว่าเป็นท่อภายในบ้าน/หลังมาตรผู้ใช้น้ำ',
+    'หาจุดแตกรั่วไม่พบ (ต้องใช้เครื่องฟังเสียงสำรวจ)',
+    'อื่นๆ (ระบุในรายละเอียด)'
+  ];
 
-  // 📸 ฟังก์ชันแปลงและแยกรูปภาพ
+  // 📸 ฟังก์ชันแปลงรูปภาพจาก Array / String / JSON ให้เป็น Array มาตรฐาน
   const parseImages = (imgData) => {
     if (!imgData) return [];
     try {
@@ -234,854 +114,1402 @@ export default function ReportsView({ jobs, currentUser }) {
     return [];
   };
 
-  const handleDownloadSingleImage = async (url, filename) => {
+  // ☁️ ฟังก์ชันอัปโหลด Base64 ไปสร้างเป็นไฟล์เก็บใน Google Drive
+  const uploadImagesToDrive = async (imgObj) => {
     try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename || 'repair-image.jpg';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
+      const response = await fetch(WEB_APP_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "upload_images",
+          images: imgObj
+        })
+      });
+      const resData = await response.json();
+      if (resData.status === "success" && resData.imageUrls) {
+        return resData.imageUrls;
+      }
     } catch (err) {
-      window.open(url, '_blank');
+      console.error("Failed to upload images to Drive:", err);
     }
+    return imgObj;
   };
 
-  const handleExportCSV = () => {
-    if (filteredJobs.length === 0) {
-      alert("ไม่มีข้อมูลสำหรับส่งออก");
-      return;
-    }
+  // 🌐 ดึงข้อมูลรายการอุปกรณ์จาก Google Sheets
+  useEffect(() => {
+    const fetchEquipmentFromSheets = async () => {
+      setIsLoadingEquipment(true);
+      try {
+        const response = await fetch(`${WEB_APP_URL}?action=equipment`);
+        const data = await response.json();
 
-    const headers = ["ID", "ReceivedNo", "Smart1662No", "CreatedAt", "CompletedAt", "ReporterName", "Phone", "Location", "Latitude", "Longitude", "ComplaintTopic", "PipeType", "PipeSize", "Technician", "Status", "Notes"];
-    const csvRows = [headers.join(",")];
-
-    filteredJobs.forEach(job => {
-      const row = [
-        `"${job.id || job.receivedNo || ""}"`,
-        `"${job.receivedNo || ""}"`,
-        `"${job.smart1662No || ""}"`,
-        `"${job.receivedAt || job.createdAt || ""}"`,
-        `"${job.completedAt || ""}"`,
-        `"${job.reporterName || job.complainantInfo || ""}"`,
-        `"${job.phone || job.complainantInfo || ""}"`,
-        `"${(job.location || "").replace(/"/g, '""')}"`,
-        `"${job.latitude || ""}"`,
-        `"${job.longitude || ""}"`,
-        `"${job.complaintTopic || job.issueType || ""}"`,
-        `"${job.pipeType || ""}"`,
-        `"${job.pipeSize || ""}"`,
-        `"${job.technician || ""}"`,
-        job.status || "",
-        `"${(job.notes || job.description || "").replace(/"/g, '""')}"`
-      ];
-      csvRows.push(row.join(","));
-    });
-
-    const csvBlob = new Blob(["\uFEFF" + csvRows.join("\n")], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(csvBlob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("target", "_blank");
-    link.setAttribute("download", `PWA_NakhonPhanom_Report_${reportType}_${todayStr}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleStartPrint = (job) => {
-    setSelectedJobForPrint(job);
-    setSmart1662Input(job.smart1662No || '');
-  };
-
-  const handleConfirmAndOpenReport = () => {
-    if (!selectedJobForPrint) return;
-
-    const job = {
-      ...selectedJobForPrint,
-      smart1662No: smart1662Input.trim()
+        if (Array.isArray(data) && data.length > 0) {
+          setEquipmentList(data);
+        } else {
+          setEquipmentList(DEFAULT_EQUIPMENT_LIST);
+        }
+      } catch (err) {
+        console.error("Error fetching equipment:", err);
+        setEquipmentList(DEFAULT_EQUIPMENT_LIST);
+      } finally {
+        setIsLoadingEquipment(false);
+      }
     };
 
-    const imagesBefore = parseImages(job.beforeImgBase64 || job.beforeImg);
-    const imagesInProg = parseImages(job.inProgImgBase64 || job.inProgImg);
-    const imagesAfter = parseImages(job.afterImgBase64 || job.afterImg);
+    if (currentTeam) {
+      fetchEquipmentFromSheets();
+    }
+  }, [currentTeam]);
 
-    const newWindow = window.open('', '_blank');
-    if (!newWindow) {
-      alert("กรุณาอนุญาตให้เบราว์เซอร์เปิดหน้าต่างป๊อปอัป (Popup) เพื่อดูรายงาน A4");
+  // ฟังก์ชันค้นหาอุปกรณ์
+  const handleSearchEquipmentChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    
+    if (!value || !value.trim()) {
+      setSuggestions([]);
+    } else {
+      const query = value.trim().toLowerCase();
+      const filtered = equipmentList.filter(item => {
+        const itemName = String(
+          item.name || item.itemName || item.ชื่ออุปกรณ์ || item.รายการ || item.อุปกรณ์ || ''
+        ).trim().toLowerCase();
+
+        return itemName.includes(query);
+      });
+      setSuggestions(filtered);
+    }
+  };
+
+  const handleSelectEquipmentSuggestion = (item) => {
+    const itemName = item.name || item.itemName || item.อุปกรณ์ || '';
+    setSelectedEquipmentItem(item);
+    setSearchTerm(itemName);
+    setSuggestions([]);
+  };
+
+  // 🛠️ ปรับระบบเพิ่มอุปกรณ์ ให้จัดฟอร์แมตข้อความแบบ : [จำนวน] [หน่วย]
+  const handleAddEquipmentToList = () => {
+    if (!searchTerm.trim()) {
+      alert("กรุณาพิมพ์หรือเลือกชื่ออุปกรณ์");
       return;
     }
 
-    const logoPath = `${window.location.origin}/pwa.webp`;
+    const itemName = selectedEquipmentItem 
+      ? (selectedEquipmentItem.name || selectedEquipmentItem.itemName || selectedEquipmentItem.อุปกรณ์) 
+      : searchTerm.trim();
+    
+    const itemUnit = selectedEquipmentItem 
+      ? (selectedEquipmentItem.unit || selectedEquipmentItem.หน่วยนับ || selectedEquipmentItem.หน่วย || 'หน่วย') 
+      : 'หน่วย';
 
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>ตัวอย่างก่อนพิมพ์</title>
-        <meta charset="UTF-8">
-        <style>
-          @page {
-            size: A4 portrait;
-            margin: 12mm;
-          }
-          body { 
-            font-family: 'Sarabun', 'Tahoma', sans-serif; 
-            margin: 0; 
-            padding: 15px; 
-            color: #1e293b; 
-            background: #fff; 
-            -webkit-print-color-adjust: exact;
-          }
-          .container { 
-            max-width: 750px; 
-            margin: 0 auto; 
-            background: white; 
-          }
-          .header-wrapper { 
-            display: flex; 
-            align-items: center; 
-            justify-content: space-between; 
-            border-bottom: 2px solid #2563eb; 
-            padding-bottom: 10px; 
-            margin-bottom: 15px; 
-          }
-          .logo { width: 60px; height: 60px; object-fit: contain; }
-          .header-text { flex-grow: 1; text-align: center; margin-right: 60px; }
-          .header-text h1 { font-size: 18px; margin: 0; color: #0f172a; font-weight: bold; }
-          .header-text h2 { font-size: 14px; margin: 4px 0 0 0; color: #2563eb; font-weight: bold; }
-          
-          .info-box { 
-            background: #f8fafc; 
-            border: 1px solid #cbd5e1; 
-            padding: 12px 15px; 
-            border-radius: 8px; 
-            margin-bottom: 15px; 
-            font-size: 12px; 
-            line-height: 1.6; 
-          }
-          .info-row { 
-            display: flex; 
-            justify-content: space-between; 
-            margin-top: 6px; 
-            border-top: 1px solid #e2e8f0; 
-            padding-top: 6px; 
-          }
+    const newItem = {
+      id: Date.now(),
+      name: itemName,
+      quantity: String(equipmentQuantity).trim() || '1',
+      unit: itemUnit
+    };
 
-          .section-block {
-            page-break-inside: avoid;
-            margin-bottom: 15px;
-          }
+    const updatedList = [...selectedEquipmentList, newItem];
+    setSelectedEquipmentList(updatedList);
 
-          .section-title { 
-            font-weight: bold; 
-            font-size: 12px; 
-            background: #e2e8f0; 
-            color: #1e293b;
-            padding: 6px 10px; 
-            margin-bottom: 8px; 
-            border-radius: 5px; 
-            text-transform: uppercase; 
-          }
-          
-          .img-grid { 
-            display: grid; 
-            grid-template-columns: repeat(3, 1fr); 
-            gap: 8px; 
-          }
-          .img-card { 
-            border: 1px solid #cbd5e1; 
-            border-radius: 6px; 
-            overflow: hidden; 
-            height: 130px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            background: #f1f5f9; 
-            page-break-inside: avoid;
-          }
-          .img-card img { width: 100%; height: 100%; object-fit: cover; }
-          
-          .no-img { 
-            font-size: 11px; 
-            color: #94a3b8; 
-            text-align: center; 
-            padding: 12px; 
-            border: 1px dashed #cbd5e1; 
-            border-radius: 6px; 
-          }
+    // รูปแบบการบันทึก: ข้อต่อตรง HDPE 110 มม. : 1 ตัว
+    const summaryText = updatedList.map(i => `${i.name} : ${i.quantity} ${i.unit}`).join('\n');
+    setNotes(summaryText);
 
-          .signature-section { 
-            margin-top: 30px; 
-            display: flex; 
-            justify-content: flex-end; 
-            page-break-inside: avoid;
-          }
-          .signature-box { text-align: center; width: 240px; font-size: 12px; line-height: 1.8; }
-          
-          .print-btn { 
-            display: block; 
-            width: 100%; 
-            background: #059669; 
-            color: white; 
-            border: none; 
-            padding: 10px; 
-            font-size: 13px; 
-            font-weight: bold; 
-            border-radius: 8px; 
-            cursor: pointer; 
-            margin-bottom: 15px; 
-            text-align: center; 
-          }
-          .print-btn:hover { background: #047857; }
-
-          @media print {
-            .print-btn { display: none; }
-            body { padding: 0; background: none; }
-            .container { border: none; padding: 0; width: 100%; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <button class="print-btn" onclick="window.print()">🖨️ พิมพ์ / บันทึกเป็น PDF (A4)</button>
-          
-          <div class="header-wrapper">
-            <img src="${logoPath}" alt="โลโก้ กปภ." class="logo" onerror="this.style.display='none'" />
-            <div class="header-text">
-              <h1>การประปาส่วนภูมิภาคสาขานครพนม</h1>
-              <h2>รายงานผลการปฏิบัติงานซ่อมท่อประปา</h2>
-            </div>
-          </div>
-
-          <div class="info-box">
-            <div><strong>เลขที่รับแจ้ง:</strong> <span style="font-family: monospace; color: #2563eb; font-weight: bold;">${job.id || job.receivedNo}</span></div>
-            ${job.smart1662No ? `<div><strong>เลขที่ปิดงานซ่อม Smart 1662:</strong> <span style="font-family: monospace; color: #0891b2; font-weight: bold;">${job.smart1662No}</span></div>` : ''}
-            <div><strong>สถานที่ซ่อม:</strong> ${job.location || '-'}</div>
-
-            ${job.pipeType || job.pipeSize ? `
-              <div style="margin-top: 6px; border-top: 1px solid #e2e8f0; padding-top: 6px;">
-                <strong>วัสดุท่อที่ซ่อม:</strong> 
-                <span style="color: #ea580c; font-weight: bold;">ท่อชนิด ${job.pipeType || 'ไม่ระบุ'} ขนาด ${job.pipeSize ? job.pipeSize + ' มม.' : 'ไม่ระบุ'}</span>
-              </div>
-            ` : ''}
-
-            ${job.latitude && job.longitude ? `
-              <div><strong>พิกัด GPS โลเคชั่น:</strong> 
-                <span style="font-family: monospace; color: #059669; font-weight: bold;">${job.latitude}, ${job.longitude}</span>
-                <a href="https://www.google.com/maps?q=${job.latitude},${job.longitude}" target="_blank" style="margin-left: 10px; color: #2563eb; text-decoration: none; font-size: 11px;">[🗺️ เปิดดูแผนที่ Google Maps]</a>
-              </div>
-            ` : ''}
-
-            <div class="info-row">
-              <span><strong>ผู้แจ้ง:</strong> ${job.reporterName || job.complainantInfo || '-'} (${job.phone || job.complainantInfo || '-'})</span>
-              <span><strong>ทีมช่างซ่อม:</strong> ${job.technician || '-'}</span>
-            </div>
-            <div class="info-row">
-              <span><strong>วันเวลาที่รับแจ้ง:</strong> ${job.receivedAt || job.createdAt || '-'}</span>
-              <span><strong>วันเวลาแล้วเสร็จ:</strong> <span style="color: #059669; font-weight: bold;">${job.completedAt || 'ยังไม่ปิดงาน'}</span></span>
-            </div>
-          </div>
-
-          <div class="section-block">
-            <div class="section-title">ภาพก่อนซ่อม (${imagesBefore.length} รูป)</div>
-            ${imagesBefore.length > 0 
-              ? `<div class="img-grid">${imagesBefore.map(src => `<div class="img-card"><img src="${src}" /></div>`).join('')}</div>` 
-              : '<div class="no-img">ไม่มีรูปภาพก่อนซ่อม</div>'}
-          </div>
-
-          <div class="section-block">
-            <div class="section-title">ภาพระหว่างซ่อม (${imagesInProg.length} รูป)</div>
-            ${imagesInProg.length > 0 
-              ? `<div class="img-grid">${imagesInProg.map(src => `<div class="img-card"><img src="${src}" /></div>`).join('')}</div>` 
-              : '<div class="no-img">ไม่มีรูปภาพระหว่างซ่อม</div>'}
-          </div>
-
-          <div class="section-block">
-            <div class="section-title">ภาพหลังซ่อมเสร็จ (${imagesAfter.length} รูป)</div>
-            ${imagesAfter.length > 0 
-              ? `<div class="img-grid">${imagesAfter.map(src => `<div class="img-card"><img src="${src}" /></div>`).join('')}</div>` 
-              : '<div class="no-img">ไม่มีรูปภาพหลังซ่อม</div>'}
-          </div>
-
-          <div class="info-box section-block" style="margin-top: 15px;">
-            <strong>อุปกรณ์ที่ใช้:</strong> ${job.notes || job.description || '-'}
-          </div>
-
-          <div class="signature-section">
-            <div class="signature-box">
-              <p>ลงชื่อ........................................................</p>
-              <p>(........................................................)</p>
-              <p>ตำแหน่ง...................................................</p>
-            </div>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-
-    newWindow.document.write(htmlContent);
-    newWindow.document.close();
-    setSelectedJobForPrint(null);
+    setSearchTerm('');
+    setSelectedEquipmentItem(null);
+    setEquipmentQuantity('1');
   };
 
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6 text-slate-800">
-      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <TrendingUp className="w-6 h-6 text-blue-600" />
-            รายงานผลการปฏิบัติงานซ่อมท่อประปา
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">กปภ.สาขานครพนม - ติดตามสถิติและการดำเนินงาน (อิงตามวันที่รับแจ้ง)</p>
-        </div>
+  const handleRemoveEquipmentItem = (id) => {
+    const updatedList = selectedEquipmentList.filter(item => item.id !== id);
+    setSelectedEquipmentList(updatedList);
+    const summaryText = updatedList.map(i => `${i.name} : ${i.quantity} ${i.unit}`).join('\n');
+    setNotes(summaryText);
+  };
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button 
-            onClick={handleExportCSV}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
-          >
-            <Download className="w-4 h-4" /> Export CSV (Excel)
-          </button>
+  const handleClearAllEquipment = () => {
+    if (selectedEquipmentList.length === 0) return;
+    if (window.confirm("คุณต้องการยกเลิกอุปกรณ์ที่เลือกทั้งหมดใช่หรือไม่?")) {
+      setSelectedEquipmentList([]);
+      setNotes('');
+    }
+  };
 
-          <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-wrap gap-1">
-            {[
-              { id: 'all', label: 'ทั้งหมด' },
-              { id: 'daily', label: 'วันนี้' },
-              { id: 'weekly', label: 'รายสัปดาห์' },
-              { id: 'monthly', label: 'รายเดือน' },
-              { id: 'yearly', label: 'รายปี' }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  reportType === tab.id ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+  const handleToggleNoEquipment = (checked) => {
+    setIsNoEquipmentUsed(checked);
+    if (checked) {
+      setSelectedEquipmentList([]);
+      setSearchTerm('');
+      setNotes('น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์');
+    } else {
+      setNotes('');
+    }
+  };
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white p-6 rounded-3xl shadow-md space-y-2">
-          <p className="text-xs text-blue-100 font-medium">ใบแจ้งซ่อมทั้งหมด ({reportType.toUpperCase()})</p>
-          <h3 className="text-3xl font-bold">{filteredJobs.length} <span className="text-sm font-normal">เคส</span></h3>
-        </div>
-        <div className="bg-gradient-to-br from-emerald-600 to-teal-700 text-white p-6 rounded-3xl shadow-md space-y-2">
-          <p className="text-xs text-emerald-100 font-medium">ดำเนินการเสร็จสิ้น (ปิดงาน)</p>
-          <h3 className="text-3xl font-bold">{completedCount} <span className="text-sm font-normal">จุด</span></h3>
-        </div>
-        <div className="bg-gradient-to-br from-amber-500 to-orange-600 text-white p-6 rounded-3xl shadow-md space-y-2">
-          <p className="text-xs text-amber-100 font-medium">กำลังดำเนินการ / ค้างซ่อม</p>
-          <h3 className="text-3xl font-bold">{inProgressCount} <span className="text-sm font-normal">จุด</span></h3>
-        </div>
-      </div>
+  const handleLogin = (teamName) => {
+    setCurrentTeam(teamName);
+    localStorage.setItem('pwa_worker_team', teamName);
+  };
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* 📊 สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
-          <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-            <Users className="w-4 h-4 text-indigo-600" />
-            สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง
-          </h3>
-          
-          {Object.keys(teamSummary).length === 0 ? (
-            <p className="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลงานที่ซ่อมเสร็จสิ้นในช่วงเวลานี้</p>
-          ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {Object.entries(teamSummary).map(([teamName, count]) => (
-                <div key={teamName} className="bg-slate-50 border border-slate-200/80 p-3 rounded-2xl flex justify-between items-center shadow-xs">
-                  <span className="text-xs font-bold text-slate-700 truncate">{teamName}</span>
-                  <span className="bg-indigo-600 text-white text-xs font-bold px-2.5 py-1 rounded-xl shadow-xs">
-                    {count} จุด
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+  const handleLogoutAction = () => {
+    setCurrentTeam('');
+    localStorage.removeItem('pwa_worker_team');
+    setSelectedJob(null);
+    setEditingPhotoJob(null);
+    if (onLogout) {
+      onLogout();
+    }
+  };
 
-        {/* 🛠️ สรุปชนิดและขนาดท่อที่ใช้ซ่อม */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
-          <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-            <Layers className="w-4 h-4 text-orange-600" />
-            สรุปชนิดและขนาดท่อที่ใช้ซ่อม
-          </h3>
-          
-          {Object.keys(pipeSummary).length === 0 ? (
-            <p className="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลชนิดและขนาดท่อในช่วงเวลานี้</p>
-          ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {Object.entries(pipeSummary).map(([pipeInfo, count]) => (
-                <div key={pipeInfo} className="bg-orange-50/50 border border-orange-200/80 p-3 rounded-2xl flex justify-between items-center shadow-xs">
-                  <span className="text-xs font-bold text-slate-700 truncate">{pipeInfo}</span>
-                  <span className="bg-orange-600 text-white text-xs font-bold px-2.5 py-1 rounded-xl shadow-xs">
-                    {count} จุด
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+  const generateAutoReceivedNo = () => {
+    const now = new Date();
+    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    
+    const yy = String(thaiTime.getFullYear()).slice(-2);
+    const mm = String(thaiTime.getMonth() + 1).padStart(2, '0');
+    const dd = String(thaiTime.getDate()).padStart(2, '0');
+    const hh = String(thaiTime.getHours()).padStart(2, '0');
+    const min = String(thaiTime.getMinutes()).padStart(2, '0');
+    const dateCode = `${yy}${mm}${dd}-${hh}${min}`;
 
-        {/* ⚠️ สรุปงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
-          <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-rose-600" />
-            งานที่ไม่สามารถดำเนินการได้
-          </h3>
+    const runningNo = String((jobs ? jobs.length : 0) + 1).padStart(2, '0');
+    const teamShortName = currentTeam || 'ทีมช่าง';
 
-          <div className="bg-rose-50/70 border border-rose-200 p-4 rounded-2xl flex justify-between items-center shadow-xs">
-            <div>
-              <p className="text-xs text-rose-800 font-bold">รวมอุปสรรค / ซ่อมไม่ได้</p>
-              <p className="text-[10px] text-rose-600">คลิกเพื่อดูรายละเอียดรายจุด</p>
-            </div>
-            
-            <button
-              onClick={() => setIsUnrepairableModalOpen(true)}
-              className="bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1"
-            >
-              {unrepairableJobsList.length} จุด <Eye className="w-3.5 h-3.5 ml-0.5" />
-            </button>
-          </div>
-          <p className="text-[11px] text-slate-400">ตรวจสอบสาเหตุอุปสรรคหน้างานที่ไม่สามารถซ่อมเสร็จได้ในช่วงเวลานี้</p>
-        </div>
-      </div>
+    return `${teamShortName}-${dateCode}-${runningNo}`;
+  };
 
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+  const handleOpenAdHocModal = () => {
+    setEditingJob(null);
+    setAdHocData({
+      receivedNo: generateAutoReceivedNo(),
+      reporterName: '',
+      phone: '',
+      location: '',
+      complaintTopicType: 'ท่อแตกรั่ว',
+      customComplaintTopic: '',
+      urgency: 'ด่วน'
+    });
+    setIsAdHocModalOpen(true);
+  };
+
+  const handleOpenEditModal = (job) => {
+    if (job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน') {
+      alert("ไม่อนุญาตให้แก้ไข: งานนี้เป็นงานที่ได้รับมอบหมายจากแอดมิน");
+      return;
+    }
+
+    setEditingJob(job);
+    const isStandardTopic = ['ท่อแตกรั่ว', 'น้ำไม่ไหล/น้ำไหลอ่อน'].includes(job.complaintTopic);
+    
+    setAdHocData({
+      receivedNo: job.receivedNo || job.id,
+      reporterName: job.reporterName !== 'ไม่ระบุชื่อ' ? job.reporterName : '',
+      phone: job.phone !== '-' ? job.phone : '',
+      location: job.location || '',
+      complaintTopicType: isStandardTopic ? job.complaintTopic : 'อื่นๆ',
+      customComplaintTopic: isStandardTopic ? '' : job.complaintTopic,
+      urgency: job.urgency || 'ปกติ'
+    });
+    setIsAdHocModalOpen(true);
+  };
+
+  const handleDeleteJobAction = async (job) => {
+    if (job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน') {
+      alert("ไม่อนุญาตให้ลบ: งานนี้เป็นงานที่ได้รับมอบหมายจากแอดมิน");
+      return;
+    }
+
+    if (job.status === 'COMPLETED') {
+      alert("ไม่สามารถลบใบงานที่ซ่อมเสร็จสิ้นแล้วได้");
+      return;
+    }
+
+    if (window.confirm(`คุณต้องการลบใบแจ้งซ่อมเลขที่ "${job.receivedNo || job.id}" ใช่หรือไม่?`)) {
+      try {
+        if (onDeleteJob) {
+          await onDeleteJob(job.id);
+        } else {
+          await onUpdateJobStatus(job.id, 'DELETED');
+        }
+        alert("ลบรายการแจ้งซ่อมเรียบร้อยแล้ว");
+      } catch (err) {
+        console.error("Error deleting job:", err);
+        alert("เกิดข้อผิดพลาดในการลบรายการ");
+      }
+    }
+  };
+
+  const getUrgencyWeight = (urgency) => {
+    switch (urgency) {
+      case 'ด่วนมาก': return 3;
+      case 'ด่วน': return 2;
+      case 'ปกติ': 
+      default: return 1;
+    }
+  };
+
+  // 🔄 ดึงรายการงานค้าง (DISPATCHED, IN_PROGRESS, UNREPAIRABLE)
+  const activeJobs = jobs
+    .filter(j => {
+      const matchTechName = j.techName && j.techName.trim() === currentTeam.trim();
+      const matchTechnicianStr = j.technician && j.technician.includes(currentTeam);
+      const isMyTeam = matchTechName || matchTechnicianStr;
+      
+      const isValidStatus = ['DISPATCHED', 'IN_PROGRESS', 'UNREPAIRABLE'].includes(j.status);
+      return isMyTeam && isValidStatus;
+    })
+    .sort((a, b) => {
+      const weightA = getUrgencyWeight(a.urgency);
+      const weightB = getUrgencyWeight(b.urgency);
+      if (weightA !== weightB) return weightB - weightA;
+
+      const timeA = new Date(a.receivedAt || a.createdAt || 0).getTime();
+      const timeB = new Date(b.receivedAt || b.createdAt || 0).getTime();
+      return timeA - timeB;
+    });
+
+  // 📸 ดึงรายการใบงานที่ปิดแล้วของทีมตัวเอง
+  const myCompletedJobs = jobs.filter(j => {
+    const matchTechName = j.techName && j.techName.trim() === currentTeam.trim();
+    const matchTechnicianStr = j.technician && j.technician.includes(currentTeam);
+    const isMyTeam = matchTechName || matchTechnicianStr;
+    const isClosed = ['COMPLETED', 'CLOSED', 'UNREPAIRABLE'].includes(j.status);
+    
+    if (!isMyTeam || !isClosed) return false;
+
+    if (completedSearchTerm.trim()) {
+      const term = completedSearchTerm.trim().toLowerCase();
+      const matchNo = (j.receivedNo || j.id || '').toLowerCase().includes(term);
+      const matchName = (j.reporterName || '').toLowerCase().includes(term);
+      const matchPhone = (j.phone || '').toLowerCase().includes(term);
+      const matchLocation = (j.location || '').toLowerCase().includes(term);
+      return matchNo || matchName || matchPhone || matchLocation;
+    }
+
+    return true;
+  });
+
+  // 📸 ฟังก์ชันเปิดหน้าต่างแก้ไขรูปภาพสำหรับใบงานที่ปิดแล้ว
+  const handleOpenEditPhotosModal = (job) => {
+    setEditingPhotoJob(job);
+    setImages({
+      before: parseImages(job.beforeImgBase64 || job.beforeImg || job.BeforeImg),
+      inProgress: parseImages(job.inProgImgBase64 || job.inProgImg || job.InProgImg),
+      after: parseImages(job.afterImgBase64 || job.afterImg || job.AfterImg)
+    });
+  };
+
+  // 📸 บันทึกการอัปเดตรูปภาพของใบงานที่ปิดแล้ว
+  const handleSaveUpdatedPhotos = async () => {
+    if (!editingPhotoJob) return;
+
+    setIsSubmitting(true);
+    try {
+      const driveUrls = await uploadImagesToDrive(images);
+
+      const updatedData = {
+        ...editingPhotoJob,
+        beforeImgBase64: driveUrls.before,
+        inProgImgBase64: driveUrls.inProgress,
+        afterImgBase64: driveUrls.after,
+        beforeImg: driveUrls.before,
+        inProgImg: driveUrls.inProgress,
+        afterImg: driveUrls.after
+      };
+
+      const jobDataPayload = {
+        action: "archive_job",
+        jobData: {
+          id: editingPhotoJob.id,
+          receivedNo: editingPhotoJob.receivedNo || editingPhotoJob.id,
+          timestamp: editingPhotoJob.receivedAt || editingPhotoJob.timestamp || new Date().toLocaleString("th-TH"),
+          reporterName: editingPhotoJob.reporterName || 'ไม่ระบุชื่อ',
+          phone: editingPhotoJob.phone || '-',
+          location: editingPhotoJob.location || '-',
+          issueType: editingPhotoJob.complaintTopic || editingPhotoJob.issueType || 'ท่อแตกรั่ว',
+          pipeType: editingPhotoJob.pipeType || '-',
+          pipeSize: editingPhotoJob.pipeSize || '-',
+          description: editingPhotoJob.details || '-',
+          technician: currentTeam,
+          status: editingPhotoJob.status || 'COMPLETED',
+          beforeImgBase64: driveUrls.before,
+          inProgImgBase64: driveUrls.inProgress,
+          afterImgBase64: driveUrls.after,
+          notes: editingPhotoJob.notes || '-',
+          closedAt: editingPhotoJob.closedAt || editingPhotoJob.completedAt || new Date().toLocaleString("th-TH")
+        }
+      };
+
+      await onUpdateJobStatus(editingPhotoJob.id, editingPhotoJob.status, updatedData, jobDataPayload);
+      alert("อัปเดตรูปภาพใบงานเรียบร้อยแล้ว!");
+      setEditingPhotoJob(null);
+      setImages({ before: [], inProgress: [], after: [] });
+    } catch (err) {
+      console.error("Error updating photos:", err);
+      alert("เกิดข้อผิดพลาดในการบันทึกรูปภาพ");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleMultipleImagesChange = async (type, files) => {
+    if (!files || files.length === 0) return;
+    try {
+      const compressedList = [];
+      for (let i = 0; i < files.length; i++) {
+        const compressedBase64 = await compressImage(files[i], 1024, 0.7);
+        compressedList.push(compressedBase64);
+      }
+      setImages(prev => ({ ...prev, [type]: [...prev[type], ...compressedList] }));
+    } catch (err) {
+      console.error("Image compression error:", err);
+      alert("เกิดข้อผิดพลาดในการโหลดรูปภาพ");
+    }
+  };
+
+  const handleRemoveImage = (type, index) => {
+    setImages(prev => ({ ...prev, [type]: prev[type].filter((_, i) => i !== index) }));
+  };
+
+  const handleGetGPS = () => {
+    if (!navigator.geolocation) {
+      alert("เบราว์เซอร์ของคุณไม่รองรับการระบุตำแหน่ง GPS");
+      return;
+    }
+
+    setIsGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCoords({
+          lat: position.coords.latitude.toFixed(6),
+          lng: position.coords.longitude.toFixed(6)
+        });
+        setIsGettingLocation(false);
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        alert("ไม่สามารถดึงพิกัดได้ (กรุณาอนุญาตการเข้าถึงตำแหน่ง GPS)");
+        setIsGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  const handleSaveAdHocJob = async (e) => {
+    e.preventDefault();
+    if (!adHocData.location.trim()) {
+      alert("กรุณาระบุบริเวณที่เกิดเหตุ");
+      return;
+    }
+
+    const now = new Date();
+    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
+
+    const finalComplaintTopic = adHocData.complaintTopicType === 'อื่นๆ' 
+      ? (adHocData.customComplaintTopic.trim() || 'อื่นๆ') 
+      : adHocData.complaintTopicType;
+
+    if (editingJob) {
+      const updatedPayload = {
+        receivedNo: adHocData.receivedNo,
+        reporterName: adHocData.reporterName.trim() || 'ไม่ระบุชื่อ',
+        phone: adHocData.phone.trim() || '-',
+        location: adHocData.location,
+        complaintTopic: finalComplaintTopic,
+        complaintType: finalComplaintTopic,
+        urgency: adHocData.urgency
+      };
+
+      try {
+        await onUpdateJobStatus(editingJob.id, editingJob.status, updatedPayload);
+        setIsAdHocModalOpen(false);
+        setEditingJob(null);
+        alert("แก้ไขข้อมูลใบงานเรียบร้อยแล้ว");
+      } catch (err) {
+        console.error("Error updating job:", err);
+        alert("เกิดข้อผิดพลาดในการอัปเดตข้อมูล");
+      }
+    } else {
+      const newAdHocJob = {
+        id: 'JOB-' + Date.now().toString().slice(-6),
+        receivedNo: adHocData.receivedNo,
+        receivedAt: currentDateTime,
+        channel: 'พบเหตุหน้างาน/แจ้งฉุกเฉิน',
+        complaintType: finalComplaintTopic,
+        complainantInfo: adHocData.phone || '-',
+        complaintTopic: finalComplaintTopic,
+        details: 'เปิดใบงานด่วนโดยช่างภาคสนามระหว่างปฏิบัติงาน',
+        location: adHocData.location,
+        reporterName: adHocData.reporterName.trim() || 'ไม่ระบุชื่อ',
+        phone: adHocData.phone.trim() || '-',
+        receiverName: currentTeam + ' (ภาคสนาม)',
+        status: 'IN_PROGRESS',
+        urgency: adHocData.urgency,
+        technician: currentTeam,
+        techName: currentTeam,
+        techPhone: '-',
+        dispatchedAt: currentDateTime,
+        inProgressAt: currentDateTime
+      };
+
+      try {
+        await saveJobToFirebase(newAdHocJob);
+        if (onJobCreated) onJobCreated(newAdHocJob);
         
-        {/* 🔎 ส่วนหัวตาราง พร้อมเท็กซ์บ็อกซ์ค้นหาใบงาน */}
-        <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50">
-          <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
-            <FileText className="w-5 h-5 text-blue-600" />
-            รายการใบแจ้งซ่อม กปภ.สาขานครพนม ({filteredJobs.length} รายการ)
-          </h3>
+        setIsAdHocModalOpen(false);
+        setSelectedJob(newAdHocJob);
+        setIsUnrepairable(false);
+        setIsNoEquipmentUsed(false);
+        setCoords({ lat: null, lng: null });
+        alert("สร้างเลขที่รับแจ้งสำเร็จ! กรุณาถ่ายภาพและบันทึกผลการซ่อม");
+      } catch (err) {
+        console.error("Error saving ad-hoc job:", err);
+        alert("ไม่สามารถบันทึกใบงานด่วนได้");
+      }
+    }
+  };
 
-          <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-            {/* 🔍 ช่องค้นหาใบงาน */}
-            <div className="relative w-full sm:w-72">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <Search className="w-4 h-4" />
-              </span>
-              <input 
-                type="text"
-                value={tableSearchTerm}
-                onChange={(e) => {
-                  setTableSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-                placeholder="ค้นหาเลขรับแจ้ง, 1662, ผู้แจ้ง, ชนิดท่อ..."
-                className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-800 shadow-xs"
-              />
-            </div>
+  const handleSubmitFix = async (e) => {
+    e.preventDefault();
+    if (!selectedJob) return;
 
-            <div className="hidden lg:flex items-center gap-2 text-[11px] bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs shrink-0">
-              <span className="font-bold text-slate-500 flex items-center gap-1"><Info className="w-3.5 h-3.5" /> สัญลักษณ์:</span>
-              <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> ปิดงาน</span>
-              <span className="inline-flex items-center gap-1 text-rose-700 font-semibold"><span className="w-2 h-2 rounded-full bg-rose-500"></span> ซ่อมไม่ได้</span>
-              <span className="inline-flex items-center gap-1 text-blue-700 font-semibold"><span className="w-2 h-2 rounded-full bg-blue-500"></span> กำลังซ่อม</span>
-            </div>
+    setIsSubmitting(true);
+    const now = new Date();
+    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
+
+    let finalReason = '';
+    if (isUnrepairable) {
+      finalReason = unrepairableReasonType === 'อื่นๆ (ระบุในรายละเอียด)' 
+        ? (customUnrepairableReason.trim() || 'ไม่ระบุสาเหตุ') 
+        : unrepairableReasonType;
+
+      if (!unrepairableDetails.trim()) {
+        alert("กรุณากรอกรายละเอียดอุปสรรคหน้างานที่ไม่สามารถซ่อมได้");
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    let finalNotes = '';
+    if (isUnrepairable) {
+      finalNotes = `❌ ไม่สามารถซ่อมได้เนื่องจาก: ${finalReason}\nรายละเอียด: ${unrepairableDetails.trim()}`;
+    } else if (isNoEquipmentUsed) {
+      finalNotes = 'น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์';
+    } else {
+      finalNotes = notes || `ใช้อุปกรณ์: ท่อ ${pipeType} ขนาด ${pipeSize} มม.`;
+    }
+
+    try {
+      const driveUrls = await uploadImagesToDrive(images);
+
+      const jobDataPayload = {
+        action: "archive_job",
+        jobData: {
+          id: selectedJob.id,
+          receivedNo: selectedJob.receivedNo || selectedJob.id,
+          timestamp: selectedJob.receivedAt || selectedJob.timestamp || currentDateTime,
+          receivedAt: selectedJob.receivedAt || selectedJob.timestamp || '-',
+          reporterName: selectedJob.reporterName || 'ไม่ระบุชื่อ',
+          phone: selectedJob.phone || '-',
+          location: selectedJob.location || '-',
+          issueType: selectedJob.complaintTopic || selectedJob.issueType || 'ท่อแตกรั่ว',
+          pipeType: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeType,
+          pipeSize: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeSize,
+          description: selectedJob.details || '-',
+          technician: currentTeam,
+          status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
+          beforeImgBase64: driveUrls.before,
+          inProgImgBase64: driveUrls.inProgress,
+          afterImgBase64: driveUrls.after,
+          notes: finalNotes,
+          closedAt: currentDateTime,
+          completedAt: currentDateTime,
+          latitude: coords.lat || selectedJob.latitude || '',
+          longitude: coords.lng || selectedJob.longitude || ''
+        }
+      };
+
+      await onUpdateJobStatus(selectedJob.id, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
+
+      alert(isUnrepairable 
+        ? `บันทึกรายงานซ่อมไม่ได้ของใบงาน ${selectedJob.receivedNo || selectedJob.id} เรียบร้อยแล้ว` 
+        : `ปิดงานซ่อม ${selectedJob.receivedNo || selectedJob.id} เรียบร้อยแล้ว!`
+      );
+    } catch (err) {
+      console.error("Error submitting fix:", err);
+      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+    } finally {
+      setIsSubmitting(false);
+      setSelectedJob(null);
+      setImages({ before: [], inProgress: [], after: [] });
+      setNotes('');
+      setSelectedEquipmentList([]);
+      setIsUnrepairable(false);
+      setIsNoEquipmentUsed(false);
+      setUnrepairableDetails('');
+      setCustomUnrepairableReason('');
+      setPipeType('HDPE');
+      setPipeSize('110');
+      setCoords({ lat: null, lng: null });
+    }
+  };
+
+  if (!currentTeam) {
+    return (
+      <div className="max-w-md mx-auto min-h-screen bg-slate-900 text-white p-6 flex flex-col justify-center space-y-6">
+        <div className="text-center space-y-2">
+          <div className="w-16 h-16 bg-blue-600/20 border border-blue-500/30 rounded-3xl flex items-center justify-center mx-auto text-cyan-400">
+            <Lock className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-bold">เข้าสู่ระบบช่างภาคสนาม</h2>
+          <p className="text-xs text-slate-400">กรุณาเลือกทีมช่างผู้ปฏิบัติงาน เพื่อเข้าดูงานที่ได้รับมอบหมาย</p>
+        </div>
+
+        <div className="bg-slate-800/80 border border-slate-700/80 p-5 rounded-3xl space-y-3 shadow-xl">
+          <label className="block text-xs font-bold text-slate-300">เลือกทีมช่างของคุณ *</label>
+          {!teams || teams.length === 0 ? (
+            <p className="text-xs text-rose-400">ยังไม่มีการเพิ่มบัญชีช่างในระบบ</p>
+          ) : (
+            teams.map((t) => {
+              const teamName = typeof t === 'string' ? t : t.teamName;
+              return (
+                <button
+                  key={teamName}
+                  onClick={() => handleLogin(teamName)}
+                  className="w-full bg-slate-700 hover:bg-blue-600 text-white font-bold p-3.5 rounded-2xl text-xs flex justify-between items-center transition shadow-sm active:scale-95 cursor-pointer"
+                >
+                  <span>{teamName}</span>
+                  <span className="text-[10px] text-cyan-300 bg-blue-950 px-2 py-1 rounded-lg">เลือกทีมนี้</span>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        <button
+          onClick={handleLogoutAction}
+          className="w-full text-xs text-slate-400 hover:text-white py-2 flex items-center justify-center gap-1 cursor-pointer"
+        >
+          <LogOut className="w-3 h-3" /> กลับหน้าหลักเลือกสิทธิ์
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-md mx-auto bg-slate-100 min-h-screen pb-10 border-x border-slate-200">
+      <div className="bg-gradient-to-r from-slate-900 to-blue-900 text-white p-4 sticky top-0 z-20 shadow-md flex justify-between items-center">
+        <div className="flex items-center space-x-2">
+          <div className="p-2 bg-blue-500/20 rounded-lg">
+            <Wrench className="w-5 h-5 text-cyan-400" />
+          </div>
+          <div>
+            <h2 className="font-bold text-sm">{currentTeam}</h2>
+            <p className="text-[10px] text-slate-300">กปภ.สาขานครพนม</p>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 border-b border-slate-100">
-                <th className="p-4 font-semibold">เลขที่รับแจ้ง / ID</th>
-                <th className="p-4 font-semibold">ผู้แจ้ง / เบอร์โทร</th>
-                <th className="p-4 font-semibold">หัวข้อร้องเรียน</th>
-                <th className="p-4 font-semibold">บริเวณที่เกิดเหตุ / ชนิดท่อ</th>
-                <th className="p-4 font-semibold text-center">สถานะ</th>
-                <th className="p-4 font-semibold text-center">รูปภาพหน้างาน</th>
-                <th className="p-4 font-semibold text-center">พิมพ์รายงาน A4</th>
-                <th className="p-4 font-semibold text-center">จัดการ</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {currentJobs.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="text-center py-12 text-slate-400">
-                    <p className="text-sm font-bold">ไม่พบข้อมูลใบแจ้งซ่อมตามคำค้นหานี้</p>
-                    <p className="text-xs text-slate-400 mt-1">ลองเปลี่ยนคำค้นหา หรือเลือกช่วงเวลาอื่น</p>
-                  </td>
-                </tr>
-              ) : (
-                currentJobs.map((job) => (
-                  <tr key={job.id || job.firebaseKey || job.receivedNo} className="hover:bg-slate-50/80 transition">
-                    <td className="p-4">
-                      <span className="font-mono font-bold text-blue-600">{job.id || job.receivedNo}</span>
-                      <p className="text-[10px] font-mono text-slate-400 mt-0.5" title="Firebase Key/ID">
-                        Key: {job.id || job.firebaseKey || '-'}
-                      </p>
-                      <p className="text-[11px] text-slate-400 mt-0.5">แจ้ง: {job.receivedAt || job.createdAt}</p>
-                      {job.completedAt && (
-                        <p className="text-[10px] text-emerald-600 font-bold">เสร็จ: {job.completedAt}</p>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <p className="font-bold text-slate-800">{job.reporterName || job.complainantInfo || 'ไม่ระบุชื่อ'}</p>
-                      <p className="text-slate-500 font-mono">{job.phone || job.complainantInfo || '-'}</p>
-                    </td>
-                    <td className="p-4 font-medium text-slate-700 max-w-xs truncate">
-                      {job.complaintTopic || job.issueType}
-                    </td>
-                    <td className="p-4 text-slate-600 max-w-xs">
-                      <p className="truncate">{job.location}</p>
-                      {job.pipeType && job.pipeType !== '-' && (
-                        <p className="text-[10px] font-bold text-orange-600 mt-0.5">
-                          ท่อ {job.pipeType} {job.pipeSize ? `(${job.pipeSize} มม.)` : ''}
-                        </p>
-                      )}
-                    </td>
-                    
-                    <td className="p-4 text-center">
-                      <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] inline-flex items-center gap-1.5 border shadow-xs ${
-                        job.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        job.status === 'UNREPAIRABLE' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                        job.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                        job.status === 'DISPATCHED' ? 'bg-cyan-50 text-cyan-700 border-cyan-200' :
-                        'bg-amber-50 text-amber-700 border-amber-200'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          job.status === 'COMPLETED' ? 'bg-emerald-500' :
-                          job.status === 'UNREPAIRABLE' ? 'bg-rose-500' :
-                          job.status === 'IN_PROGRESS' ? 'bg-blue-500' :
-                          job.status === 'DISPATCHED' ? 'bg-cyan-500' : 'bg-amber-500'
-                        }`} />
-                        {job.status === 'COMPLETED' ? 'ปิดงานแล้ว' : 
-                         job.status === 'UNREPAIRABLE' ? 'ซ่อมไม่ได้' :
-                         job.status === 'IN_PROGRESS' ? 'กำลังซ่อม' : 
-                         job.status === 'DISPATCHED' ? 'จ่ายงานแล้ว' : 'รอดำเนินการ'}
-                      </span>
-                    </td>
-
-                    {/* 🖼️ ปุ่มเปิดดู/ดาวน์โหลดรูปภาพ */}
-                    <td className="p-4 text-center">
-                      <button
-                        onClick={() => setSelectedJobForPhotos(job)}
-                        title="ดูและดาวน์โหลดรูปภาพ"
-                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 p-2 rounded-xl font-bold inline-flex items-center justify-center gap-1 shadow-2xs transition active:scale-95 cursor-pointer text-xs"
-                      >
-                        <ImageIcon className="w-4 h-4" /> ดูรูป
-                      </button>
-                    </td>
-
-                    <td className="p-4 text-center">
-                      <button
-                        onClick={() => handleStartPrint(job)}
-                        title="พิมพ์รายงาน A4"
-                        className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-xl font-bold inline-flex items-center justify-center shadow-sm transition active:scale-95 cursor-pointer"
-                      >
-                        <Printer className="w-4 h-4" />
-                      </button>
-                    </td>
-
-                    {/* 🗑️ ปุ่มลบข้อมูล */}
-                    <td className="p-4 text-center">
-                      <button
-                        onClick={() => handleRequestDelete(job)}
-                        title="ลบข้อมูลใบงานนี้"
-                        className="bg-rose-50 hover:bg-rose-100 text-rose-600 p-2 rounded-xl font-bold inline-flex items-center justify-center shadow-2xs transition active:scale-95 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleOpenAdHocModal}
+            className="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+            title="เปิดใบงานด่วนหน้างาน"
+          >
+            <PlusCircle className="w-3.5 h-3.5" /> เปิดใบงานด่วน
+          </button>
+          
+          <button 
+            onClick={handleLogoutAction} 
+            className="p-1.5 bg-slate-800 hover:bg-rose-600 rounded-lg text-slate-300 hover:text-white transition cursor-pointer" 
+            title="ออกจากระบบไปหน้าหลัก"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
-
-        {/* 📄 แถบควบคุมการแบ่งหน้า */}
-        {filteredJobs.length > 0 && (
-          <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/50">
-            <span className="text-xs text-slate-500 font-medium">
-              แสดงข้อมูลรายการที่ <span className="font-bold text-slate-800">{startIndex + 1}</span> ถึง <span className="font-bold text-slate-800">{Math.min(startIndex + itemsPerPage, filteredJobs.length)}</span> จากทั้งหมด <span className="font-bold text-slate-800">{filteredJobs.length}</span> รายการ
-            </span>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition"
-              >
-                <ChevronLeft className="w-4 h-4" /> ก่อนหน้า
-              </button>
-
-              <span className="bg-blue-50 text-blue-700 border border-blue-200 px-3.5 py-1.5 rounded-xl text-xs font-bold font-mono">
-                หน้า {currentPage} / {totalPages}
-              </span>
-
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages}
-                className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition"
-              >
-                ถัดไป <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* ⚠️ MODAL แสดงรายละเอียดงานที่ไม่สามารถดำเนินการได้ */}
-      {isUnrepairableModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="p-5 bg-gradient-to-r from-rose-700 to-rose-900 text-white flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-rose-200" />
-                <h3 className="font-bold text-sm">รายการงานที่ไม่สามารถดำเนินการได้ ({unrepairableJobsList.length} จุด)</h3>
+      <div className="p-4 space-y-4">
+        {!selectedJob && !editingPhotoJob ? (
+          <div className="space-y-6">
+            {/* 📋 Section 1: รายการงานค้างปฏิบัติงาน */}
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  รายการงานซ่อมค้างรับผิดชอบ ({activeJobs.length} งาน)
+                </h3>
               </div>
-              <button onClick={() => setIsUnrepairableModalOpen(false)} className="p-1.5 rounded-xl bg-rose-800 hover:bg-rose-700 text-white transition cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            <div className="p-5 overflow-y-auto space-y-3 flex-1 bg-slate-50">
-              {unrepairableJobsList.length === 0 ? (
-                <p className="text-center py-8 text-xs text-slate-400">ไม่มีรายการงานที่ไม่สามารถซ่อมได้ในช่วงเวลานี้</p>
+              {activeJobs.length === 0 ? (
+                <div className="bg-white p-6 rounded-2xl text-center space-y-2 border border-slate-200">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+                  <p className="text-sm font-bold text-slate-700">ไม่มีงานค้างรับผิดชอบ</p>
+                  <p className="text-xs text-slate-400">หากพบท่อแตกระหว่างทาง สามารถกดปุ่ม "เปิดใบงานด่วน" ด้านบนได้ทันที</p>
+                </div>
               ) : (
-                unrepairableJobsList.map((job) => (
-                  <div key={job.id || job.firebaseKey || job.receivedNo} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-2 relative">
-                    <div className="flex justify-between items-start">
-                      <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">
-                        {job.id || job.receivedNo}
-                      </span>
-                      <span className="text-[10px] text-slate-400">แจ้ง: {job.receivedAt || job.createdAt}</span>
-                    </div>
+                activeJobs.map((job) => {
+                  const isAdminAssigned = job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน';
 
-                    <div>
-                      <h4 className="font-bold text-slate-800 text-xs">{job.complaintTopic || job.issueType}</h4>
-                      <p className="text-xs text-slate-600 mt-0.5"><strong>สถานที่:</strong> {job.location}</p>
-                      <p className="text-xs text-slate-600"><strong>ผู้แจ้ง:</strong> {job.reporterName || job.complainantInfo || '-'} ({job.phone || job.complainantInfo || '-'})</p>
-                    </div>
+                  return (
+                    <div key={job.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3 relative overflow-hidden">
+                      <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${
+                        job.status === 'UNREPAIRABLE' ? 'bg-purple-600' :
+                        job.urgency === 'ด่วนมาก' ? 'bg-rose-600' :
+                        job.urgency === 'ด่วน' ? 'bg-amber-500' : 'bg-slate-300'
+                      }`} />
 
-                    <div className="bg-rose-50 p-3 rounded-xl border border-rose-100 text-xs text-rose-900 space-y-1">
-                      <span className="font-bold block text-[11px] text-rose-700">⚠️ สาเหตุอุปสรรคหน้างาน:</span>
-                      <p>{job.notes || '-'}</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+                      <div className="flex justify-between items-start pl-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
+                            {job.receivedNo || job.id}
+                          </span>
 
-            <div className="p-4 bg-white border-t border-slate-100 text-right">
-              <button
-                onClick={() => setIsUnrepairableModalOpen(false)}
-                className="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2 rounded-xl text-xs font-bold cursor-pointer transition shadow-sm"
-              >
-                ปิดหน้าต่าง
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 ${
+                            job.urgency === 'ด่วนมาก' 
+                              ? 'bg-rose-100 text-rose-700 border border-rose-200 animate-pulse' 
+                              : job.urgency === 'ด่วน'
+                              ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {job.urgency === 'ด่วนมาก' && <AlertTriangle className="w-3 h-3 text-rose-600" />}
+                            {job.urgency || 'ปกติ'}
+                          </span>
+                        </div>
 
-      {/* 🗑️ MODAL ยืนยันการลบข้อมูล */}
-      {jobToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                <Trash2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900 text-sm">ยืนยันการลบข้อมูลใบงาน</h3>
-                <p className="text-[11px] text-slate-500">ข้อมูลจะถูกลบออกจาก Firebase และ Google Sheets</p>
-              </div>
-            </div>
+                        <div className="flex items-center gap-1">
+                          {!isAdminAssigned && job.status !== 'COMPLETED' && (
+                            <>
+                              <button
+                                onClick={() => handleOpenEditModal(job)}
+                                className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                                title="แก้ไขข้อมูลใบแจ้งซ่อม"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteJobAction(job)}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                title="ลบรายการแจ้งซ่อมนี้"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
 
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs space-y-1.5 font-medium">
-              <div><strong className="text-slate-500">เลขที่รับแจ้ง (ID):</strong> <span className="font-mono text-blue-600">{jobToDelete.id || jobToDelete.receivedNo}</span></div>
-              <div><strong className="text-slate-500">สถานที่:</strong> {jobToDelete.location || '-'}</div>
-              <div><strong className="text-slate-500">ผู้แจ้ง:</strong> {jobToDelete.reporterName || jobToDelete.complainantInfo || '-'}</div>
-            </div>
+                          {isAdminAssigned && (
+                            <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-0.5" title="งานที่ได้รับมอบหมายจากแอดมิน">
+                              <ShieldAlert className="w-3 h-3 text-slate-500" /> งานแอดมิน
+                            </span>
+                          )}
 
-            <div className="pt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setJobToDelete(null)}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-md flex items-center justify-center gap-1.5"
-              >
-                <Trash2 className="w-4 h-4" /> ยืนยันลบ
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🖼️ MODAL แสดงและดาวน์โหลดรูปภาพหน้างาน */}
-      {selectedJobForPhotos && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-5 bg-gradient-to-r from-slate-900 to-blue-900 text-white flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-sm">รูปภาพปฏิบัติงาน: <span className="font-mono text-cyan-400">{selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}</span></h3>
-                <p className="text-[11px] text-slate-300 truncate max-w-sm">{selectedJobForPhotos.location}</p>
-              </div>
-              <button onClick={() => setSelectedJobForPhotos(null)} className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-600 text-white transition cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-5 overflow-y-auto space-y-5 flex-1 bg-slate-50">
-              {/* ภาพก่อนซ่อม */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-500"></span> ภาพก่อนซ่อม ({parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg).length} รูป)
-                </h4>
-                {parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg).length === 0 ? (
-                  <p className="text-xs text-slate-400 bg-white p-3 rounded-xl border border-slate-200">ไม่มีรูปภาพก่อนซ่อม</p>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg).map((url, idx) => (
-                      <div key={idx} className="relative group rounded-2xl overflow-hidden border border-slate-200 bg-white aspect-square shadow-xs">
-                        <img src={url} alt="before" className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center p-2 gap-2">
-                          <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
-                            <Eye className="w-4 h-4" />
-                          </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `BEFORE_${selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
-                            <Download className="w-4 h-4" />
-                          </button>
+                          <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ml-1 ${
+                            job.status === 'UNREPAIRABLE' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
+                            job.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {job.status === 'UNREPAIRABLE' ? 'ซ่อมไม่ได้ (รอแก้ไข)' :
+                             job.status === 'IN_PROGRESS' ? 'กำลังซ่อม' : 'รอเริ่มซ่อม'}
+                          </span>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+
+                      <div className="space-y-1 pl-2">
+                        <h4 className="font-bold text-slate-800 text-sm">{job.complaintTopic || job.issueType}</h4>
+                        <p className="text-xs text-slate-600 flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                          <span className="font-semibold">{job.reporterName}</span>
+                          <a href={`tel:${job.phone}`} className="text-blue-600 hover:underline flex items-center gap-0.5 ml-auto font-mono">
+                            <Phone className="w-3 h-3" /> {job.phone}
+                          </a>
+                        </p>
+                        <p className="text-xs text-slate-600 flex items-start gap-1.5 mt-1">
+                          <MapPin className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                          <span>{job.location}</span>
+                        </p>
+
+                        {job.status === 'UNREPAIRABLE' && job.notes && (
+                          <div className="mt-2 bg-purple-50 p-2 rounded-xl border border-purple-200 text-[11px] text-purple-900">
+                            <span className="font-bold block">⚠️ อุปสรรคหน้างานเดิม:</span>
+                            <span>{job.notes}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex gap-2 pl-2">
+                        {job.status === 'DISPATCHED' && (
+                          <button 
+                            onClick={() => {
+                              const now = new Date();
+                              const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+                              const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
+                              onUpdateJobStatus(job.id, 'IN_PROGRESS', { inProgressAt: currentDateTime });
+                            }}
+                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+                          >
+                            <Truck className="w-4 h-4" /> เริ่มเดินทาง / ถึงหน้างาน
+                          </button>
+                        )}
+
+                        {job.status === 'IN_PROGRESS' && (
+                          <button 
+                            onClick={() => {
+                              setSelectedJob(job);
+                              setIsUnrepairable(false);
+                              setIsNoEquipmentUsed(false);
+                              setCoords({ lat: null, lng: null });
+                            }}
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-4 h-4" /> บันทึกผลซ่อม / ปิดงาน
+                          </button>
+                        )}
+
+                        {job.status === 'UNREPAIRABLE' && (
+                          <button 
+                            onClick={() => {
+                              setSelectedJob(job);
+                              setIsUnrepairable(false);
+                              setIsNoEquipmentUsed(false);
+                              setCoords({ lat: null, lng: null });
+                            }}
+                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+                          >
+                            <RotateCcw className="w-4 h-4" /> กลับมาซ่อมอีกครั้ง / บันทึกปิดงาน
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* 📸 Section 2: จัดการรูปภาพใบงานที่ปิดแล้ว */}
+            <div className="space-y-3 pt-4 border-t border-slate-200">
+              <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
+                <ImageIcon className="w-4 h-4 text-indigo-600" />
+                จัดการแก้ไขรูปภาพใบงานที่ปิดแล้ว ({myCompletedJobs.length} งาน)
+              </h3>
+
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <Search className="w-4 h-4" />
+                </span>
+                <input
+                  type="text"
+                  value={completedSearchTerm}
+                  onChange={(e) => setCompletedSearchTerm(e.target.value)}
+                  placeholder="ค้นหาเลขรับแจ้ง, ผู้แจ้ง, สถานที่ซ่อม..."
+                  className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 shadow-xs"
+                />
+              </div>
+
+              {myCompletedJobs.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4 bg-white rounded-2xl border border-slate-200">
+                  ไม่พบรายการใบงานที่ปิดแล้วตามคำค้นหา
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {myCompletedJobs.map(job => (
+                    <div key={job.id} className="bg-white p-3 rounded-2xl border border-slate-200 flex justify-between items-center hover:border-indigo-300 transition shadow-xs">
+                      <div>
+                        <span className="font-mono font-bold text-xs text-blue-600">{job.receivedNo || job.id}</span>
+                        <p className="text-xs font-bold text-slate-800 truncate max-w-[200px]">{job.location}</p>
+                        <p className="text-[10px] text-slate-400">เสร็จเมื่อ: {job.completedAt || job.closedAt || '-'}</p>
+                      </div>
+
+                      <button
+                        onClick={() => handleOpenEditPhotosModal(job)}
+                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition cursor-pointer shrink-0"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" /> แก้ไขรูปภาพ
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : editingPhotoJob ? (
+          /* 🖼️ หน้าต่างแก้ไขรูปภาพสำหรับใบงานที่ปิดแล้ว */
+          <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                  <ImageIcon className="w-4 h-4 text-indigo-600" />
+                  แก้ไขรูปภาพใบงาน: <span className="font-mono text-blue-600">{editingPhotoJob.receivedNo || editingPhotoJob.id}</span>
+                </h3>
+                <p className="text-xs text-slate-500 truncate max-w-[260px]">{editingPhotoJob.location}</p>
+              </div>
+              <button 
+                onClick={() => setEditingPhotoJob(null)} 
+                className="p-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs space-y-1">
+              <p><strong>ผู้แจ้ง:</strong> {editingPhotoJob.reporterName || '-'} ({editingPhotoJob.phone || '-'})</p>
+              <p><strong>หัวข้อ:</strong> {editingPhotoJob.complaintTopic || editingPhotoJob.issueType || '-'}</p>
+              {editingPhotoJob.pipeType && editingPhotoJob.pipeType !== '-' && <p><strong>ชนิด/ขนาดท่อ:</strong> ท่อ {editingPhotoJob.pipeType} {editingPhotoJob.pipeSize} มม.</p>}
+              {editingPhotoJob.notes && <p className="text-slate-600"><strong>หมายเหตุ/อุปกรณ์:</strong> {editingPhotoJob.notes}</p>}
+            </div>
+
+            <div className="space-y-4">
+              {/* ภาพก่อนซ่อม */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-slate-700">📸 ภาพก่อนซ่อม ({images.before.length} รูป)</label>
+                  <label className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1">
+                    <Plus className="w-3.5 h-3.5" /> เพิ่มรูป
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      multiple 
+                      onChange={(e) => handleMultipleImagesChange('before', e.target.files)} 
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {images.before.map((img, idx) => (
+                    <div key={idx} className="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group">
+                      <img src={img} alt="before" className="w-full h-full object-cover" />
+                      <button 
+                        type="button" 
+                        onClick={() => handleRemoveImage('before', idx)} 
+                        className="absolute top-1 right-1 bg-rose-600 text-white p-1 rounded-full shadow-md hover:bg-rose-700"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* ภาพระหว่างซ่อม */}
               <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-blue-500"></span> ภาพระหว่างซ่อม ({parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg).length} รูป)
-                </h4>
-                {parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg).length === 0 ? (
-                  <p className="text-xs text-slate-400 bg-white p-3 rounded-xl border border-slate-200">ไม่มีรูปภาพระหว่างซ่อม</p>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg).map((url, idx) => (
-                      <div key={idx} className="relative group rounded-2xl overflow-hidden border border-slate-200 bg-white aspect-square shadow-xs">
-                        <img src={url} alt="inProgress" className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center p-2 gap-2">
-                          <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
-                            <Eye className="w-4 h-4" />
-                          </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `INPROG_${selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
-                            <Download className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-slate-700">📸 ภาพระหว่างซ่อม ({images.inProgress.length} รูป)</label>
+                  <label className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1">
+                    <Plus className="w-3.5 h-3.5" /> เพิ่มรูป
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      multiple 
+                      onChange={(e) => handleMultipleImagesChange('inProgress', e.target.files)} 
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {images.inProgress.map((img, idx) => (
+                    <div key={idx} className="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group">
+                      <img src={img} alt="inProgress" className="w-full h-full object-cover" />
+                      <button 
+                        type="button" 
+                        onClick={() => handleRemoveImage('inProgress', idx)} 
+                        className="absolute top-1 right-1 bg-rose-600 text-white p-1 rounded-full shadow-md hover:bg-rose-700"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* ภาพหลังซ่อมเสร็จ */}
               <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span> ภาพหลังซ่อมเสร็จ ({parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg).length} รูป)
-                </h4>
-                {parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg).length === 0 ? (
-                  <p className="text-xs text-slate-400 bg-white p-3 rounded-xl border border-slate-200">ไม่มีรูปภาพหลังซ่อมเสร็จ</p>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg).map((url, idx) => (
-                      <div key={idx} className="relative group rounded-2xl overflow-hidden border border-slate-200 bg-white aspect-square shadow-xs">
-                        <img src={url} alt="after" className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center p-2 gap-2">
-                          <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
-                            <Eye className="w-4 h-4" />
-                          </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `AFTER_${selectedJobForPhotos.id || selectedJobForPhotos.receivedNo}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
-                            <Download className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-slate-700">📸 ภาพหลังซ่อมเสร็จ ({images.after.length} รูป)</label>
+                  <label className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1">
+                    <Plus className="w-3.5 h-3.5" /> เพิ่มรูป
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      multiple 
+                      onChange={(e) => handleMultipleImagesChange('after', e.target.files)} 
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {images.after.map((img, idx) => (
+                    <div key={idx} className="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group">
+                      <img src={img} alt="after" className="w-full h-full object-cover" />
+                      <button 
+                        type="button" 
+                        onClick={() => handleRemoveImage('after', idx)} 
+                        className="absolute top-1 right-1 bg-rose-600 text-white p-1 rounded-full shadow-md hover:bg-rose-700"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="p-4 bg-white border-t border-slate-100 flex justify-end">
-              <button
-                onClick={() => setSelectedJobForPhotos(null)}
-                className="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2 rounded-xl text-xs font-bold cursor-pointer transition shadow-sm"
-              >
-                ปิดหน้าต่าง
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🖨️ Modal กรอกเลข Smart 1662 ก่อนพิมพ์รายงาน */}
-      {selectedJobForPrint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <Printer className="w-4 h-4 text-blue-600" />
-                ระบุเลขที่ปิดงานซ่อม Smart 1662
-              </h3>
-              <button onClick={() => setSelectedJobForPrint(null)} className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 transition cursor-pointer">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs text-slate-500">
-                เลขที่ใบรับแจ้ง: <strong className="text-blue-600 font-mono">{selectedJobForPrint.id || selectedJobForPrint.receivedNo}</strong>
-              </p>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่ Smart 1662 (ถ้ามี):</label>
-                <input
-                  type="text"
-                  value={smart1662Input}
-                  onChange={(e) => setSmart1662Input(e.target.value)}
-                  placeholder="เช่น 1662-68-XXXXX"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 font-mono"
-                  autoFocus
-                />
-              </div>
-            </div>
-
-            <div className="pt-2 flex gap-2">
+            <div className="pt-3 border-t border-slate-100 flex gap-2">
               <button
                 type="button"
-                onClick={() => setSelectedJobForPrint(null)}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
+                onClick={() => setEditingPhotoJob(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-2xl font-bold text-xs transition cursor-pointer"
               >
                 ยกเลิก
               </button>
               <button
                 type="button"
-                onClick={handleConfirmAndOpenReport}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                disabled={isSubmitting}
+                onClick={handleSaveUpdatedPhotos}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-2xl font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1 shadow-md disabled:opacity-50"
               >
-                <Printer className="w-4 h-4" /> ยืนยันและพิมพ์
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                บันทึกการเปลี่ยนแปลงรูปภาพ
               </button>
             </div>
+          </div>
+        ) : (
+          /* 📝 หน้าต่างบันทึกผลการทำงานปกติ (เมื่อเลือกกดปิดงานซ่อม) */
+          <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">บันทึกผลการทำงาน: {selectedJob.receivedNo || selectedJob.id}</h3>
+                <p className="text-xs text-slate-500">{selectedJob.reporterName} ({selectedJob.phone})</p>
+              </div>
+              <button onClick={() => setSelectedJob(null)} className="text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer">
+                ยกเลิก
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitFix} className="space-y-4">
+              {/* 💧 ตัวเลือก 1: น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์ */}
+              {!isUnrepairable && (
+                <div className={`p-3.5 rounded-2xl border transition-all ${
+                  isNoEquipmentUsed ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox"
+                      checked={isNoEquipmentUsed}
+                      onChange={(e) => handleToggleNoEquipment(e.target.checked)}
+                      className="w-5 h-5 text-emerald-600 rounded-lg focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                    />
+                    <div>
+                      <span className={`text-xs font-bold block ${isNoEquipmentUsed ? 'text-emerald-700' : 'text-slate-700'}`}>
+                        💧 น้ำไหลปกติแล้ว / ไม่ได้ใช้อุปกรณ์ซ่อม
+                      </span>
+                      <span className="text-[10px] text-slate-500">ติ๊กถูกหากตรวจสอบแล้วพบว่าน้ำไหลปกติและไม่ได้ใช้อุปกรณ์ใดๆ</span>
+                    </div>
+                  </label>
+                </div>
+              )}
+
+              {/* ⚠️ ตัวเลือก 2: ไม่สามารถซ่อมได้ */}
+              {!isNoEquipmentUsed && (
+                <div className={`p-3.5 rounded-2xl border transition-all ${
+                  isUnrepairable ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox"
+                      checked={isUnrepairable}
+                      onChange={(e) => {
+                        setIsUnrepairable(e.target.checked);
+                        if (e.target.checked) setIsNoEquipmentUsed(false);
+                      }}
+                      className="w-5 h-5 text-rose-600 rounded-lg focus:ring-rose-500 border-slate-300 cursor-pointer"
+                    />
+                    <div>
+                      <span className={`text-xs font-bold block ${isUnrepairable ? 'text-rose-700' : 'text-slate-700'}`}>
+                        ⚠️ ไม่สามารถดำเนินการซ่อมได้ในขณะนี้
+                      </span>
+                      <span className="text-[10px] text-slate-500">ติ๊กถูกหากพบอุปสรรคที่ไม่สามารถดำเนินการซ่อมเสร็จได้</span>
+                    </div>
+                  </label>
+
+                  {isUnrepairable && (
+                    <div className="mt-3 space-y-3 pt-3 border-t border-rose-200">
+                      <div>
+                        <label className="block text-xs font-bold text-rose-800 mb-1">สาเหตุอุปสรรคที่ไม่สามารถซ่อมได้ *</label>
+                        <select
+                          value={unrepairableReasonType}
+                          onChange={(e) => setUnrepairableReasonType(e.target.value)}
+                          className="w-full bg-white border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-rose-500 text-slate-800 outline-none"
+                        >
+                          {unrepairableReasons.map((r) => (
+                            <option key={r} value={r}>{r}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {unrepairableReasonType === 'อื่นๆ (ระบุในรายละเอียด)' && (
+                        <div>
+                          <label className="block text-xs font-bold text-rose-800 mb-1">ระบุสาเหตุอื่นๆ *</label>
+                          <input
+                            type="text"
+                            value={customUnrepairableReason}
+                            onChange={(e) => setCustomUnrepairableReason(e.target.value)}
+                            placeholder="กรอกสาเหตุที่ไม่สามารถซ่อมได้..."
+                            className="w-full bg-white border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-rose-500 text-slate-800 outline-none"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-xs font-bold text-rose-800 mb-1">รายละเอียดเพิ่มเติม/แนวทางแก้ไข *</label>
+                        <textarea
+                          rows="2"
+                          value={unrepairableDetails}
+                          onChange={(e) => setUnrepairableDetails(e.target.value)}
+                          placeholder="ระบุสิ่งที่ต้องการการสนับสนุน เช่น ต้องการรถขุด, ประสานงานดับน้ำ..."
+                          className="w-full bg-white border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-rose-500 text-slate-800 outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ชนิดท่อและขนาดท่อ */}
+              {!isUnrepairable && !isNoEquipmentUsed && (
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">ชนิดท่อที่ซ่อม *</label>
+                    <select
+                      value={pipeType}
+                      onChange={(e) => setPipeType(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                    >
+                      {pipeTypes.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">ขนาดท่อ (มม.) *</label>
+                    <select
+                      value={pipeSize}
+                      onChange={(e) => setPipeSize(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                    >
+                      {pipeSizes.map((s) => (
+                        <option key={s} value={s}>{s} มม.</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* 🛠️ ระบบเลือกอุปกรณ์จาก Google Sheets (ปรับอินพุตจำนวนเป็นข้อความให้กรอกเอง) */}
+              {!isUnrepairable && !isNoEquipmentUsed && (
+                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                      <Wrench className="w-3.5 h-3.5 text-blue-600" /> เบิก/ใช้อุปกรณ์ซ่อมท่อ
+                    </label>
+                    {selectedEquipmentList.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearAllEquipment}
+                        className="text-[10px] text-rose-600 hover:underline font-bold"
+                      >
+                        ล้างรายการทั้งหมด
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="relative space-y-2">
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          value={searchTerm}
+                          onChange={handleSearchEquipmentChange}
+                          placeholder="พิมพ์ค้นหาชื่ออุปกรณ์..."
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                        />
+                        {suggestions.length > 0 && (
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 max-h-40 overflow-y-auto divide-y divide-slate-100">
+                            {suggestions.map((item) => (
+                              <button
+                                key={item.id || item.name}
+                                type="button"
+                                onClick={() => handleSelectEquipmentSuggestion(item)}
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition font-medium text-slate-700 flex justify-between"
+                              >
+                                <span>{item.name || item.itemName || item.อุปกรณ์}</span>
+                                <span className="text-[10px] text-slate-400">{item.unit || 'หน่วย'}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ✏️ ช่องกรอกจำนวนแบบ Text ให้พิมพ์อิสระ (เช่น 1, 0.5, 1.5) */}
+                      <div className="relative w-20 flex items-center">
+                        <input
+                          type="text"
+                          value={equipmentQuantity}
+                          onChange={(e) => setEquipmentQuantity(e.target.value)}
+                          placeholder="จำนวน"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-2 py-2 text-xs font-bold text-center focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleAddEquipmentToList}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0"
+                      >
+                        เพิ่ม
+                      </button>
+                    </div>
+
+                    {selectedEquipmentList.length > 0 && (
+                      <div className="space-y-1.5 pt-2">
+                        {selectedEquipmentList.map((item) => (
+                          <div key={item.id} className="bg-white p-2 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
+                            <span className="font-semibold text-slate-700">{item.name} : {item.quantity} {item.unit}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveEquipmentItem(item.id)}
+                              className="text-slate-400 hover:text-rose-600 p-0.5"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* แนบรูปภาพ 3 ระยะ */}
+              <div className="space-y-3">
+                <label className="block text-xs font-bold text-slate-700">📸 แนบรูปภาพปฏิบัติงาน *</label>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-500 block text-center">ก่อนซ่อม</span>
+                    <label className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50 rounded-xl p-2 flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[70px] transition">
+                      <Camera className="w-5 h-5 text-slate-400" />
+                      <span className="text-[9px] text-slate-500 font-bold">+ เพิ่มรูป</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        multiple 
+                        onChange={(e) => handleMultipleImagesChange('before', e.target.files)} 
+                        className="hidden" 
+                      />
+                    </label>
+                    {images.before.length > 0 && (
+                      <p className="text-[10px] text-emerald-600 font-bold text-center">{images.before.length} รูป</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-500 block text-center">ระหว่างซ่อม</span>
+                    <label className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50 rounded-xl p-2 flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[70px] transition">
+                      <Camera className="w-5 h-5 text-slate-400" />
+                      <span className="text-[9px] text-slate-500 font-bold">+ เพิ่มรูป</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        multiple 
+                        onChange={(e) => handleMultipleImagesChange('inProgress', e.target.files)} 
+                        className="hidden" 
+                      />
+                    </label>
+                    {images.inProgress.length > 0 && (
+                      <p className="text-[10px] text-emerald-600 font-bold text-center">{images.inProgress.length} รูป</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-500 block text-center">หลังซ่อม</span>
+                    <label className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50 rounded-xl p-2 flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[70px] transition">
+                      <Camera className="w-5 h-5 text-slate-400" />
+                      <span className="text-[9px] text-slate-500 font-bold">+ เพิ่มรูป</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        multiple 
+                        onChange={(e) => handleMultipleImagesChange('after', e.target.files)} 
+                        className="hidden" 
+                      />
+                    </label>
+                    {images.after.length > 0 && (
+                      <p className="text-[10px] text-emerald-600 font-bold text-center">{images.after.length} รูป</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* ดึงตำแหน่งพิกัด GPS */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex justify-between items-center">
+                <div>
+                  <span className="text-xs font-bold text-slate-700 block">📍 พิกัดหน้างาน (GPS)</span>
+                  <span className="text-[10px] text-slate-500">
+                    {coords.lat && coords.lng ? `${coords.lat}, ${coords.lng}` : 'ยังไม่ได้ระบุพิกัด'}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGetGPS}
+                  disabled={isGettingLocation}
+                  className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                >
+                  {isGettingLocation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
+                  ดึงพิกัด GPS
+                </button>
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedJob(null)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-2xl font-bold text-xs transition cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className={`flex-1 text-white py-3 rounded-2xl font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1 shadow-md ${
+                    isUnrepairable ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {isUnrepairable ? 'บันทึกรายงานซ่อมไม่ได้' : 'ยืนยันปิดงานซ่อม'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </div>
+
+      {/* ➕ Modal เปิดใบงานด่วน / แก้ไขใบงาน */}
+      {isAdHocModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-5 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                <PlusCircle className="w-4 h-4 text-rose-600" />
+                {editingJob ? 'แก้ไขข้อมูลใบแจ้งซ่อม' : 'เปิดใบงานด่วน (หน้างาน)'}
+              </h3>
+              <button onClick={() => setIsAdHocModalOpen(false)} className="p-1 rounded-xl bg-slate-100 text-slate-400 hover:text-slate-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAdHocJob} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">เลขที่รับแจ้ง</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={adHocData.receivedNo}
+                  className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold text-blue-600 outline-none cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">บริเวณที่เกิดเหตุ / สถานที่ซ่อม *</label>
+                <textarea
+                  rows="2"
+                  required
+                  value={adHocData.location}
+                  onChange={(e) => setAdHocData({ ...adHocData, location: e.target.value })}
+                  placeholder="ระบุบ้านเลขที่, ถนน, ซอย หรือจุดสังเกต..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">ชื่อผู้แจ้ง (ถ้ามี)</label>
+                  <input
+                    type="text"
+                    value={adHocData.reporterName}
+                    onChange={(e) => setAdHocData({ ...adHocData, reporterName: e.target.value })}
+                    placeholder="ไม่ระบุชื่อ"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">เบอร์โทรศัพท์ (ถ้ามี)</label>
+                  <input
+                    type="tel"
+                    value={adHocData.phone}
+                    onChange={(e) => setAdHocData({ ...adHocData, phone: e.target.value })}
+                    placeholder="-"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-medium focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">หัวข้อปัญหา/ความชำรุด *</label>
+                <select
+                  value={adHocData.complaintTopicType}
+                  onChange={(e) => setAdHocData({ ...adHocData, complaintTopicType: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                >
+                  <option value="ท่อแตกรั่ว">ท่อแตกรั่ว</option>
+                  <option value="น้ำไม่ไหล/น้ำไหลอ่อน">น้ำไม่ไหล/น้ำไหลอ่อน</option>
+                  <option value="อื่นๆ">อื่นๆ (ระบุ)</option>
+                </select>
+              </div>
+
+              {adHocData.complaintTopicType === 'อื่นๆ' && (
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">ระบุหัวข้อปัญหา *</label>
+                  <input
+                    type="text"
+                    required
+                    value={adHocData.customComplaintTopic}
+                    onChange={(e) => setAdHocData({ ...adHocData, customComplaintTopic: e.target.value })}
+                    placeholder="ระบุรายละเอียดปัญหา..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">ความเร่งด่วน *</label>
+                <select
+                  value={adHocData.urgency}
+                  onChange={(e) => setAdHocData({ ...adHocData, urgency: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                >
+                  <option value="ปกติ">ปกติ</option>
+                  <option value="ด่วน">ด่วน</option>
+                  <option value="ด่วนมาก">ด่วนมาก</option>
+                </select>
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAdHocModalOpen(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-2xl font-bold transition cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-2xl font-bold transition cursor-pointer shadow-md"
+                >
+                  {editingJob ? 'บันทึกการแก้ไข' : 'สร้างใบงานด่วน'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
