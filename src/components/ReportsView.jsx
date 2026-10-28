@@ -161,7 +161,7 @@ export default function ReportsView({ jobs, currentUser }) {
     setJobToDelete(job);
   };
 
-  // 🗑️ ฟังก์ชันลบข้อมูลออกจาก Firebase และ Google Sheets พร้อมกัน
+  // 🗑️ ฟังก์ชันลบข้อมูลออกจากทั้ง Firebase และ Google Sheets พร้อมกัน
   const handleConfirmDelete = async () => {
     if (!jobToDelete) return;
     
@@ -169,7 +169,7 @@ export default function ReportsView({ jobs, currentUser }) {
     const targetKey = jobToDelete.id || jobToDelete.receivedNo || jobToDelete.firebaseKey;
     
     if (!targetKey) {
-      alert("⚠️ ไม่พบรหัสอ้างอิงสำหรับลบข้อมูลในฐานข้อมูล");
+      alert("⚠️ ไม่พบรหัสอ้างอิงสำหรับลบข้อมูลในระบบ");
       setJobToDelete(null);
       return;
     }
@@ -180,9 +180,10 @@ export default function ReportsView({ jobs, currentUser }) {
       await remove(jobRef);
       
       // 2. 🌐 ลบออกจาก Google Sheets ผ่าน Apps Script Web App API
-      const GOOGLE_SCRIPT_URL = "ใส่_URL_Web_App_ของ_Google_Apps_Script_ที่นี่"; // ⚠️ แทนที่ด้วย URL Web App ของ Google Apps Script จริง
+      // (คุณสามารถใส่ URL Web App ตรงๆ หรือใช้ Environment Variable จาก Vercel เช่น import.meta.env.VITE_GAS_URL)
+      const GOOGLE_SCRIPT_URL = "ใส่_URL_Web_App_ของ_Google_Apps_Script_ที่นี่"; 
       
-      if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== "ใส่_URL_Web_App_ของ_Google_Apps_Script_ที่นี่") {
+      if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== "AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA") {
         await fetch(GOOGLE_SCRIPT_URL, {
           method: "POST",
           mode: "no-cors", // ป้องกันปัญหา CORS
@@ -193,7 +194,7 @@ export default function ReportsView({ jobs, currentUser }) {
         });
       }
 
-      alert(`🗑️ ลบข้อมูล ${targetKey}ออกจากทั้ง Firebase และ Google Sheets สำเร็จแล้ว`);
+      alert(`🗑️ ลบข้อมูล ${targetKey} ออกจากทั้ง Firebase และ Google Sheets เรียบร้อยแล้ว`);
       
       // รีเฟรชหน้าเว็บอัตโนมัติเพื่อให้ตารางอัปเดตข้อมูลล่าสุดทันที
       window.location.reload(); 
