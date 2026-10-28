@@ -185,10 +185,7 @@ export default function ReportsView({ jobs, currentUser }) {
       if (GOOGLE_SCRIPT_URL) {
         await fetch(GOOGLE_SCRIPT_URL, {
           method: "POST",
-          mode: "no-cors", // ป้องกันปัญหา CORS
-          headers: {
-            "Content-Type": "application/json",
-          },
+          mode: "no-cors", // ป้องกันปัญหา CORS โดยตัด headers ออก
           body: JSON.stringify({ action: "delete_job", id: targetKey })
         });
       }
