@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon } from 'lucide-react';
+import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert } from 'lucide-react';
 
 export default function ReportsView({ jobs }) {
   const [reportType, setReportType] = useState('all');
@@ -16,10 +16,14 @@ export default function ReportsView({ jobs }) {
   // 🖼️ State สำหรับ Modal จัดการ/ดาวน์โหลดรูปภาพ
   const [selectedJobForPhotos, setSelectedJobForPhotos] = useState(null);
 
+  // ⚠️ State สำหรับ Modal แสดงรายละเอียดงานซ่อมไม่ได้
+  const [isUnrepairableModalOpen, setIsUnrepairableModalOpen] = useState(false);
+
   const todayStr = new Date().toISOString().split('T')[0];
 
+  // 📅 ฟังก์ชันแปลงวันที่โดยอิงตาม "วันเวลาที่รับแจ้ง" เป็นหลักตามเงื่อนไขใหม่
   const parseJobDate = (job) => {
-    const rawDate = job.receivedAt || job.createdAt;
+    const rawDate = job.receivedAt || job.createdAt || job.completedAt;
     if (!rawDate) return new Date(0);
 
     if (rawDate.includes('/')) {
@@ -36,7 +40,7 @@ export default function ReportsView({ jobs }) {
   const getFilteredJobs = () => {
     const now = new Date();
     return jobs.filter(job => {
-      // 1. กรองตามเงื่อนไขเวลา
+      // 1. กรองตามเงื่อนไขเวลา (อิงจากวันที่รับแจ้ง)
       if (reportType !== 'all') {
         const jobDate = parseJobDate(job);
         const jobDateStr = jobDate.toISOString().split('T')[0];
@@ -77,6 +81,9 @@ export default function ReportsView({ jobs }) {
   const filteredJobs = getFilteredJobs();
   const completedCount = filteredJobs.filter(j => j.status === 'COMPLETED').length;
   const inProgressCount = filteredJobs.filter(j => j.status === 'DISPATCHED' || j.status === 'IN_PROGRESS').length;
+  
+  // ⚠️ รายการงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) ตามช่วงเวลา
+  const unrepairableJobsList = filteredJobs.filter(j => j.status === 'UNREPAIRABLE');
 
   // 📄 ระบบแบ่งหน้า (Pagination Logic)
   const totalPages = Math.ceil(filteredJobs.length / itemsPerPage) || 1;
@@ -121,7 +128,6 @@ export default function ReportsView({ jobs }) {
           const parsed = JSON.parse(imgData);
           if (Array.isArray(parsed)) return parsed.filter(url => url && typeof url === 'string');
         }
-        // รองรับกรณีคั่นด้วยขึ้นบรรทัดใหม่ (\n) หรือจุลภาค (,)
         if (imgData.includes('\n')) {
           return imgData.split('\n').map(u => u.trim()).filter(u => u !== '');
         }
@@ -152,7 +158,6 @@ export default function ReportsView({ jobs }) {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
     } catch (err) {
-      // กรณีติด CORS ให้เปิดภาพในแท็บใหม่แทนเพื่อให้ผู้ใช้บันทึกภาพได้
       window.open(url, '_blank');
     }
   };
@@ -442,7 +447,7 @@ export default function ReportsView({ jobs }) {
             <TrendingUp className="w-6 h-6 text-blue-600" />
             รายงานผลการปฏิบัติงานซ่อมท่อประปา
           </h2>
-          <p className="text-xs text-slate-500 mt-1">กปภ.สาขานครพนม - ติดตามสถิติและการดำเนินงาน (เรียงจากล่าสุด)</p>
+          <p className="text-xs text-slate-500 mt-1">กปภ.สาขานครพนม - ติดตามสถิติและการดำเนินงาน (อิงตามวันที่รับแจ้ง)</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -477,7 +482,7 @@ export default function ReportsView({ jobs }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white p-6 rounded-3xl shadow-md space-y-2">
-          <p className="text-xs text-blue-100 font-medium">รับแจ้งซ่อมทั้งหมด ({reportType.toUpperCase()})</p>
+          <p className="text-xs text-blue-100 font-medium">ใบแจ้งซ่อมทั้งหมด ({reportType.toUpperCase()})</p>
           <h3 className="text-3xl font-bold">{filteredJobs.length} <span className="text-sm font-normal">เคส</span></h3>
         </div>
         <div className="bg-gradient-to-br from-emerald-600 to-teal-700 text-white p-6 rounded-3xl shadow-md space-y-2">
@@ -490,20 +495,20 @@ export default function ReportsView({ jobs }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* 📊 สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
           <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
             <Users className="w-4 h-4 text-indigo-600" />
-            สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง (ตามเงื่อนไขเวลา)
+            สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง
           </h3>
           
           {Object.keys(teamSummary).length === 0 ? (
             <p className="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลงานที่ซ่อมเสร็จสิ้นในช่วงเวลานี้</p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
               {Object.entries(teamSummary).map(([teamName, count]) => (
-                <div key={teamName} className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl flex justify-between items-center shadow-xs">
+                <div key={teamName} className="bg-slate-50 border border-slate-200/80 p-3 rounded-2xl flex justify-between items-center shadow-xs">
                   <span className="text-xs font-bold text-slate-700 truncate">{teamName}</span>
                   <span className="bg-indigo-600 text-white text-xs font-bold px-2.5 py-1 rounded-xl shadow-xs">
                     {count} จุด
@@ -514,19 +519,19 @@ export default function ReportsView({ jobs }) {
           )}
         </div>
 
-        {/* 🛠️ สรุปชนิดท่อและขนาดท่อที่ใช้ซ่อม */}
+        {/* 🛠️ สรุปชนิดและขนาดท่อที่ใช้ซ่อม */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
           <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
             <Layers className="w-4 h-4 text-orange-600" />
-            สรุปชนิดและขนาดท่อที่ใช้ซ่อม (ตามเงื่อนไขเวลา)
+            สรุปชนิดและขนาดท่อที่ใช้ซ่อม
           </h3>
           
           {Object.keys(pipeSummary).length === 0 ? (
             <p className="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลชนิดและขนาดท่อในช่วงเวลานี้</p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-40 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
               {Object.entries(pipeSummary).map(([pipeInfo, count]) => (
-                <div key={pipeInfo} className="bg-orange-50/50 border border-orange-200/80 p-3.5 rounded-2xl flex justify-between items-center shadow-xs">
+                <div key={pipeInfo} className="bg-orange-50/50 border border-orange-200/80 p-3 rounded-2xl flex justify-between items-center shadow-xs">
                   <span className="text-xs font-bold text-slate-700 truncate">{pipeInfo}</span>
                   <span className="bg-orange-600 text-white text-xs font-bold px-2.5 py-1 rounded-xl shadow-xs">
                     {count} จุด
@@ -535,6 +540,29 @@ export default function ReportsView({ jobs }) {
               ))}
             </div>
           )}
+        </div>
+
+        {/* ⚠️ สรุปงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) - วางต่อท้ายสรุปท่อ */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
+          <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-rose-600" />
+            งานที่ไม่สามารถดำเนินการได้
+          </h3>
+
+          <div className="bg-rose-50/70 border border-rose-200 p-4 rounded-2xl flex justify-between items-center shadow-xs">
+            <div>
+              <p className="text-xs text-rose-800 font-bold">รวมอุปสรรค / ซ่อมไม่ได้</p>
+              <p className="text-[10px] text-rose-600">คลิกเพื่อดูรายละเอียดรายจุด</p>
+            </div>
+            
+            <button
+              onClick={() => setIsUnrepairableModalOpen(true)}
+              className="bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1"
+            >
+              {unrepairableJobsList.length} จุด <Eye className="w-3.5 h-3.5 ml-0.5" />
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-400">ตรวจสอบสาเหตุอุปสรรคหน้างานที่ไม่สามารถซ่อมเสร็จได้ในช่วงเวลานี้</p>
         </div>
       </div>
 
@@ -568,8 +596,8 @@ export default function ReportsView({ jobs }) {
             <div className="hidden lg:flex items-center gap-2 text-[11px] bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs shrink-0">
               <span className="font-bold text-slate-500 flex items-center gap-1"><Info className="w-3.5 h-3.5" /> สัญลักษณ์:</span>
               <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> ปิดงาน</span>
+              <span className="inline-flex items-center gap-1 text-rose-700 font-semibold"><span className="w-2 h-2 rounded-full bg-rose-500"></span> ซ่อมไม่ได้</span>
               <span className="inline-flex items-center gap-1 text-blue-700 font-semibold"><span className="w-2 h-2 rounded-full bg-blue-500"></span> กำลังซ่อม</span>
-              <span className="inline-flex items-center gap-1 text-cyan-700 font-semibold"><span className="w-2 h-2 rounded-full bg-cyan-500"></span> จ่ายงาน</span>
             </div>
           </div>
         </div>
@@ -614,7 +642,7 @@ export default function ReportsView({ jobs }) {
                     </td>
                     <td className="p-4 text-slate-600 max-w-xs">
                       <p className="truncate">{job.location}</p>
-                      {job.pipeType && (
+                      {job.pipeType && job.pipeType !== '-' && (
                         <p className="text-[10px] font-bold text-orange-600 mt-0.5">
                           ท่อ {job.pipeType} {job.pipeSize ? `(${job.pipeSize} มม.)` : ''}
                         </p>
@@ -624,16 +652,19 @@ export default function ReportsView({ jobs }) {
                     <td className="p-4 text-center">
                       <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] inline-flex items-center gap-1.5 border shadow-xs ${
                         job.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        job.status === 'UNREPAIRABLE' ? 'bg-rose-50 text-rose-700 border-rose-200' :
                         job.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                         job.status === 'DISPATCHED' ? 'bg-cyan-50 text-cyan-700 border-cyan-200' :
                         'bg-amber-50 text-amber-700 border-amber-200'
                       }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${
                           job.status === 'COMPLETED' ? 'bg-emerald-500' :
+                          job.status === 'UNREPAIRABLE' ? 'bg-rose-500' :
                           job.status === 'IN_PROGRESS' ? 'bg-blue-500' :
                           job.status === 'DISPATCHED' ? 'bg-cyan-500' : 'bg-amber-500'
                         }`} />
                         {job.status === 'COMPLETED' ? 'ปิดงานแล้ว' : 
+                         job.status === 'UNREPAIRABLE' ? 'ซ่อมไม่ได้' :
                          job.status === 'IN_PROGRESS' ? 'กำลังซ่อม' : 
                          job.status === 'DISPATCHED' ? 'จ่ายงานแล้ว' : 'รอดำเนินการ'}
                       </span>
@@ -698,104 +729,52 @@ export default function ReportsView({ jobs }) {
         )}
       </div>
 
-      {/* 🖼️ Modal แสดงและดาวน์โหลดรูปภาพประจำใบงาน */}
-      {selectedJobForPhotos && (
+      {/* ⚠️ MODAL แสดงรายละเอียดงานที่ไม่สามารถดำเนินการได้ (UNREPAIRABLE) */}
+      {isUnrepairableModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <div>
-                <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                  <ImageIcon className="w-5 h-5 text-indigo-600" />
-                  รูปภาพปฏิบัติงาน: <span className="font-mono text-blue-600">{selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}</span>
-                </h4>
-                <p className="text-xs text-slate-500">{selectedJobForPhotos.location}</p>
+          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-5 bg-gradient-to-r from-rose-700 to-rose-900 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-rose-200" />
+                <h3 className="font-bold text-sm">รายการงานที่ไม่สามารถดำเนินการได้ ({unrepairableJobsList.length} จุด)</h3>
               </div>
-              <button 
-                onClick={() => setSelectedJobForPhotos(null)} 
-                className="cursor-pointer text-slate-400 hover:text-slate-700 p-1 rounded-xl bg-slate-100 hover:bg-slate-200 transition"
-              >
+              <button onClick={() => setIsUnrepairableModalOpen(false)} className="p-1.5 rounded-xl bg-rose-800 hover:bg-rose-700 text-white transition cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs">
-              {/* ภาพก่อนซ่อม */}
-              <div>
-                <h5 className="font-bold text-slate-700 mb-2">📸 รูปภาพก่อนซ่อม</h5>
-                {parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg).length > 0 ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg).map((url, idx) => (
-                      <div key={idx} className="relative group border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 aspect-square">
-                        <img src={url} alt={`Before ${idx}`} className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
-                          <a href={url} target="_blank" rel="noreferrer" className="bg-white p-2 rounded-xl text-slate-800 font-bold shadow-md hover:bg-blue-50" title="ดูภาพเต็ม">
-                            <Eye className="w-4 h-4" />
-                          </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_before_${idx + 1}.jpg`)} className="bg-emerald-600 p-2 rounded-xl text-white font-bold shadow-md hover:bg-emerald-700" title="ดาวน์โหลด">
-                            <Download className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 text-center">ไม่มีรูปภาพก่อนซ่อม</p>
-                )}
-              </div>
+            <div className="p-5 overflow-y-auto space-y-3 flex-1 bg-slate-50">
+              {unrepairableJobsList.length === 0 ? (
+                <p className="text-center py-8 text-xs text-slate-400">ไม่มีรายการงานที่ไม่สามารถซ่อมได้ในช่วงเวลานี้</p>
+              ) : (
+                unrepairableJobsList.map((job) => (
+                  <div key={job.id} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-2 relative">
+                    <div className="flex justify-between items-start">
+                      <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">
+                        {job.receivedNo || job.id}
+                      </span>
+                      <span className="text-[10px] text-slate-400">แจ้ง: {job.receivedAt || job.createdAt}</span>
+                    </div>
 
-              {/* ภาพระหว่างซ่อม */}
-              <div>
-                <h5 className="font-bold text-slate-700 mb-2">📸 รูปภาพระหว่างซ่อม</h5>
-                {parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg).length > 0 ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg).map((url, idx) => (
-                      <div key={idx} className="relative group border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 aspect-square">
-                        <img src={url} alt={`InProg ${idx}`} className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
-                          <a href={url} target="_blank" rel="noreferrer" className="bg-white p-2 rounded-xl text-slate-800 font-bold shadow-md hover:bg-blue-50" title="ดูภาพเต็ม">
-                            <Eye className="w-4 h-4" />
-                          </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_inprog_${idx + 1}.jpg`)} className="bg-emerald-600 p-2 rounded-xl text-white font-bold shadow-md hover:bg-emerald-700" title="ดาวน์โหลด">
-                            <Download className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 text-center">ไม่มีรูปภาพระหว่างซ่อม</p>
-                )}
-              </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-xs">{job.complaintTopic || job.issueType}</h4>
+                      <p className="text-xs text-slate-600 mt-0.5"><strong>สถานที่:</strong> {job.location}</p>
+                      <p className="text-xs text-slate-600"><strong>ผู้แจ้ง:</strong> {job.reporterName} ({job.phone})</p>
+                    </div>
 
-              {/* ภาพหลังซ่อมเสร็จ */}
-              <div>
-                <h5 className="font-bold text-slate-700 mb-2">📸 รูปภาพหลังซ่อมเสร็จ</h5>
-                {parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg).length > 0 ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg).map((url, idx) => (
-                      <div key={idx} className="relative group border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 aspect-square">
-                        <img src={url} alt={`After ${idx}`} className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
-                          <a href={url} target="_blank" rel="noreferrer" className="bg-white p-2 rounded-xl text-slate-800 font-bold shadow-md hover:bg-blue-50" title="ดูภาพเต็ม">
-                            <Eye className="w-4 h-4" />
-                          </a>
-                          <button onClick={() => handleDownloadSingleImage(url, `${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_after_${idx + 1}.jpg`)} className="bg-emerald-600 p-2 rounded-xl text-white font-bold shadow-md hover:bg-emerald-700" title="ดาวน์โหลด">
-                            <Download className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                    <div className="bg-rose-50 p-3 rounded-xl border border-rose-100 text-xs text-rose-900 space-y-1">
+                      <span className="font-bold block text-[11px] text-rose-700">⚠️ สาเหตุอุปสรรคหน้างาน:</span>
+                      <p>{job.notes || '-'}</p>
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 text-center">ไม่มีรูปภาพหลังซ่อม</p>
-                )}
-              </div>
+                ))
+              )}
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex justify-end">
-              <button 
-                onClick={() => setSelectedJobForPhotos(null)} 
-                className="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold transition cursor-pointer"
+            <div className="p-4 bg-white border-t border-slate-100 text-right">
+              <button
+                onClick={() => setIsUnrepairableModalOpen(false)}
+                className="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2 rounded-xl text-xs font-bold cursor-pointer transition shadow-sm"
               >
                 ปิดหน้าต่าง
               </button>
@@ -804,48 +783,158 @@ export default function ReportsView({ jobs }) {
         </div>
       )}
 
-      {/* 🖨️ Modal กรอกเลข Smart 1662 ก่อนพิมพ์รายงาน A4 */}
+      {/* 🖼️ MODAL แสดงและดาวน์โหลดรูปภาพหน้างาน */}
+      {selectedJobForPhotos && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-5 bg-gradient-to-r from-slate-900 to-blue-900 text-white flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-sm">รูปภาพปฏิบัติงาน: <span className="font-mono text-cyan-400">{selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}</span></h3>
+                <p className="text-[11px] text-slate-300 truncate max-w-sm">{selectedJobForPhotos.location}</p>
+              </div>
+              <button onClick={() => setSelectedJobForPhotos(null)} className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-600 text-white transition cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-5 flex-1 bg-slate-50">
+              {/* ภาพก่อนซ่อม */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span> ภาพก่อนซ่อม ({parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg).length} รูป)
+                </h4>
+                {parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg).length === 0 ? (
+                  <p className="text-xs text-slate-400 bg-white p-3 rounded-xl border border-slate-200">ไม่มีรูปภาพก่อนซ่อม</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {parseImages(selectedJobForPhotos.beforeImgBase64 || selectedJobForPhotos.beforeImg).map((url, idx) => (
+                      <div key={idx} className="relative group rounded-2xl overflow-hidden border border-slate-200 bg-white aspect-square shadow-xs">
+                        <img src={url} alt="before" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center p-2 gap-2">
+                          <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
+                            <Eye className="w-4 h-4" />
+                          </a>
+                          <button onClick={() => handleDownloadSingleImage(url, `BEFORE_${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
+                            <Download className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ภาพระหว่างซ่อม */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span> ภาพระหว่างซ่อม ({parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg).length} รูป)
+                </h4>
+                {parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg).length === 0 ? (
+                  <p className="text-xs text-slate-400 bg-white p-3 rounded-xl border border-slate-200">ไม่มีรูปภาพระหว่างซ่อม</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {parseImages(selectedJobForPhotos.inProgImgBase64 || selectedJobForPhotos.inProgImg).map((url, idx) => (
+                      <div key={idx} className="relative group rounded-2xl overflow-hidden border border-slate-200 bg-white aspect-square shadow-xs">
+                        <img src={url} alt="inProgress" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center p-2 gap-2">
+                          <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
+                            <Eye className="w-4 h-4" />
+                          </a>
+                          <button onClick={() => handleDownloadSingleImage(url, `INPROG_${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
+                            <Download className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ภาพหลังซ่อมเสร็จ */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span> ภาพหลังซ่อมเสร็จ ({parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg).length} รูป)
+                </h4>
+                {parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg).length === 0 ? (
+                  <p className="text-xs text-slate-400 bg-white p-3 rounded-xl border border-slate-200">ไม่มีรูปภาพหลังซ่อมเสร็จ</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {parseImages(selectedJobForPhotos.afterImgBase64 || selectedJobForPhotos.afterImg).map((url, idx) => (
+                      <div key={idx} className="relative group rounded-2xl overflow-hidden border border-slate-200 bg-white aspect-square shadow-xs">
+                        <img src={url} alt="after" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center p-2 gap-2">
+                          <a href={url} target="_blank" rel="noreferrer" className="bg-white text-slate-900 p-2 rounded-xl text-xs font-bold shadow-md hover:bg-blue-50 transition" title="เปิดดูรูปเต็ม">
+                            <Eye className="w-4 h-4" />
+                          </a>
+                          <button onClick={() => handleDownloadSingleImage(url, `AFTER_${selectedJobForPhotos.receivedNo || selectedJobForPhotos.id}_${idx+1}.jpg`)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs font-bold shadow-md hover:bg-emerald-700 transition" title="ดาวน์โหลดรูปภาพ">
+                            <Download className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 bg-white border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => setSelectedJobForPhotos(null)}
+                className="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2 rounded-xl text-xs font-bold cursor-pointer transition shadow-sm"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🖨️ Modal กรอกเลข Smart 1662 ก่อนพิมพ์รายงาน */}
       {selectedJobForPrint && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                <Printer className="w-5 h-5 text-blue-600" />
-                กรอกเลขที่ปิดงาน Smart 1662 (ก่อนพิมพ์)
-              </h4>
-              <button onClick={() => setSelectedJobForPrint(null)} className="cursor-pointer text-slate-400 hover:text-slate-700 p-1 rounded-xl bg-slate-100 hover:bg-slate-200 transition">
-                <X className="w-5 h-5" />
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <Printer className="w-4 h-4 text-blue-600" />
+                ระบุเลขที่ปิดงานซ่อม Smart 1662
+              </h3>
+              <button onClick={() => setSelectedJobForPrint(null)} className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 transition cursor-pointer">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-3">
               <p className="text-xs text-slate-500">
-                ใบแจ้งซ่อมเลขที่: <strong className="font-mono text-blue-600">{selectedJobForPrint.receivedNo || selectedJobForPrint.id}</strong>
+                เลขที่ใบรับแจ้ง: <strong className="text-blue-600 font-mono">{selectedJobForPrint.receivedNo || selectedJobForPrint.id}</strong>
               </p>
+
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่ปิดงาน Smart 1662 (ถ้ามี)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่ Smart 1662 (ถ้ามี):</label>
                 <input
                   type="text"
                   value={smart1662Input}
                   onChange={(e) => setSmart1662Input(e.target.value)}
                   placeholder="เช่น 1662-68-XXXXX"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-mono font-bold focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 font-mono"
+                  autoFocus
                 />
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex gap-2">
+            <div className="pt-2 flex gap-2">
               <button
+                type="button"
                 onClick={() => setSelectedJobForPrint(null)}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer"
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
               >
                 ยกเลิก
               </button>
               <button
+                type="button"
                 onClick={handleConfirmAndOpenReport}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-md transition cursor-pointer"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-md flex items-center justify-center gap-1.5"
               >
-                ยืนยันและเปิดหน้าพิมพ์ A4
+                <Printer className="w-4 h-4" /> ยืนยันและพิมพ์
               </button>
             </div>
           </div>
