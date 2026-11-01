@@ -141,7 +141,7 @@ export default function RolePortal({
 
     const message = `🚨 *แจ้งเตือนใบสั่งซ่อมใหม่ (ประชาชนทั่วไป)* 🚨\n\n` +
       `📌 *เลขที่รับแจ้ง:* ${jobPayload.receivedNo}\n` +
-      `👤 *ผู้แจ้ง:* ${jobPayload.reporterName} (${jobPayload.phone})\n` +
+      `👤 *ผู้แจ้ง:* ${jobPayload.reporterName} (${jobPayload.phone.replace(/^'/, '')})\n` +
       `📍 *สถานที่:* ${jobPayload.location}\n` +
       `🔧 *ปัญหา:* ${jobPayload.complaintTopic}\n` +
       `⚡ *ความเร่งด่วน:* ${jobPayload.urgency}\n` +
@@ -179,6 +179,10 @@ export default function RolePortal({
       ? (publicData.customComplaintTopic.trim() || 'อื่นๆ') 
       : publicData.complaintTopicType;
 
+    const trimmedPhone = publicData.phone.trim();
+    // เติม single quote (') นำหน้าเบอร์โทร เพื่อป้องกันเลข 0 หายใน Google Sheets
+    const formattedPhone = trimmedPhone ? (trimmedPhone.startsWith("'") ? trimmedPhone : `'${trimmedPhone}`) : '-';
+
     const newPublicJob = {
       id: 'JOB-' + Date.now().toString().slice(-6),
       JobID: publicData.receivedNo,
@@ -187,7 +191,7 @@ export default function RolePortal({
       Timestamp: currentDateTime,
       channel: 'แจ้งผ่านระบบเว็บไซต์ประชาชน',
       complaintType: finalComplaintTopic,
-      complainantInfo: publicData.phone || '-',
+      complainantInfo: formattedPhone,
       complaintTopic: finalComplaintTopic,
       IssueType: finalComplaintTopic,
       description: publicData.description || 'แจ้งซ่อมโดยประชาชนทั่วไปผ่านเว็บไซต์',
@@ -196,8 +200,8 @@ export default function RolePortal({
       Location: publicData.location,
       reporterName: publicData.reporterName.trim() || 'ประชาชนทั่วไป',
       ReporterName: publicData.reporterName.trim() || 'ประชาชนทั่วไป',
-      phone: publicData.phone.trim() || '-',
-      Phone: publicData.phone.trim() || '-',
+      phone: formattedPhone,
+      Phone: formattedPhone,
       receiverName: 'ระบบรับแจ้งอัตโนมัติ',
       status: 'PENDING',
       Status: 'PENDING',
