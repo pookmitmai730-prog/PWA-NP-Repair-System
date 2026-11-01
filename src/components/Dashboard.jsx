@@ -1,9 +1,9 @@
 import React from 'react';
-import { Wrench, Clock, CheckCircle2, AlertTriangle, ArrowUpRight } from 'lucide-react';
+import { Wrench, Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
 
-export default function Dashboard({ stats, jobs }) {
+export default function Dashboard({ stats = { total: 0, pending: 0, inProgress: 0, completed: 0 } }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-sans">
       {/* Cards สถิติภาพรวม */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
@@ -48,7 +48,7 @@ export default function Dashboard({ stats, jobs }) {
       </div>
 
       {/* แบนเนอร์ต้อนรับหรือสรุปย่อ */}
-      <div className="bg-linear-to-r from-blue-900 via-slate-900 to-slate-950 text-white rounded-3xl p-6 shadow-md flex flex-col md:flex-row justify-between items-center gap-4">
+      <div className="bg-gradient-to-r from-blue-900 via-slate-900 to-slate-950 text-white rounded-3xl p-6 shadow-md flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="space-y-1 text-center md:text-left">
           <h2 className="text-lg font-bold">การประปาส่วนภูมิภาค สาขาธาตุพนม</h2>
           <p className="text-xs text-slate-300">ระบบติดตามและบันทึกประวัติซ่อมบำรุงท่อประปาออนไลน์ (Archive & Real-time Sync)</p>
