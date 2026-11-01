@@ -2,10 +2,14 @@ import React, { useState } from 'react';
 import { Wrench, Lock, UserCheck, Shield, Smartphone, Globe, KeyRound, User, PlusCircle, X, MapPin, Phone, AlertTriangle, Send, Loader2, Camera, Navigation } from 'lucide-react';
 import TrackingSearch from './TrackingSearch';
 import { compressImage } from '../utils/imageCompressor';
-import { saveJobToFirebase } from '../services/firebase';
 
-// 🌐 URL ของ Google Apps Script Web App (สำหรับบันทึกและยิง Telegram)
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec";
+// 🌐 URL ของ Google Apps Script Web App (ใช้ตัวล่าสุดที่เป็นอันเดียวกันทุกไฟล์)
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
+
+// 🔔 เปิดการใช้งานการแจ้งเตือน Telegram (ตั้งค่าเป็น true เพื่อเปิดใช้งาน)
+const ENABLE_TELEGRAM_NOTIFY = true; 
+const TELEGRAM_BOT_TOKEN = "8601147798:AAFNBUcoRYH4tvZfyvWgxaXP9xrWiR4D6kk";
+const TELEGRAM_CHAT_ID = "-1003925252865";
 
 export default function RolePortal({ 
   adminUsers = [], 
@@ -123,7 +127,42 @@ export default function RolePortal({
     );
   };
 
-  // 🚀 ส่งข้อมูลแจ้งซ่อมจากประชาชนทั่วไป
+  // 📲 ฟังก์ชันสำหรับส่งแจ้งเตือน Telegram (เปิดใช้งานตามสวิตช์ ENABLE_TELEGRAM_NOTIFY)
+  const sendTelegramNotification = async (jobPayload) => {
+    if (!ENABLE_TELEGRAM_NOTIFY) {
+      console.log("ℹ️ Telegram notification is currently disabled.");
+      return;
+    }
+
+    if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") {
+      console.warn("⚠️ Telegram Bot Token is not configured.");
+      return;
+    }
+
+    const message = `🚨 *แจ้งเตือนใบสั่งซ่อมใหม่ (ประชาชนทั่วไป)* 🚨\n\n` +
+      `📌 *เลขที่รับแจ้ง:* ${jobPayload.receivedNo}\n` +
+      `👤 *ผู้แจ้ง:* ${jobPayload.reporterName} (${jobPayload.phone})\n` +
+      `📍 *สถานที่:* ${jobPayload.location}\n` +
+      `🔧 *ปัญหา:* ${jobPayload.complaintTopic}\n` +
+      `⚡ *ความเร่งด่วน:* ${jobPayload.urgency}\n` +
+      `📅 *เวลาที่รับแจ้ง:* ${jobPayload.receivedAt}`;
+
+    try {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: message,
+          parse_mode: "Markdown"
+        })
+      });
+    } catch (err) {
+      console.error("Failed to send Telegram notification:", err);
+    }
+  };
+
+  // 🚀 ส่งข้อมูลแจ้งซ่อมจากประชาชนทั่วไป บันทึกลง Google Sheets สอดคล้องกับ Apps Script ล่าสุด
   const handlePublicSubmit = async (e) => {
     e.preventDefault();
     if (!publicData.location.trim()) {
@@ -142,53 +181,65 @@ export default function RolePortal({
 
     const newPublicJob = {
       id: 'JOB-' + Date.now().toString().slice(-6),
+      JobID: publicData.receivedNo,
       receivedNo: publicData.receivedNo,
       receivedAt: currentDateTime,
-      timestamp: currentDateTime,
+      Timestamp: currentDateTime,
       channel: 'แจ้งผ่านระบบเว็บไซต์ประชาชน',
       complaintType: finalComplaintTopic,
       complainantInfo: publicData.phone || '-',
       complaintTopic: finalComplaintTopic,
+      IssueType: finalComplaintTopic,
       description: publicData.description || 'แจ้งซ่อมโดยประชาชนทั่วไปผ่านเว็บไซต์',
+      Description: publicData.description || 'แจ้งซ่อมโดยประชาชนทั่วไปผ่านเว็บไซต์',
       location: publicData.location,
+      Location: publicData.location,
       reporterName: publicData.reporterName.trim() || 'ประชาชนทั่วไป',
+      ReporterName: publicData.reporterName.trim() || 'ประชาชนทั่วไป',
       phone: publicData.phone.trim() || '-',
+      Phone: publicData.phone.trim() || '-',
       receiverName: 'ระบบรับแจ้งอัตโนมัติ',
       status: 'PENDING',
+      Status: 'PENDING',
       urgency: publicData.urgency,
+      Notes: publicData.urgency,
       technician: '-',
-      techName: '-',
-      techPhone: '-',
+      Technician: '-',
       latitude: coords.lat || '',
+      Latitude: coords.lat || '',
       longitude: coords.lng || '',
-      beforeImgBase64: publicFormImages.length > 0 ? publicFormImages[0] : ''
+      Longitude: coords.lng || '',
+      beforeImg: publicFormImages.length > 0 ? publicFormImages[0] : '',
+      BeforeImg: publicFormImages.length > 0 ? publicFormImages[0] : ''
+    };
+
+    const jobDataPayload = {
+      action: "create_job",
+      jobData: newPublicJob
     };
 
     try {
-      // 1. บันทึกลง Firebase
-      await saveJobToFirebase(newPublicJob);
+      await fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jobDataPayload)
+      });
+
+      // ส่งแจ้งเตือน Telegram ตามที่เปิดใช้งาน
+      await sendTelegramNotification(newPublicJob);
+
       if (onJobCreated) onJobCreated(newPublicJob);
 
-      // 2. ส่งข้อมูลไป Apps Script เพื่อเก็บบันทึกลง Sheets และยิงแจ้งเตือน Telegram (ถ้าต้องการ)
-      try {
-        const payload = {
-          action: "archive_job", // หรือจะส่งไปเก็บบันทึก
-          jobData: newPublicJob
-        };
-        await fetch(WEB_APP_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(payload)
-        });
-      } catch (netErr) {
-        console.error("Network notice:", netErr);
-      }
+      alert(
+        `แจ้งซ่อมสำเร็จเรียบร้อยแล้ว!\n\n` +
+        `📌 เลขที่รับแจ้งของคุณคือ: ${publicData.receivedNo}\n\n` +
+        `*** กรุณาบันทึกเลขที่รับแจ้งที่แสดงหน้าจอรับแจ้ง เพื่อติดตามสถานะการซ่อมท่อต่อไปครับ ***`
+      );
 
-      alert(`แจ้งซ่อมสำเร็จ! เลขที่รับแจ้งของคุณคือ: ${publicData.receivedNo}\n(กรุณาจดเลขที่รับแจ้งไว้สำหรับตรวจสอบสถานะ)`);
       setIsPublicFormOpen(false);
     } catch (err) {
-      console.error("Error saving public job:", err);
+      console.error("Error saving public job to Google Sheets:", err);
       alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง");
     } finally {
       setIsSubmitting(false);
