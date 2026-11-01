@@ -31,14 +31,14 @@ export default function StatsOverview({ stats }) {
       label: 'ปิดงานสำเร็จแล้ว',
       value: stats.completed,
       textColor: 'text-emerald-600',
-      bgColor: 'bg-emerald-600',
+      bgColor: 'bg-emerald-50',
       iconColor: 'text-emerald-600',
       icon: CheckCircle2
     }
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 font-sans">
       {cards.map((card, idx) => {
         const IconComponent = card.icon;
         return (
