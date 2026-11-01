@@ -1,25 +1,50 @@
 import React, { useState } from 'react';
-import { saveJobToFirebase } from '../services/firebase';
-import { X, Sparkles, AlertCircle, FileText, Loader2 } from 'lucide-react';
+import { X, Sparkles, AlertCircle, FileText, Loader2, AlertTriangle, User, Phone, MapPin, Calendar, Hash } from 'lucide-react';
+
+// 🌐 URL ของ Google Apps Script Web App หลักสำหรับบันทึกข้อมูล
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
+
+// 🔔 เปิดการใช้งานการแจ้งเตือน Telegram (ตั้งเป็น true เพื่อใช้งาน)
+const ENABLE_TELEGRAM_NOTIFY = true; 
+const TELEGRAM_BOT_TOKEN = "8601147798:AAFNBUcoRYH4tvZfyvWgxaXP9xrWiR4D6kk";
+const TELEGRAM_CHAT_ID = "-1003925252865";
 
 export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
   if (!isOpen) return null;
 
-  // 🕒 ฟังก์ชันดึง วัน-เวลา ปัจจุบันตามเขตเวลาประเทศไทย (GMT+7) สำหรับ type="datetime-local"
   const getThaiNowForInput = () => {
     const now = new Date();
     const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-    return thaiTime.toISOString().slice(0, 16); // รูปแบบ YYYY-MM-DDTHH:mm
+    return thaiTime.toISOString().slice(0, 16);
+  };
+
+  const formatThaiDateTimeString = (dateInput) => {
+    if (!dateInput) return '-';
+    let date = new Date(dateInput);
+    if (isNaN(date.getTime())) {
+      return String(dateInput).replace('T', ' '); 
+    }
+
+    const thaiMonths = [
+      'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+      'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+    ];
+
+    const day = date.getDate();
+    const month = thaiMonths[date.getMonth()];
+    const year = date.getFullYear() + 543;
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    return `${day} ${month} ${year} เวลา ${hours}.${minutes} น.`;
   };
 
   const [loading, setLoading] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // กำหนดค่าเริ่มต้นของฟอร์มให้ตรงกับฟิลด์ที่ต้องการ
   const [formData, setFormData] = useState({
-    id: 'JOB-' + Date.now().toString().slice(-6),
-    receivedNo: '',
+    receivedNo: '', 
     receivedAt: getThaiNowForInput(),
     reporterName: '',
     phone: '',
@@ -36,7 +61,34 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // ฟังก์ชันย่อขนาดภาพและส่ง OCR ไปที่ Vercel Serverless API
+  // 📲 ฟังก์ชันสำหรับส่งแจ้งเตือน Telegram (เปิดใช้งานตามสวิตช์ ENABLE_TELEGRAM_NOTIFY)
+  const sendTelegramNotification = async (jobPayload) => {
+    if (!ENABLE_TELEGRAM_NOTIFY) return;
+    if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return;
+
+    const message = `🚨 *รับแจ้งซ่อมใหม่ (ระบบ กปภ.)* 🚨\n\n` +
+      `📌 *เลขที่รับแจ้ง:* \`${jobPayload.receivedNo}\`\n` +
+      `👤 *ผู้แจ้ง:* ${jobPayload.reporterName} (${jobPayload.phone})\n` +
+      `📍 *สถานที่:* ${jobPayload.location}\n` +
+      `🔧 *ปัญหา:* ${jobPayload.complaintTopic}\n` +
+      `⚡ *ความเร่งด่วน:* ${jobPayload.urgency}\n` +
+      `📅 *เวลา:* ${jobPayload.receivedAt}`;
+
+    try {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: message,
+          parse_mode: "Markdown"
+        })
+      });
+    } catch (err) {
+      console.error("Failed to send Telegram notification:", err);
+    }
+  };
+
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -81,7 +133,7 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
 
           const contentType = response.headers.get("content-type");
           if (!contentType || !contentType.includes("application/json")) {
-            throw new Error('ไม่พบ Serverless API (/api/ocr-vision) หรือกำลังรันในโหมด Local');
+            throw new Error('ไม่พบ Serverless API (/api/ocr-vision)');
           }
 
           const result = await response.json();
@@ -92,6 +144,17 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
 
           const data = result.data;
 
+          let detectedUrgency = data.urgency || data.urgencyLevel || data.priority || 'ปกติ';
+          if (!['ปกติ', 'ด่วน', 'ด่วนมาก'].includes(detectedUrgency)) {
+            if (detectedUrgency.includes('ด่วนมาก') || detectedUrgency.includes('สูงสุด')) {
+              detectedUrgency = 'ด่วนมาก';
+            } else if (detectedUrgency.includes('ด่วน')) {
+              detectedUrgency = 'ด่วน';
+            } else {
+              detectedUrgency = 'ปกติ';
+            }
+          }
+
           setFormData(prev => ({
             ...prev,
             receivedNo: data.receivedNo || prev.receivedNo,
@@ -100,7 +163,7 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
             phone: data.phone || data.complainantInfo || prev.phone,
             location: data.location || prev.location,
             complaintTopic: data.complaintTopic || prev.complaintTopic,
-            urgency: data.urgency || prev.urgency,
+            urgency: detectedUrgency,
           }));
 
         } catch (err) {
@@ -115,218 +178,329 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // 🛡️ บังคับตรวจสอบการกรอกข้อมูลให้ครบทุกช่องก่อนบันทึก
+    if (!formData.receivedNo.trim()) {
+      alert("กรุณากรอกเลขที่รับแจ้ง");
+      return;
+    }
+    if (!formData.receivedAt) {
+      alert("กรุณากรอกวัน-เวลารับแจ้ง");
+      return;
+    }
+    if (!formData.reporterName.trim()) {
+      alert("กรุณากรอกชื่อผู้แจ้ง");
+      return;
+    }
+    if (!formData.phone.trim()) {
+      alert("กรุณากรอกเบอร์โทรศัพท์");
+      return;
+    }
+    if (!formData.location.trim()) {
+      alert("กรุณากรอกบริเวณที่เกิดเหตุ / สถานที่");
+      return;
+    }
+    if (formData.complaintTopic === 'อื่นๆ' && !formData.customComplaintTopic.trim()) {
+      alert("กรุณาระบุหัวข้อปัญหาเพิ่มเติม");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     const finalTopic = formData.complaintTopic === 'อื่นๆ' 
-      ? (formData.customComplaintTopic.trim() || 'อื่นๆ') 
+      ? formData.customComplaintTopic.trim() 
       : formData.complaintTopic;
 
-    const formattedData = {
-      ...formData,
+    // แปลงวันที่เป็นรูปแบบไทย (วัน เดือน ปีพ.ศ. เวลา) สำหรับบันทึกและแสดงผล
+    const thaiDateTimeFormatted = formatThaiDateTimeString(formData.receivedAt);
+    const manualReceivedNo = formData.receivedNo.trim();
+
+    const jobPayload = {
+      action: "create_job",
+      receivedNo: manualReceivedNo,
+      JobID: manualReceivedNo,
+      id: manualReceivedNo,
+      receivedAt: thaiDateTimeFormatted, 
+      Timestamp: thaiDateTimeFormatted,
+      timestamp: thaiDateTimeFormatted,
+      receivedAtThai: thaiDateTimeFormatted,
+      reporterName: formData.reporterName.trim(),
+      ReporterName: formData.reporterName.trim(),
+      phone: formData.phone.trim(),
+      Phone: formData.phone.trim(),
+      location: formData.location.trim(),
+      Location: formData.location.trim(),
       complaintTopic: finalTopic,
-      complaintType: finalTopic,
-      receivedAt: formData.receivedAt ? formData.receivedAt.replace('T', ' ') : getThaiNowForInput().replace('T', ' ')
+      issueType: finalTopic,
+      IssueType: finalTopic,
+      customComplaintTopic: formData.customComplaintTopic.trim() || finalTopic,
+      description: formData.customComplaintTopic.trim() || finalTopic,
+      Description: formData.customComplaintTopic.trim() || finalTopic,
+      urgency: formData.urgency,
+      Notes: formData.urgency,
+      status: 'PENDING',
+      Status: 'PENDING'
     };
 
     try {
-      await saveJobToFirebase(formattedData);
-      if (onJobCreated) onJobCreated(formattedData);
+      await fetch(WEB_APP_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8",
+        },
+        body: JSON.stringify({
+          action: "create_job",
+          jobData: jobPayload
+        })
+      });
+
+      // 📲 ส่งแจ้งเตือนเข้า Telegram หลังจากบันทึกข้อมูลสำเร็จ
+      await sendTelegramNotification(jobPayload);
+
+      if (onJobCreated) {
+        onJobCreated(jobPayload);
+      }
+
       onClose();
+      
+      alert(
+        `บันทึกใบแจ้งซ่อมลง Google Sheets สำเร็จ!\n\n` +
+        `📌 เลขที่รับแจ้ง: ${manualReceivedNo}\n` +
+        `📍 สถานที่: ${formData.location}\n\n` +
+        `*** ระบบกำลังโหลดหน้าใหม่เพื่อซิงค์ข้อมูลล่าสุด... ***`
+      );
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+
     } catch (err) {
-      console.error('Firebase Save Error:', err);
-      setError('ไม่สามารถบันทึกข้อมูลลงฐานข้อมูลได้');
+      console.error('Google Sheets Save Error:', err);
+      setError('ไม่สามารถบันทึกข้อมูลลง Google Sheets ได้');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 my-8 border border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 overflow-y-auto font-sans animate-fadeIn">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden my-8 border border-slate-100 transform transition-all">
         
-        {/* หัวข้อโมดัล */}
-        <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+        {/* Header Modal */}
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex justify-between items-center text-white">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-blue-50 text-blue-600 rounded-2xl">
-              <FileText className="w-5 h-5" />
+            <div className="p-2 bg-white/10 rounded-xl backdrop-blur-sm">
+              <FileText className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-800">เพิ่มใบแจ้งซ่อมใหม่</h2>
-              <p className="text-xs text-slate-400">บันทึกข้อมูลรับแจ้งปัญหาหรือใช้ AI OCR ช่วยกรอกอัตโนมัติ</p>
+              <h2 className="text-sm font-bold tracking-wide">เพิ่มใบแจ้งซ่อมใหม่</h2>
+              <p className="text-[11px] text-blue-100 opacity-90">บันทึกข้อมูลรับแจ้งปัญหาหรือใช้ AI OCR ช่วยกรอก</p>
             </div>
           </div>
           <button 
+            type="button"
             onClick={onClose} 
-            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+            className="p-1.5 hover:bg-white/10 rounded-full transition cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5 text-white" />
           </button>
         </div>
 
-        {/* ส่วนอัปโหลดรูป AI OCR */}
-        <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl space-y-2">
-          <label className="block text-xs font-bold text-blue-900 flex items-center gap-1.5">
-            <Sparkles className="w-4 h-4 text-blue-600" /> อัปโหลดรูปภาพใบแจ้งซ่อม เพื่อให้ AI กรอกข้อมูลอัตโนมัติ
-          </label>
+        <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
           
-          <input 
-            type="file" 
-            accept="image/*" 
-            onChange={handleImageUpload}
-            disabled={ocrLoading}
-            className="block w-full text-xs text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer bg-white border border-blue-200 rounded-xl shadow-xs"
-          />
-          
-          {ocrLoading && (
-            <div className="flex items-center gap-2 pt-1 text-xs text-blue-600 font-bold animate-pulse">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>กำลังบีบอัดภาพและให้ AI อ่านข้อมูล กรุณารอสักครู่...</span>
-            </div>
-          )}
-        </div>
-
-        {/* แสดง Error ถ้ามี */}
-        {error && (
-          <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* ฟอร์มกรอกข้อมูลตามที่กำหนด */}
-        <form onSubmit={handleSubmit} className="mt-4 space-y-3.5">
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่รับแจ้ง *</label>
-              <input 
-                type="text" 
-                name="receivedNo" 
-                value={formData.receivedNo} 
-                onChange={handleChange} 
-                required
-                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-mono font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 shadow-xs" 
-                placeholder="เช่น S67-00123" 
-              />
-            </div>
+          {/* ส่วนอัปโหลดรูป AI OCR */}
+          <div className="p-4 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-100 rounded-2xl space-y-2.5 shadow-xs">
+            <label className="block text-xs font-bold text-blue-900 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-blue-600" /> อัปโหลดรูปภาพใบแจ้งซ่อม เพื่อให้ AI กรอกข้อมูลอัตโนมัติ
+            </label>
             
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">วัน-เวลารับแจ้ง *</label>
-              <input 
-                type="datetime-local" 
-                name="receivedAt" 
-                value={formData.receivedAt} 
-                onChange={handleChange} 
-                required
-                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อผู้แจ้ง</label>
-              <input 
-                type="text" 
-                name="reporterName" 
-                value={formData.reporterName} 
-                onChange={handleChange} 
-                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
-                placeholder="ชื่อ-นามสกุล ผู้แจ้ง"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">เบอร์โทรศัพท์</label>
-              <input 
-                type="tel" 
-                name="phone" 
-                value={formData.phone} 
-                onChange={handleChange} 
-                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
-                placeholder="เบอร์โทรติดต่อ"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">บริเวณที่เกิดเหตุ / สถานที่ *</label>
             <input 
-              type="text" 
-              name="location" 
-              value={formData.location} 
-              onChange={handleChange} 
-              required
-              className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
-              placeholder="ระบุสถานที่ บ้านเลขที่ ถนน ซอย" 
+              type="file" 
+              accept="image/*" 
+              onChange={handleImageUpload}
+              disabled={ocrLoading}
+              className="block w-full text-xs text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer bg-white border border-blue-200 rounded-xl shadow-xs transition"
             />
+            
+            {ocrLoading && (
+              <div className="flex items-center gap-2 pt-1 text-xs text-blue-600 font-bold animate-pulse">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>กำลังบีบอัดภาพและให้ AI อ่านข้อมูล กรุณารอสักครู่...</span>
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">หัวข้อปัญหา *</label>
-              <select
-                name="complaintTopic"
-                value={formData.complaintTopic}
-                onChange={handleChange}
-                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs"
-              >
-                <option value="ท่อแตกรั่ว">ท่อแตกรั่ว</option>
-                <option value="น้ำไม่ไหล/น้ำไหลอ่อน">น้ำไม่ไหล/น้ำไหลอ่อน</option>
-                <option value="มาตรวัดน้ำชำรุด">มาตรวัดน้ำชำรุด</option>
-                <option value="อื่นๆ">อื่นๆ (ระบุเอง)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">ระดับความเร่งด่วน</label>
-              <select
-                name="urgency"
-                value={formData.urgency}
-                onChange={handleChange}
-                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-bold text-amber-600 focus:ring-2 focus:ring-blue-500 shadow-xs"
-              >
-                <option value="ปกติ">ปกติ</option>
-                <option value="ด่วน">ด่วน</option>
-                <option value="ด่วนมาก">ด่วนมาก</option>
-              </select>
-            </div>
-          </div>
-
-          {formData.complaintTopic === 'อื่นๆ' && (
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">ระบุหัวข้อปัญหาเพิ่มเติม *</label>
-              <input 
-                type="text" 
-                name="customComplaintTopic" 
-                value={formData.customComplaintTopic} 
-                onChange={handleChange} 
-                required
-                className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 shadow-xs" 
-                placeholder="ระบุลักษณะปัญหา..."
-              />
+          {error && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{error}</span>
             </div>
           )}
 
-          <div className="flex justify-end space-x-2.5 pt-4 border-t border-slate-100">
-            <button 
-              type="button" 
-              onClick={onClose} 
-              className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 font-bold text-xs cursor-pointer transition"
-            >
-              ยกเลิก
-            </button>
-            <button 
-              type="submit" 
-              disabled={loading} 
-              className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold text-xs shadow-md disabled:opacity-50 cursor-pointer transition flex items-center gap-1.5"
-            >
-              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              {loading ? 'กำลังบันทึก...' : 'บันทึกใบแจ้งซ่อม'}
-            </button>
-          </div>
-        </form>
+          <form onSubmit={handleSubmit} className="space-y-3.5">
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <Hash className="w-3.5 h-3.5 text-slate-400" />
+                  <span>เลขที่รับแจ้ง / Smart 1662</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  name="receivedNo" 
+                  value={formData.receivedNo} 
+                  onChange={handleChange} 
+                  required
+                  className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl px-3.5 py-2.5 text-xs font-mono font-bold text-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm" 
+                  placeholder="พิมพ์เลขที่รับแจ้ง..." 
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                  <span>วัน-เวลารับแจ้ง (เวลาไทย)</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <input 
+                  type="datetime-local" 
+                  name="receivedAt" 
+                  value={formData.receivedAt} 
+                  onChange={handleChange} 
+                  required
+                  className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm" 
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <User className="w-3.5 h-3.5 text-slate-400" />
+                  <span>ชื่อผู้แจ้ง</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  name="reporterName" 
+                  value={formData.reporterName} 
+                  onChange={handleChange} 
+                  required
+                  className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl px-3.5 py-2.5 text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm" 
+                  placeholder="ชื่อ-นามสกุล ผู้แจ้ง"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <Phone className="w-3.5 h-3.5 text-slate-400" />
+                  <span>เบอร์โทรศัพท์</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <input 
+                  type="tel" 
+                  name="phone" 
+                  value={formData.phone} 
+                  onChange={handleChange} 
+                  required
+                  className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl px-3.5 py-2.5 text-xs font-mono font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm" 
+                  placeholder="เบอร์โทรติดต่อ"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                <span>บริเวณที่เกิดเหตุ / สถานที่</span>
+                <span className="text-rose-500">*</span>
+              </label>
+              <input 
+                type="text" 
+                name="location" 
+                value={formData.location} 
+                onChange={handleChange} 
+                required
+                className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl px-3.5 py-2.5 text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm" 
+                placeholder="ระบุสถานที่ บ้านเลขที่ ถนน ซอย" 
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5 text-slate-400" />
+                  <span>หัวข้อปัญหา</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  name="complaintTopic"
+                  value={formData.complaintTopic}
+                  onChange={handleChange}
+                  required
+                  className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl px-3 py-2.5 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm cursor-pointer"
+                >
+                  <option value="ท่อแตกรั่ว">ท่อแตกรั่ว</option>
+                  <option value="น้ำไม่ไหล/น้ำไหลอ่อน">น้ำไม่ไหล/น้ำไหลอ่อน</option>
+                  <option value="มาตรวัดน้ำชำรุด">มาตรวัดน้ำชำรุด</option>
+                  <option value="อื่นๆ">อื่นๆ (ระบุเอง)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                  <span>ระดับความเร่งด่วน</span>
+                </label>
+                <select
+                  name="urgency"
+                  value={formData.urgency}
+                  onChange={handleChange}
+                  className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl px-3 py-2.5 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm cursor-pointer"
+                >
+                  <option value="ปกติ" className="text-slate-700 font-medium">ปกติ</option>
+                  <option value="ด่วน" className="text-amber-600 font-bold">ด่วน</option>
+                  <option value="ด่วนมาก" className="text-rose-600 font-bold">ด่วนมาก</option>
+                </select>
+              </div>
+            </div>
+
+            {formData.complaintTopic === 'อื่นๆ' && (
+              <div className="animate-fadeIn">
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">ระบุหัวข้อปัญหาเพิ่มเติม *</label>
+                <input 
+                  type="text" 
+                  name="customComplaintTopic" 
+                  value={formData.customComplaintTopic} 
+                  onChange={handleChange} 
+                  required
+                  className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl px-3.5 py-2.5 text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm" 
+                  placeholder="ระบุลักษณะปัญหา..."
+                />
+              </div>
+            )}
+
+            <div className="flex items-center gap-2.5 pt-4 border-t border-slate-100">
+              <button 
+                type="button" 
+                onClick={onClose} 
+                className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-xs cursor-pointer transition"
+              >
+                ยกเลิก
+              </button>
+              <button 
+                type="submit" 
+                disabled={loading} 
+                className="flex-1 px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-blue-500/25 disabled:opacity-50 cursor-pointer transition flex items-center justify-center gap-1.5"
+              >
+                {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {loading ? 'กำลังบันทึก...' : 'บันทึกใบแจ้งซ่อม'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
