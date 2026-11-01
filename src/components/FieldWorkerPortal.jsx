@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, ShieldAlert, Search, Loader2, Plus, AlertCircle, XCircle, RotateCcw, Image as ImageIcon, Save, Check } from 'lucide-react';
+import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, ShieldAlert, Search, Loader2, Plus, Image as ImageIcon, Save, RotateCcw } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
-import { saveJobToFirebase } from '../services/firebase';
 
 // 🌐 URL ของ Google Apps Script Web App
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwJ23IDzEVsHtSqPTKX7A1RpTs20qk04LrohJMcD27swbJ6hErog3i_xBEAe6Numb8gCw/exec";
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
+
+// 🔔 [สวิตช์ควบคุม Telegram] เปิดใช้งานการแจ้งเตือนอัตโนมัติเมื่อปิดงาน
+const ENABLE_TELEGRAM_NOTIFY = true; 
+const TELEGRAM_BOT_TOKEN = "8601147798:AAFNBUcoRYH4tvZfyvWgxaXP9xrWiR4D6kk";
+const TELEGRAM_CHAT_ID = "-1003925252865";
 
 // รายการอุปกรณ์สำรอง (Fallback Data)
 const DEFAULT_EQUIPMENT_LIST = [
@@ -23,11 +27,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   
   // State สำหรับเปิด Modal เพิ่มใบงานด่วนหน้างาน (Ad-hoc Job)
   const [isAdHocModalOpen, setIsAdHocModalOpen] = useState(false);
-  
-  // State สำหรับแก้ไขงานเดิม (Editing Job)
-  const [editingJob, setEditingJob] = useState(null);
 
-  // 📸 State สำหรับระบบค้นหาและแก้ไขรูปภาพใบงานที่ปิดแล้ว
+  // 📸 State สำหรับระบบค้นหาและแก้ไขรูปภาพ/ข้อมูลใบงานที่ปิดแล้ว
   const [completedSearchTerm, setCompletedSearchTerm] = useState('');
   const [editingPhotoJob, setEditingPhotoJob] = useState(null);
 
@@ -43,9 +44,13 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
   const [images, setImages] = useState({ before: [], inProgress: [], after: [] });
   
-  // 🛠️ State สำหรับระบบเลือกอุปกรณ์จาก Google Sheets
+  // 🛠️ State สำหรับระบบเลือกอุปกรณ์และทีมช่างจาก Google Sheets
   const [equipmentList, setEquipmentList] = useState(DEFAULT_EQUIPMENT_LIST);
   const [isLoadingEquipment, setIsLoadingEquipment] = useState(false);
+  
+  const [teamListFromSheet, setTeamListFromSheet] = useState([]);
+  const [isLoadingTeams, setIsLoadingTeams] = useState(false);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [selectedEquipmentItem, setSelectedEquipmentItem] = useState(null);
@@ -84,42 +89,106 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     'อื่นๆ (ระบุในรายละเอียด)'
   ];
 
-  // 📸 ฟังก์ชันแปลงรูปภาพจาก Array / String / JSON ให้เป็น Array มาตรฐาน
+  // 🔗 ฟังก์ชันแปลงลิงก์ Google Drive ให้เป็น Direct Image URL สำหรับแสดงผลในแท็ก <img />
+  const convertGoogleDriveUrl = (url) => {
+    if (!url || typeof url !== 'string') return '';
+    const cleanUrl = url.trim();
+    const match = cleanUrl.match(/\/d\/([a-zA-Z0-9_-]+)|id=([a-zA-Z0-9_-]+)/);
+    if (match && (match[1] || match[2])) {
+      const fileId = match[1] || match[2];
+      return `https://lh3.googleusercontent.com/d/${fileId}`;
+    }
+    return cleanUrl;
+  };
+
+  // 📸 ฟังก์ชันแปลงรูปภาพ พร้อมตัดค่าซ้ำป้องกันภาพเบิ้ล
   const parseImages = (imgData) => {
     if (!imgData) return [];
     try {
+      let extractedUrls = [];
       if (Array.isArray(imgData)) {
-        return imgData.filter(url => url && typeof url === 'string' && url.trim() !== '');
+        extractedUrls = imgData.filter(url => url && typeof url === 'string' && url.trim() !== '');
+      } else if (typeof imgData === 'string') {
+        let cleanData = imgData.trim();
+        if (cleanData === '' || cleanData === '-') return [];
+
+        if (cleanData.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(cleanData);
+            if (Array.isArray(parsed)) {
+              extractedUrls = parsed.filter(url => url && typeof url === 'string' && url.trim() !== '');
+            }
+          } catch (e) {
+            extractedUrls = [cleanData];
+          }
+        } else if (cleanData.includes('\n') || cleanData.includes(',') || cleanData.includes(' ')) {
+          extractedUrls = cleanData.split(/[\n,\s]+/).map(u => u.trim()).filter(u => u !== '');
+        } else {
+          extractedUrls = [cleanData];
+        }
       }
-      if (typeof imgData === 'string') {
-        if (imgData.startsWith('[')) {
-          const parsed = JSON.parse(imgData);
-          if (Array.isArray(parsed)) return parsed.filter(url => url && typeof url === 'string');
-        }
-        if (imgData.includes('\n')) {
-          return imgData.split('\n').map(u => u.trim()).filter(u => u !== '');
-        }
-        if (imgData.includes(',')) {
-          return imgData.split(',').map(u => u.trim()).filter(u => u !== '');
-        }
-        if (imgData.trim() !== '') {
-          return [imgData.trim()];
-        }
-      }
+
+      const formattedUrls = extractedUrls.map(u => convertGoogleDriveUrl(u));
+      return Array.from(new Set(formattedUrls));
     } catch (e) {
       console.error("Error parsing images:", e);
     }
     return [];
   };
 
-  // 🌐 ดึงข้อมูลรายการอุปกรณ์จาก Google Sheets
+  // 📲 ฟังก์ชันส่งแจ้งเตือนเข้า Telegram หลังจากปิดงานซ่อม
+  const sendTelegramNotification = async (jobPayload) => {
+    if (!ENABLE_TELEGRAM_NOTIFY) return;
+    if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return;
+
+    try {
+      let firstPhoto = "";
+      const afterImgs = jobPayload.afterImg || jobPayload.AfterImg || [];
+      const beforeImgs = jobPayload.beforeImg || jobPayload.BeforeImg || [];
+      
+      if (Array.isArray(afterImgs) && afterImgs.length > 0) {
+        firstPhoto = afterImgs[0];
+      } else if (Array.isArray(beforeImgs) && beforeImgs.length > 0) {
+        firstPhoto = beforeImgs[0];
+      } else if (typeof afterImgs === 'string' && afterImgs.trim() !== '') {
+        firstPhoto = afterImgs.split(',')[0].trim();
+      }
+
+      const isUnrep = jobPayload.status === 'UNREPAIRABLE';
+      const statusHeader = isUnrep ? '❌ *แจ้งซ่อมไม่สำเร็จ / มีอุปสรรค* ❌' : '✅ *แจ้งปิดงานซ่อมสำเร็จ* ✅';
+
+      let message = `${statusHeader}\n\n` +
+                    `📌 *เลขที่รับแจ้ง:* \`${jobPayload.receivedNo || jobPayload.JobID}\`\n` +
+                    `📍 *สถานที่:* ${jobPayload.location}\n` +
+                    `👷‍♂️ *ทีมซ่อม:* ${jobPayload.technician}\n` +
+                    `🛠 *อุปกรณ์ที่ใช้:* ${jobPayload.equipment}\n` +
+                    `🕒 *เวลาปิดงาน:* ${jobPayload.closedAt}`;
+
+      if (firstPhoto) {
+        message += `\n\n🔗 [คลิกดูรูปภาพ/ผลการซ่อม](${firstPhoto})`;
+      }
+
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: message,
+          parse_mode: "Markdown"
+        })
+      });
+    } catch (err) {
+      console.error("Failed to send Telegram notification:", err);
+    }
+  };
+
+  // 🌐 ดึงข้อมูลรายการอุปกรณ์และทีมช่างจาก Google Sheets
   useEffect(() => {
     const fetchEquipmentFromSheets = async () => {
       setIsLoadingEquipment(true);
       try {
         const response = await fetch(`${WEB_APP_URL}?action=equipment`);
         const data = await response.json();
-
         if (Array.isArray(data) && data.length > 0) {
           setEquipmentList(data);
         } else {
@@ -133,12 +202,25 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       }
     };
 
-    if (currentTeam) {
-      fetchEquipmentFromSheets();
-    }
-  }, [currentTeam]);
+    const fetchTeamsFromSheet = async () => {
+      setIsLoadingTeams(true);
+      try {
+        const response = await fetch(`${WEB_APP_URL}?action=teams`);
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setTeamListFromSheet(data);
+        }
+      } catch (err) {
+        console.error("Error fetching teams:", err);
+      } finally {
+        setIsLoadingTeams(false);
+      }
+    };
 
-  // ฟังก์ชันค้นหาอุปกรณ์
+    fetchEquipmentFromSheets();
+    fetchTeamsFromSheet();
+  }, []);
+
   const handleSearchEquipmentChange = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
@@ -151,7 +233,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         const itemName = String(
           item.name || item.itemName || item.ชื่ออุปกรณ์ || item.รายการ || item.อุปกรณ์ || ''
         ).trim().toLowerCase();
-
         return itemName.includes(query);
       });
       setSuggestions(filtered);
@@ -189,7 +270,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     const updatedList = [...selectedEquipmentList, newItem];
     setSelectedEquipmentList(updatedList);
 
-    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join('\n');
+    const summaryText = updatedList.map(i => `${i.name} (${i.quantity} ${i.unit})`).join(', ');
     setNotes(summaryText);
 
     setSearchTerm('');
@@ -200,7 +281,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const handleRemoveEquipmentItem = (id) => {
     const updatedList = selectedEquipmentList.filter(item => item.id !== id);
     setSelectedEquipmentList(updatedList);
-    const summaryText = updatedList.map(i => `- ${i.name}: ${i.quantity} ${i.unit}`).join('\n');
+    const summaryText = updatedList.map(i => `${i.name} (${i.quantity} ${i.unit})`).join(', ');
     setNotes(summaryText);
   };
 
@@ -212,7 +293,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // จัดการเมื่อเปลี่ยนสถานะเช็คบ็อกซ์ไม่ได้ใช้อุปกรณ์
   const handleToggleNoEquipment = (checked) => {
     setIsNoEquipmentUsed(checked);
     if (checked) {
@@ -232,6 +312,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const handleLogoutAction = () => {
     setCurrentTeam('');
     localStorage.removeItem('pwa_worker_team');
+    localStorage.removeItem('pwa_worker_pos');
+    localStorage.removeItem('pwa_worker_phone');
     setSelectedJob(null);
     setEditingPhotoJob(null);
     if (onLogout) {
@@ -257,7 +339,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   };
 
   const handleOpenAdHocModal = () => {
-    setEditingJob(null);
     setAdHocData({
       receivedNo: generateAutoReceivedNo(),
       reporterName: '',
@@ -270,53 +351,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setIsAdHocModalOpen(true);
   };
 
-  const handleOpenEditModal = (job) => {
-    if (job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน') {
-      alert("ไม่อนุญาตให้แก้ไข: งานนี้เป็นงานที่ได้รับมอบหมายจากแอดมิน");
-      return;
-    }
-
-    setEditingJob(job);
-    const isStandardTopic = ['ท่อแตกรั่ว', 'น้ำไม่ไหล/น้ำไหลอ่อน'].includes(job.complaintTopic);
-    
-    setAdHocData({
-      receivedNo: job.receivedNo || job.id,
-      reporterName: job.reporterName !== 'ไม่ระบุชื่อ' ? job.reporterName : '',
-      phone: job.phone !== '-' ? job.phone : '',
-      location: job.location || '',
-      complaintTopicType: isStandardTopic ? job.complaintTopic : 'อื่นๆ',
-      customComplaintTopic: isStandardTopic ? '' : job.complaintTopic,
-      urgency: job.urgency || 'ปกติ'
-    });
-    setIsAdHocModalOpen(true);
-  };
-
-  const handleDeleteJobAction = async (job) => {
-    if (job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน') {
-      alert("ไม่อนุญาตให้ลบ: งานนี้เป็นงานที่ได้รับมอบหมายจากแอดมิน");
-      return;
-    }
-
-    if (job.status === 'COMPLETED') {
-      alert("ไม่สามารถลบใบงานที่ซ่อมเสร็จสิ้นแล้วได้");
-      return;
-    }
-
-    if (window.confirm(`คุณต้องการลบใบแจ้งซ่อมเลขที่ "${job.receivedNo || job.id}" ใช่หรือไม่?`)) {
-      try {
-        if (onDeleteJob) {
-          await onDeleteJob(job.id);
-        } else {
-          await onUpdateJobStatus(job.id, 'DELETED');
-        }
-        alert("ลบรายการแจ้งซ่อมเรียบร้อยแล้ว");
-      } catch (err) {
-        console.error("Error deleting job:", err);
-        alert("เกิดข้อผิดพลาดในการลบรายการ");
-      }
-    }
-  };
-
   const getUrgencyWeight = (urgency) => {
     switch (urgency) {
       case 'ด่วนมาก': return 3;
@@ -326,135 +360,204 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 🔄 ดึงรายการงานค้าง (DISPATCHED, IN_PROGRESS, UNREPAIRABLE)
-  const activeJobs = jobs
+  const normalizeStatus = (status) => {
+    if (!status) return 'PENDING';
+    const s = String(status).trim();
+    if (s === 'รอดำเนินการ' || s === 'PENDING') return 'PENDING';
+    if (s === 'มอบหมายช่างแล้ว' || s === 'DISPATCHED') return 'DISPATCHED';
+    if (s === 'กำลังดำเนินการซ่อม' || s === 'IN_PROGRESS') return 'IN_PROGRESS';
+    if (s === 'ซ่อมไม่สำเร็จ' || s === 'UNREPAIRABLE') return 'UNREPAIRABLE';
+    if (s === 'ซ่อมเสร็จสิ้น (ปิดงาน)' || s === 'COMPLETED') return 'COMPLETED';
+    return s;
+  };
+
+  const activeJobs = (jobs || [])
     .filter(j => {
-      const matchTechName = j.techName && j.techName.trim() === currentTeam.trim();
-      const matchTechnicianStr = j.technician && j.technician.includes(currentTeam);
-      const isMyTeam = matchTechName || matchTechnicianStr;
+      if (!j) return false;
+      const jobTech = String(j.technician || j.Technician || j.techName || '').trim().toLowerCase();
+      const myTeam = String(currentTeam || '').trim().toLowerCase();
       
-      const isValidStatus = ['DISPATCHED', 'IN_PROGRESS', 'UNREPAIRABLE'].includes(j.status);
+      const isMyTeam = !myTeam || jobTech.includes(myTeam) || myTeam.includes(jobTech);
+      
+      const currentNormStatus = normalizeStatus(j.status || j.Status);
+      const isValidStatus = ['PENDING', 'DISPATCHED', 'IN_PROGRESS', 'UNREPAIRABLE'].includes(currentNormStatus);
       return isMyTeam && isValidStatus;
     })
     .sort((a, b) => {
-      const weightA = getUrgencyWeight(a.urgency);
-      const weightB = getUrgencyWeight(b.urgency);
+      const urgencyA = a.Notes || a.notes || a.urgency || a.Urgency || 'ปกติ';
+      const urgencyB = b.Notes || b.notes || b.urgency || b.Urgency || 'ปกติ';
+      const weightA = getUrgencyWeight(urgencyA);
+      const weightB = getUrgencyWeight(urgencyB);
       if (weightA !== weightB) return weightB - weightA;
 
-      const timeA = new Date(a.receivedAt || a.createdAt || 0).getTime();
-      const timeB = new Date(b.receivedAt || b.createdAt || 0).getTime();
+      const timeA = new Date(a.receivedAt || a.Timestamp || a.createdAt || 0).getTime();
+      const timeB = new Date(b.receivedAt || b.Timestamp || b.createdAt || 0).getTime();
       return timeA - timeB;
     });
 
-  // 📸 ดึงรายการใบงานที่ปิดแล้วของทีมตัวเอง
-  const myCompletedJobs = jobs.filter(j => {
-    const matchTechName = j.techName && j.techName.trim() === currentTeam.trim();
-    const matchTechnicianStr = j.technician && j.technician.includes(currentTeam);
-    const isMyTeam = matchTechName || matchTechnicianStr;
-    const isClosed = ['COMPLETED', 'CLOSED', 'UNREPAIRABLE'].includes(j.status);
+  const myCompletedJobs = (jobs || []).filter(j => {
+    if (!j) return false;
+    const jobTech = String(j.technician || j.Technician || j.techName || '').trim().toLowerCase();
+    const myTeam = String(currentTeam || '').trim().toLowerCase();
+    const isMyTeam = !myTeam || jobTech.includes(myTeam) || myTeam.includes(jobTech);
+    
+    const currentNormStatus = normalizeStatus(j.status || j.Status);
+    const isClosed = ['COMPLETED', 'CLOSED', 'UNREPAIRABLE'].includes(currentNormStatus);
     
     if (!isMyTeam || !isClosed) return false;
 
     if (completedSearchTerm.trim()) {
       const term = completedSearchTerm.trim().toLowerCase();
-      const matchNo = (j.receivedNo || j.id || '').toLowerCase().includes(term);
-      const matchName = (j.reporterName || '').toLowerCase().includes(term);
-      const matchPhone = (j.phone || '').toLowerCase().includes(term);
-      const matchLocation = (j.location || '').toLowerCase().includes(term);
+      const matchNo = (j.receivedNo || j.JobID || j.id || '').toLowerCase().includes(term);
+      const matchName = (j.reporterName || j.ReporterName || '').toLowerCase().includes(term);
+      const matchPhone = (j.phone || j.Phone || '').toLowerCase().includes(term);
+      const matchLocation = (j.location || j.Location || '').toLowerCase().includes(term);
       return matchNo || matchName || matchPhone || matchLocation;
     }
 
     return true;
   });
 
-  // 📸 ฟังก์ชันเปิดหน้าต่างแก้ไขรูปภาพสำหรับใบงานที่ปิดแล้ว
   const handleOpenEditPhotosModal = (job) => {
     setEditingPhotoJob(job);
     setImages({
-      before: parseImages(job.beforeImgBase64 || job.beforeImg || job.BeforeImg),
-      inProgress: parseImages(job.inProgImgBase64 || job.inProgImg || job.InProgImg),
-      after: parseImages(job.afterImgBase64 || job.afterImg || job.AfterImg)
+      before: parseImages(job.BeforeImg || job.beforeImg || job.beforeImgBase64 || job.before_img),
+      inProgress: parseImages(job.InProgImg || job.inProgImg || job.inProgImgBase64 || job.inprog_img),
+      after: parseImages(job.AfterImg || job.afterImg || job.afterImgBase64 || job.after_img)
     });
-    // โหลดพิกัดเดิมมาใส่ใน State เพื่อให้แก้ไขได้
     setCoords({
-      lat: job.latitude || '',
-      lng: job.longitude || ''
+      lat: job.latitude || job.Latitude || '',
+      lng: job.longitude || job.Longitude || ''
     });
+    setPipeType(job.pipeType || job.PipeType || 'HDPE');
+    setPipeSize(job.pipeSize || job.PipeSize || '110');
+    
+    const existingEquipment = job.equipment || job.Equipment || job.description || job.Description || '';
+    setNotes(existingEquipment);
+    setSelectedEquipmentList([]);
+    setSearchTerm('');
   };
 
-  // 📸 บันทึกการอัปเดตรูปภาพและพิกัดของใบงานที่ปิดแล้ว
   const handleSaveUpdatedPhotos = async () => {
-    if (!editingPhotoJob) return;
+    if (!editingPhotoJob || isSubmitting) return;
 
     setIsSubmitting(true);
     try {
-      const updatedData = {
-        ...editingPhotoJob,
-        beforeImgBase64: images.before,
-        inProgImgBase64: images.inProgress,
-        afterImgBase64: images.after,
-        beforeImg: images.before,
-        inProgImg: images.inProgress,
-        afterImg: images.after,
-        latitude: coords.lat || '',
-        longitude: coords.lng || ''
-      };
+      const targetId = editingPhotoJob.id || editingPhotoJob.JobID;
+      const cleanBeforeImg = Array.from(new Set(images.before));
+      const cleanInProgImg = Array.from(new Set(images.inProgress));
+      const cleanAfterImg = Array.from(new Set(images.after));
 
       const jobDataPayload = {
         action: "archive_job",
         jobData: {
-          id: editingPhotoJob.id,
-          receivedNo: editingPhotoJob.receivedNo || editingPhotoJob.id,
-          timestamp: editingPhotoJob.receivedAt || editingPhotoJob.timestamp || new Date().toLocaleString("th-TH"),
-          reporterName: editingPhotoJob.reporterName || 'ไม่ระบุชื่อ',
-          phone: editingPhotoJob.phone || '-',
-          location: editingPhotoJob.location || '-',
-          issueType: editingPhotoJob.complaintTopic || editingPhotoJob.issueType || 'ท่อแตกรั่ว',
-          pipeType: editingPhotoJob.pipeType || '-',
-          pipeSize: editingPhotoJob.pipeSize || '-',
-          description: editingPhotoJob.details || '-',
+          id: targetId,
+          JobID: targetId,
+          receivedNo: editingPhotoJob.receivedNo || editingPhotoJob.JobID || targetId,
+          timestamp: editingPhotoJob.receivedAt || editingPhotoJob.Timestamp || new Date().toLocaleString("th-TH"),
+          Timestamp: editingPhotoJob.receivedAt || editingPhotoJob.Timestamp || new Date().toLocaleString("th-TH"),
+          reporterName: editingPhotoJob.reporterName || editingPhotoJob.ReporterName || 'ไม่ระบุชื่อ',
+          ReporterName: editingPhotoJob.reporterName || editingPhotoJob.ReporterName || 'ไม่ระบุชื่อ',
+          phone: editingPhotoJob.phone || editingPhotoJob.Phone || '-',
+          Phone: editingPhotoJob.phone || editingPhotoJob.Phone || '-',
+          location: editingPhotoJob.location || editingPhotoJob.Location || '-',
+          Location: editingPhotoJob.location || editingPhotoJob.Location || '-',
+          issueType: editingPhotoJob.complaintTopic || editingPhotoJob.IssueType || 'ท่อแตกรั่ว',
+          IssueType: editingPhotoJob.complaintTopic || editingPhotoJob.IssueType || 'ท่อแตกรั่ว',
+          pipeType: pipeType,
+          PipeType: pipeType,
+          pipeSize: pipeSize,
+          PipeSize: pipeSize,
+          description: editingPhotoJob.details || editingPhotoJob.Description || '-',
+          Description: editingPhotoJob.details || editingPhotoJob.Description || '-',
           technician: currentTeam,
-          status: editingPhotoJob.status || 'COMPLETED',
-          beforeImgBase64: images.before,
-          inProgImgBase64: images.inProgress,
-          afterImgBase64: images.after,
-          notes: editingPhotoJob.notes || '-',
-          closedAt: editingPhotoJob.closedAt || editingPhotoJob.completedAt || new Date().toLocaleString("th-TH"),
+          Technician: currentTeam,
+          status: editingPhotoJob.status || editingPhotoJob.Status || 'COMPLETED',
+          Status: editingPhotoJob.status || editingPhotoJob.Status || 'COMPLETED',
+          beforeImg: cleanBeforeImg,
+          BeforeImg: cleanBeforeImg,
+          inProgImg: cleanInProgImg,
+          InProgImg: cleanInProgImg,
+          afterImg: cleanAfterImg,
+          AfterImg: cleanAfterImg,
+          Notes: editingPhotoJob.Notes || editingPhotoJob.notes || 'ปกติ',
+          closedAt: editingPhotoJob.closedAt || editingPhotoJob.ClosedAt || new Date().toLocaleString("th-TH"),
+          ClosedAt: editingPhotoJob.closedAt || editingPhotoJob.ClosedAt || new Date().toLocaleString("th-TH"),
+          equipment: notes,
+          Equipment: notes,
           latitude: coords.lat || '',
-          longitude: coords.lng || ''
+          Latitude: coords.lat || '',
+          longitude: coords.lng || '',
+          Longitude: coords.lng || ''
         }
       };
 
-      await onUpdateJobStatus(editingPhotoJob.id, editingPhotoJob.status, updatedData, jobDataPayload);
-      alert("อัปเดตรูปภาพและพิกัดเรียบร้อยแล้ว!");
+      await fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jobDataPayload)
+      });
+
+      const updatedData = {
+        ...editingPhotoJob,
+        pipeType: pipeType,
+        pipeSize: pipeSize,
+        equipment: notes,
+        beforeImg: cleanBeforeImg,
+        inProgImg: cleanInProgImg,
+        afterImg: cleanAfterImg,
+        latitude: coords.lat || '',
+        longitude: coords.lng || ''
+      };
+
+      await onUpdateJobStatus(targetId, editingPhotoJob.status || editingPhotoJob.Status, updatedData);
+      alert("อัปเดตข้อมูล, รูปภาพ และพิกัดเรียบร้อยแล้ว!");
       setEditingPhotoJob(null);
       setImages({ before: [], inProgress: [], after: [] });
       setCoords({ lat: null, lng: null });
     } catch (err) {
-      console.error("Error updating photos:", err);
+      console.error("Error updating info:", err);
       alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleMultipleImagesChange = async (type, files) => {
+  // 🛠️ แก้ไขฟังก์ชันรับไฟล์รูปภาพไม่ให้เบิ้ลซ้ำซ้อน
+  const handleMultipleImagesChange = async (type, e) => {
+    const files = e.target.files;
     if (!files || files.length === 0) return;
+    
     try {
       const compressedList = [];
       for (let i = 0; i < files.length; i++) {
         const compressedBase64 = await compressImage(files[i], 1024, 0.7);
-        compressedList.push(compressedBase64);
+        if (compressedBase64) {
+          compressedList.push(compressedBase64);
+        }
       }
-      setImages(prev => ({ ...prev, [type]: [...prev[type], ...compressedList] }));
+
+      setImages(prev => {
+        const combined = [...prev[type], ...compressedList];
+        return {
+          ...prev,
+          [type]: Array.from(new Set(combined))
+        };
+      });
     } catch (err) {
       console.error("Image compression error:", err);
       alert("เกิดข้อผิดพลาดในการโหลดรูปภาพ");
+    } finally {
+      e.target.value = '';
     }
   };
 
   const handleRemoveImage = (type, index) => {
-    setImages(prev => ({ ...prev, [type]: prev[type].filter((_, i) => i !== index) }));
+    setImages(prev => ({
+      ...prev,
+      [type]: prev[type].filter((_, i) => i !== index)
+    }));
   };
 
   const handleGetGPS = () => {
@@ -496,69 +599,92 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       ? (adHocData.customComplaintTopic.trim() || 'อื่นๆ') 
       : adHocData.complaintTopicType;
 
-    if (editingJob) {
-      const updatedPayload = {
-        receivedNo: adHocData.receivedNo,
-        reporterName: adHocData.reporterName.trim() || 'ไม่ระบุชื่อ',
-        phone: adHocData.phone.trim() || '-',
-        location: adHocData.location,
-        complaintTopic: finalComplaintTopic,
-        complaintType: finalComplaintTopic,
-        urgency: adHocData.urgency
+    const newAdHocJob = {
+      id: 'JOB-' + Date.now().toString().slice(-6),
+      JobID: adHocData.receivedNo,
+      receivedNo: adHocData.receivedNo,
+      receivedAt: currentDateTime,
+      Timestamp: currentDateTime,
+      channel: 'พบเหตุหน้างาน/แจ้งฉุกเฉิน',
+      complaintType: finalComplaintTopic,
+      complainantInfo: adHocData.phone || '-',
+      complaintTopic: finalComplaintTopic,
+      IssueType: finalComplaintTopic,
+      details: 'เปิดใบงานด่วนโดยช่างภาคสนามระหว่างปฏิบัติงาน',
+      Description: 'เปิดใบงานด่วนโดยช่างภาคสนามระหว่างปฏิบัติงาน',
+      location: adHocData.location,
+      Location: adHocData.location,
+      reporterName: adHocData.reporterName.trim() || 'ไม่ระบุชื่อ',
+      ReporterName: adHocData.reporterName.trim() || 'ไม่ระบุชื่อ',
+      phone: adHocData.phone.trim() || '-',
+      Phone: adHocData.phone.trim() || '-',
+      receiverName: currentTeam + ' (ภาคสนาม)',
+      status: 'IN_PROGRESS',
+      Status: 'IN_PROGRESS',
+      Notes: adHocData.urgency,
+      technician: currentTeam,
+      Technician: currentTeam,
+      dispatchedAt: currentDateTime,
+      inProgressAt: currentDateTime
+    };
+
+    try {
+      const jobDataPayload = {
+        action: "archive_job",
+        jobData: {
+          id: newAdHocJob.id,
+          JobID: newAdHocJob.receivedNo,
+          receivedNo: newAdHocJob.receivedNo,
+          timestamp: newAdHocJob.receivedAt,
+          Timestamp: newAdHocJob.receivedAt,
+          reporterName: newAdHocJob.reporterName,
+          ReporterName: newAdHocJob.reporterName,
+          phone: newAdHocJob.phone,
+          Phone: newAdHocJob.phone,
+          location: newAdHocJob.location,
+          Location: newAdHocJob.location,
+          issueType: newAdHocJob.complaintTopic,
+          IssueType: newAdHocJob.complaintTopic,
+          pipeType: '-',
+          PipeType: '-',
+          pipeSize: '-',
+          PipeSize: '-',
+          description: newAdHocJob.details,
+          Description: newAdHocJob.details,
+          technician: currentTeam,
+          Technician: currentTeam,
+          status: 'IN_PROGRESS',
+          Status: 'IN_PROGRESS',
+          Notes: adHocData.urgency,
+          closedAt: '-',
+          ClosedAt: '-'
+        }
       };
 
-      try {
-        await onUpdateJobStatus(editingJob.id, editingJob.status, updatedPayload);
-        setIsAdHocModalOpen(false);
-        setEditingJob(null);
-        alert("แก้ไขข้อมูลใบงานเรียบร้อยแล้ว");
-      } catch (err) {
-        console.error("Error updating job:", err);
-        alert("เกิดข้อผิดพลาดในการอัปเดตข้อมูล");
-      }
-    } else {
-      const newAdHocJob = {
-        id: 'JOB-' + Date.now().toString().slice(-6),
-        receivedNo: adHocData.receivedNo,
-        receivedAt: currentDateTime,
-        channel: 'พบเหตุหน้างาน/แจ้งฉุกเฉิน',
-        complaintType: finalComplaintTopic,
-        complainantInfo: adHocData.phone || '-',
-        complaintTopic: finalComplaintTopic,
-        details: 'เปิดใบงานด่วนโดยช่างภาคสนามระหว่างปฏิบัติงาน',
-        location: adHocData.location,
-        reporterName: adHocData.reporterName.trim() || 'ไม่ระบุชื่อ',
-        phone: adHocData.phone.trim() || '-',
-        receiverName: currentTeam + ' (ภาคสนาม)',
-        status: 'IN_PROGRESS',
-        urgency: adHocData.urgency,
-        technician: currentTeam,
-        techName: currentTeam,
-        techPhone: '-',
-        dispatchedAt: currentDateTime,
-        inProgressAt: currentDateTime
-      };
+      await fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jobDataPayload)
+      });
 
-      try {
-        await saveJobToFirebase(newAdHocJob);
-        if (onJobCreated) onJobCreated(newAdHocJob);
-        
-        setIsAdHocModalOpen(false);
-        setSelectedJob(newAdHocJob);
-        setIsUnrepairable(false);
-        setIsNoEquipmentUsed(false);
-        setCoords({ lat: newAdHocJob.latitude || null, lng: newAdHocJob.longitude || null });
-        alert("สร้างเลขที่รับแจ้งสำเร็จ! กรุณาถ่ายภาพและบันทึกผลการซ่อม");
-      } catch (err) {
-        console.error("Error saving ad-hoc job:", err);
-        alert("ไม่สามารถบันทึกใบงานด่วนได้");
-      }
+      if (onJobCreated) onJobCreated(newAdHocJob);
+      
+      setIsAdHocModalOpen(false);
+      setSelectedJob(newAdHocJob);
+      setIsUnrepairable(false);
+      setIsNoEquipmentUsed(false);
+      setCoords({ lat: null, lng: null });
+      alert("สร้างเลขที่รับแจ้งสำเร็จ! กรุณาถ่ายภาพและบันทึกผลการซ่อม");
+    } catch (err) {
+      console.error("Error saving ad-hoc job:", err);
+      alert("ไม่สามารถบันทึกใบงานด่วนได้");
     }
   };
 
   const handleSubmitFix = async (e) => {
     e.preventDefault();
-    if (!selectedJob) return;
+    if (!selectedJob || isSubmitting) return;
 
     setIsSubmitting(true);
     const now = new Date();
@@ -578,49 +704,80 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       }
     }
 
-    // กำหนดข้อความหมายเหตุตามเงื่อนไขที่เลือก
-    let finalNotes = '';
+    let finalEquipment = '';
     if (isUnrepairable) {
-      finalNotes = `❌ ไม่สามารถซ่อมได้เนื่องจาก: ${finalReason}\nรายละเอียด: ${unrepairableDetails.trim()}`;
+      finalEquipment = `❌ ไม่สามารถซ่อมได้เนื่องจาก: ${finalReason} (${unrepairableDetails.trim()})`;
     } else if (isNoEquipmentUsed) {
-      finalNotes = 'น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์';
+      finalEquipment = 'น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์';
     } else {
-      finalNotes = notes || `ใช้อุปกรณ์: ท่อ ${pipeType} ขนาด ${pipeSize} มม.`;
+      finalEquipment = notes || selectedEquipmentList.map(i => `${i.name} (${i.quantity} ${i.unit})`).join(', ') || '-';
     }
+
+    const targetJobId = selectedJob.id || selectedJob.JobID;
+    const cleanBeforeImg = Array.from(new Set(images.before));
+    const cleanInProgImg = Array.from(new Set(images.inProgress));
+    const cleanAfterImg = Array.from(new Set(images.after));
 
     const jobDataPayload = {
       action: "archive_job",
       jobData: {
-        id: selectedJob.id,
-        receivedNo: selectedJob.receivedNo || selectedJob.id,
-        timestamp: selectedJob.receivedAt || selectedJob.timestamp || currentDateTime,
-        receivedAt: selectedJob.receivedAt || selectedJob.timestamp || '-',
-        reporterName: selectedJob.reporterName || 'ไม่ระบุชื่อ',
-        phone: selectedJob.phone || '-',
-        location: selectedJob.location || '-',
-        issueType: selectedJob.complaintTopic || selectedJob.issueType || 'ท่อแตกรั่ว',
+        id: targetJobId,
+        JobID: targetJobId,
+        receivedNo: selectedJob.receivedNo || selectedJob.JobID || targetJobId,
+        timestamp: selectedJob.receivedAt || selectedJob.Timestamp || currentDateTime,
+        Timestamp: selectedJob.receivedAt || selectedJob.Timestamp || currentDateTime,
+        reporterName: selectedJob.reporterName || selectedJob.ReporterName || 'ไม่ระบุชื่อ',
+        ReporterName: selectedJob.reporterName || selectedJob.ReporterName || 'ไม่ระบุชื่อ',
+        phone: selectedJob.phone || selectedJob.Phone || '-',
+        Phone: selectedJob.phone || selectedJob.Phone || '-',
+        location: selectedJob.location || selectedJob.Location || '-',
+        Location: selectedJob.location || selectedJob.Location || '-',
+        issueType: selectedJob.complaintTopic || selectedJob.IssueType || 'ท่อแตกรั่ว',
+        IssueType: selectedJob.complaintTopic || selectedJob.IssueType || 'ท่อแตกรั่ว',
         pipeType: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeType,
+        PipeType: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeType,
         pipeSize: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeSize,
-        description: selectedJob.details || '-',
+        PipeSize: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeSize,
+        description: selectedJob.details || selectedJob.Description || 'ดำเนินการซ่อมเสร็จสิ้น',
+        Description: selectedJob.details || selectedJob.Description || 'ดำเนินการซ่อมเสร็จสิ้น',
         technician: currentTeam,
+        Technician: currentTeam,
         status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
-        beforeImgBase64: images.before,
-        inProgImgBase64: images.inProgress,
-        afterImgBase64: images.after,
-        notes: finalNotes,
+        Status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
+        beforeImg: cleanBeforeImg,
+        BeforeImg: cleanBeforeImg,
+        inProgImg: cleanInProgImg,
+        InProgImg: cleanInProgImg,
+        afterImg: cleanAfterImg,
+        AfterImg: cleanAfterImg,
+        Notes: selectedJob.Notes || selectedJob.notes || selectedJob.urgency || 'ปกติ',
         closedAt: currentDateTime,
-        completedAt: currentDateTime,
-        latitude: coords.lat || selectedJob.latitude || '',
-        longitude: coords.lng || selectedJob.longitude || ''
+        ClosedAt: currentDateTime,
+        equipment: finalEquipment,
+        Equipment: finalEquipment,
+        latitude: coords.lat || selectedJob.latitude || selectedJob.Latitude || '',
+        Latitude: coords.lat || selectedJob.latitude || selectedJob.Latitude || '',
+        longitude: coords.lng || selectedJob.longitude || selectedJob.Longitude || '',
+        Longitude: coords.lng || selectedJob.longitude || selectedJob.Longitude || ''
       }
     };
 
     try {
-      await onUpdateJobStatus(selectedJob.id, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
+      await fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jobDataPayload)
+      });
+
+      // 📲 ส่งแจ้งเตือนเข้า Telegram หลังจากทีมช่างปิดงานเรียบร้อยแล้ว
+      await sendTelegramNotification(jobDataPayload.jobData);
+
+      await onUpdateJobStatus(targetJobId, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
 
       alert(isUnrepairable 
-        ? `บันทึกรายงานซ่อมไม่ได้ของใบงาน ${selectedJob.receivedNo || selectedJob.id} เรียบร้อยแล้ว` 
-        : `ปิดงานซ่อม ${selectedJob.receivedNo || selectedJob.id} เรียบร้อยแล้ว!`
+        ? `บันทึกรายงานซ่อมไม่ได้เรียบร้อยแล้ว` 
+        : `ปิดงานซ่อมเรียบร้อยแล้ว!`
       );
     } catch (err) {
       console.error("Error submitting fix:", err);
@@ -643,7 +800,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
   if (!currentTeam) {
     return (
-      <div className="max-w-md mx-auto min-h-screen bg-slate-900 text-white p-6 flex flex-col justify-center space-y-6">
+      <div className="max-w-md mx-auto min-h-screen bg-slate-900 text-white p-6 flex flex-col justify-center space-y-6 font-sans">
         <div className="text-center space-y-2">
           <div className="w-16 h-16 bg-blue-600/20 border border-blue-500/30 rounded-3xl flex items-center justify-center mx-auto text-cyan-400">
             <Lock className="w-8 h-8" />
@@ -653,20 +810,48 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         </div>
 
         <div className="bg-slate-800/80 border border-slate-700/80 p-5 rounded-3xl space-y-3 shadow-xl">
-          <label className="block text-xs font-bold text-slate-300">เลือกทีมช่างของคุณ *</label>
-          {!teams || teams.length === 0 ? (
-            <p className="text-xs text-rose-400">ยังไม่มีการเพิ่มบัญชีช่างในระบบ</p>
+          <label className="block text-xs font-bold text-slate-300">เลือกทีมช่าง / ผู้ปฏิบัติงาน *</label>
+          
+          {isLoadingTeams ? (
+            <div className="text-center py-4 text-xs text-slate-400 flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-cyan-400" /> กำลังโหลดรายชื่อผู้ใช้งานจาก Google Sheets...
+            </div>
+          ) : teamListFromSheet.length > 0 ? (
+            teamListFromSheet.map((t, idx) => (
+              <button
+                key={`team-sheet-${t.teamName || idx}`}
+                onClick={() => {
+                  handleLogin(t.teamName);
+                  localStorage.setItem('pwa_worker_pos', t.position || '-');
+                  localStorage.setItem('pwa_worker_phone', t.phone || '-');
+                }}
+                className="w-full bg-slate-700/90 hover:bg-blue-600 text-white p-3.5 rounded-2xl text-xs flex justify-between items-center transition shadow-sm active:scale-95 cursor-pointer text-left"
+              >
+                <div>
+                  <div className="font-bold text-sm text-white">{t.teamName}</div>
+                  <div className="text-[11px] text-slate-300 flex items-center gap-2 mt-0.5">
+                    <span>🪪 {t.position || '-'}</span>
+                    <span>📞 {t.phone || '-'}</span>
+                  </div>
+                </div>
+                <span className="text-[10px] text-cyan-300 bg-blue-950/80 border border-blue-500/30 px-2 py-1 rounded-lg shrink-0">
+                  เข้าสู่ระบบ
+                </span>
+              </button>
+            ))
+          ) : (!teams || teams.length === 0) ? (
+            <p className="text-xs text-rose-400 text-center py-2">ยังไม่มีการเพิ่มบัญชีช่างใน Google Sheets (ชีต Teams)</p>
           ) : (
-            teams.map((t) => {
+            teams.map((t, idx) => {
               const teamName = typeof t === 'string' ? t : t.teamName;
               return (
                 <button
-                  key={teamName}
+                  key={`team-fallback-${teamName || idx}`}
                   onClick={() => handleLogin(teamName)}
                   className="w-full bg-slate-700 hover:bg-blue-600 text-white font-bold p-3.5 rounded-2xl text-xs flex justify-between items-center transition shadow-sm active:scale-95 cursor-pointer"
                 >
                   <span>{teamName}</span>
-                  <span className="text-[10px] text-cyan-300 bg-blue-950 px-2 py-1 rounded-lg">เลือกทีมนี้</span>
+                  <span className="text-[10px] text-cyan-300 bg-blue-950 px-2 py-1 rounded-lg">เข้าสู่ระบบ</span>
                 </button>
               );
             })
@@ -684,7 +869,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   }
 
   return (
-    <div className="max-w-md mx-auto bg-slate-100 min-h-screen pb-10 border-x border-slate-200">
+    <div className="max-w-md mx-auto bg-slate-100 min-h-screen pb-10 border-x border-slate-200 font-sans">
       <div className="bg-gradient-to-r from-slate-900 to-blue-900 text-white p-4 sticky top-0 z-20 shadow-md flex justify-between items-center">
         <div className="flex items-center space-x-2">
           <div className="p-2 bg-blue-500/20 rounded-lg">
@@ -692,7 +877,9 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
           </div>
           <div>
             <h2 className="font-bold text-sm">{currentTeam}</h2>
-            <p className="text-[10px] text-slate-300">กปภ.สาขานครพนม</p>
+            <p className="text-[10px] text-slate-300">
+              {localStorage.getItem('pwa_worker_pos') || 'กปภ.สาขานครพนม'} {localStorage.getItem('pwa_worker_phone') && `(${localStorage.getItem('pwa_worker_phone')})`}
+            </p>
           </div>
         </div>
 
@@ -733,117 +920,94 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   <p className="text-xs text-slate-400">หากพบท่อแตกระหว่างทาง สามารถกดปุ่ม "เปิดใบงานด่วน" ด้านบนได้ทันที</p>
                 </div>
               ) : (
-                activeJobs.map((job) => {
-                  const isAdminAssigned = job.channel && job.channel !== 'พบเหตุหน้างาน/แจ้งฉุกเฉิน';
+                activeJobs.map((job, index) => {
+                  const currentUrgency = job.Notes || job.notes || job.urgency || job.Urgency || 'ปกติ';
+                  const jobNo = job.receivedNo || job.JobID || job.id || `JOB-${index}`;
+                  const reporter = job.reporterName || job.ReporterName || 'ไม่ระบุชื่อ';
+                  const phoneNum = job.phone || job.Phone || '-';
+                  const locationText = job.location || job.Location || 'ไม่ระบุสถานที่';
+                  const topicText = job.complaintTopic || job.IssueType || job.issueType || 'ท่อแตกรั่ว';
+                  const uniqueJobKey = job.id || job.JobID || job.receivedNo || `worker-job-${index}`;
+                  const currentStatus = normalizeStatus(job.status || job.Status);
 
                   return (
-                    <div key={job.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3 relative overflow-hidden">
+                    <div key={uniqueJobKey} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3 relative overflow-hidden">
                       <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${
-                        job.status === 'UNREPAIRABLE' ? 'bg-purple-600' :
-                        job.urgency === 'ด่วนมาก' ? 'bg-rose-600' :
-                        job.urgency === 'ด่วน' ? 'bg-amber-500' : 'bg-slate-300'
+                        currentStatus === 'UNREPAIRABLE' ? 'bg-purple-600' :
+                        currentUrgency === 'ด่วนมาก' ? 'bg-rose-600' :
+                        currentUrgency === 'ด่วน' ? 'bg-amber-500' : 'bg-slate-300'
                       }`} />
 
                       <div className="flex justify-between items-start pl-2">
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
-                            {job.receivedNo || job.id}
+                            {jobNo}
                           </span>
 
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 ${
-                            job.urgency === 'ด่วนมาก' 
+                            currentUrgency === 'ด่วนมาก' 
                               ? 'bg-rose-100 text-rose-700 border border-rose-200 animate-pulse' 
-                              : job.urgency === 'ด่วน'
+                              : currentUrgency === 'ด่วน'
                               ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                              : 'bg-slate-100 text-slate-600'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200'
                           }`}>
-                            {job.urgency === 'ด่วนมาก' && <AlertTriangle className="w-3 h-3 text-rose-600" />}
-                            {job.urgency || 'ปกติ'}
+                            {currentUrgency === 'ด่วนมาก' && <AlertTriangle className="w-3 h-3 text-rose-600" />}
+                            {currentUrgency}
                           </span>
                         </div>
 
                         <div className="flex items-center gap-1">
-                          {!isAdminAssigned && job.status !== 'COMPLETED' && (
-                            <>
-                              <button
-                                onClick={() => handleOpenEditModal(job)}
-                                className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
-                                title="แก้ไขข้อมูลใบแจ้งซ่อม"
-                              >
-                                <Edit3 className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteJobAction(job)}
-                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                title="ลบรายการแจ้งซ่อมนี้"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
-
-                          {isAdminAssigned && (
-                            <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-0.5" title="งานที่ได้รับมอบหมายจากแอดมิน">
-                              <ShieldAlert className="w-3 h-3 text-slate-500" /> งานแอดมิน
-                            </span>
-                          )}
-
                           <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ml-1 ${
-                            job.status === 'UNREPAIRABLE' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
-                            job.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                            currentStatus === 'UNREPAIRABLE' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
+                            currentStatus === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 
+                            currentStatus === 'PENDING' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
                           }`}>
-                            {job.status === 'UNREPAIRABLE' ? 'ซ่อมไม่ได้ (รอแก้ไข)' :
-                             job.status === 'IN_PROGRESS' ? 'กำลังซ่อม' : 'รอเริ่มซ่อม'}
+                            {currentStatus === 'UNREPAIRABLE' ? 'ซ่อมไม่ได้ (รอแก้ไข)' :
+                             currentStatus === 'IN_PROGRESS' ? 'กำลังซ่อม' : 
+                             currentStatus === 'PENDING' || currentStatus === 'DISPATCHED' ? 'รอเริ่มซ่อม' : 'รอเริ่มซ่อม'}
                           </span>
                         </div>
                       </div>
 
                       <div className="space-y-1 pl-2">
-                        <h4 className="font-bold text-slate-800 text-sm">{job.complaintTopic || job.issueType}</h4>
+                        <h4 className="font-bold text-slate-800 text-sm">{topicText}</h4>
                         <p className="text-xs text-slate-600 flex items-center gap-1.5">
                           <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                          <span className="font-semibold">{job.reporterName}</span>
-                          <a href={`tel:${job.phone}`} className="text-blue-600 hover:underline flex items-center gap-0.5 ml-auto font-mono">
-                            <Phone className="w-3 h-3" /> {job.phone}
+                          <span className="font-semibold">{reporter}</span>
+                          <a href={`tel:${phoneNum}`} className="text-blue-600 hover:underline flex items-center gap-0.5 ml-auto font-mono">
+                            <Phone className="w-3 h-3" /> {phoneNum}
                           </a>
                         </p>
                         <p className="text-xs text-slate-600 flex items-start gap-1.5 mt-1">
                           <MapPin className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                          <span>{job.location}</span>
+                          <span>{locationText}</span>
                         </p>
-
-                        {job.status === 'UNREPAIRABLE' && job.notes && (
-                          <div className="mt-2 bg-purple-50 p-2 rounded-xl border border-purple-200 text-[11px] text-purple-900">
-                            <span className="font-bold block">⚠️ อุปสรรคหน้างานเดิม:</span>
-                            <span>{job.notes}</span>
-                          </div>
-                        )}
                       </div>
 
                       <div className="pt-2 border-t border-slate-100 flex gap-2 pl-2">
-                        {job.status === 'DISPATCHED' && (
+                        {(currentStatus === 'DISPATCHED' || currentStatus === 'PENDING') && (
                           <button 
                             onClick={() => {
                               const now = new Date();
                               const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
                               const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
-                              onUpdateJobStatus(job.id, 'IN_PROGRESS', { inProgressAt: currentDateTime });
+                              onUpdateJobStatus(job.id || job.JobID, 'IN_PROGRESS', { inProgressAt: currentDateTime });
                             }}
                             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
                           >
-                            <Truck className="w-4 h-4" /> เริ่มเดินทาง / ถึงหน้างาน
+                            <Truck className="w-4 h-4" /> เริ่มเดินทาง / รับงาน
                           </button>
                         )}
 
-                        {job.status === 'IN_PROGRESS' && (
+                        {currentStatus === 'IN_PROGRESS' && (
                           <button 
                             onClick={() => {
                               setSelectedJob(job);
                               setIsUnrepairable(false);
                               setIsNoEquipmentUsed(false);
                               setCoords({ 
-                                lat: job.latitude || null, 
-                                lng: job.longitude || null 
+                                lat: job.latitude || job.Latitude || null, 
+                                lng: job.longitude || job.Longitude || null 
                               });
                             }}
                             className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
@@ -852,15 +1016,15 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                           </button>
                         )}
 
-                        {job.status === 'UNREPAIRABLE' && (
+                        {currentStatus === 'UNREPAIRABLE' && (
                           <button 
                             onClick={() => {
                               setSelectedJob(job);
                               setIsUnrepairable(false);
                               setIsNoEquipmentUsed(false);
                               setCoords({ 
-                                lat: job.latitude || null, 
-                                lng: job.longitude || null 
+                                lat: job.latitude || job.Latitude || null, 
+                                lng: job.longitude || job.Longitude || null 
                               });
                             }}
                             className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1 shadow-sm active:scale-95 cursor-pointer"
@@ -875,11 +1039,11 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               )}
             </div>
 
-            {/* 📸 Section 2: จัดการรูปภาพและพิกัดใบงานที่ปิดแล้ว */}
+            {/* 📸 Section 2: จัดการรูปภาพและข้อมูลใบงานที่ปิดแล้ว */}
             <div className="space-y-3 pt-4 border-t border-slate-200">
               <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
                 <ImageIcon className="w-4 h-4 text-indigo-600" />
-                จัดการแก้ไขรูปภาพและพิกัดใบงานที่ปิดแล้ว ({myCompletedJobs.length} งาน)
+                จัดการแก้ไขรูปภาพและข้อมูลใบงานที่ปิดแล้ว ({myCompletedJobs.length} งาน)
               </h3>
 
               <div className="relative">
@@ -901,19 +1065,19 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </p>
               ) : (
                 <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                  {myCompletedJobs.map(job => (
-                    <div key={job.id} className="bg-white p-3 rounded-2xl border border-slate-200 flex justify-between items-center hover:border-indigo-300 transition shadow-xs">
+                  {myCompletedJobs.map((job, cIdx) => (
+                    <div key={job.id || job.JobID || `completed-${cIdx}`} className="bg-white p-3 rounded-2xl border border-slate-200 flex justify-between items-center hover:border-indigo-300 transition shadow-xs">
                       <div>
-                        <span className="font-mono font-bold text-xs text-blue-600">{job.receivedNo || job.id}</span>
-                        <p className="text-xs font-bold text-slate-800 truncate max-w-[200px]">{job.location}</p>
-                        <p className="text-[10px] text-slate-400">เสร็จเมื่อ: {job.completedAt || job.closedAt || '-'}</p>
+                        <span className="font-mono font-bold text-xs text-blue-600">{job.receivedNo || job.JobID || job.id}</span>
+                        <p className="text-xs font-bold text-slate-800 truncate max-w-[200px]">{job.location || job.Location}</p>
+                        <p className="text-[10px] text-slate-400">เสร็จเมื่อ: {job.completedAt || job.closedAt || job.ClosedAt || '-'}</p>
                       </div>
 
                       <button
                         onClick={() => handleOpenEditPhotosModal(job)}
                         className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition cursor-pointer shrink-0"
                       >
-                        <Edit3 className="w-3.5 h-3.5" /> แก้ไขรูป / พิกัด
+                        <Edit3 className="w-3.5 h-3.5" /> แก้ไขข้อมูล / รูป
                       </button>
                     </div>
                   ))}
@@ -922,15 +1086,15 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
             </div>
           </div>
         ) : editingPhotoJob ? (
-          /* 🖼️ หน้าต่างแก้ไขรูปภาพและพิกัด สำหรับใบงานที่ปิดแล้ว */
+          /* 🖼️ หน้าต่างแก้ไขข้อมูล รูปภาพ และพิกัด สำหรับใบงานที่ปิดแล้ว */
           <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-200 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div>
                 <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
                   <ImageIcon className="w-4 h-4 text-indigo-600" />
-                  แก้ไขรูปและพิกัด: <span className="font-mono text-blue-600">{editingPhotoJob.receivedNo || editingPhotoJob.id}</span>
+                  แก้ไขใบงาน: <span className="font-mono text-blue-600">{editingPhotoJob.receivedNo || editingPhotoJob.JobID || editingPhotoJob.id}</span>
                 </h3>
-                <p className="text-xs text-slate-500 truncate max-w-[260px]">{editingPhotoJob.location}</p>
+                <p className="text-xs text-slate-500">เลขที่ใบแจ้งซ่อมถูกล็อกไว้ ไม่สามารถแก้ไขได้</p>
               </div>
               <button 
                 onClick={() => setEditingPhotoJob(null)} 
@@ -940,14 +1104,130 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               </button>
             </div>
 
-            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs space-y-1">
-              <p><strong>ผู้แจ้ง:</strong> {editingPhotoJob.reporterName || '-'} ({editingPhotoJob.phone || '-'})</p>
-              <p><strong>หัวข้อ:</strong> {editingPhotoJob.complaintTopic || editingPhotoJob.issueType || '-'}</p>
-              {editingPhotoJob.pipeType && editingPhotoJob.pipeType !== '-' && <p><strong>ชนิด/ขนาดท่อ:</strong> ท่อ {editingPhotoJob.pipeType} {editingPhotoJob.pipeSize} มม.</p>}
-              {editingPhotoJob.notes && <p className="text-slate-600"><strong>หมายเหตุ/อุปกรณ์:</strong> {editingPhotoJob.notes}</p>}
+            {/* ฟอร์มแก้ไขข้อมูลท่อและขนาดท่อ */}
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">ชนิดท่อ</label>
+                <select
+                  value={pipeType}
+                  onChange={(e) => setPipeType(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                >
+                  {pipeTypes.map((t, idx) => (
+                    <option key={`edit-ptype-${idx}`} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">ขนาดท่อ (มม.)</label>
+                <select
+                  value={pipeSize}
+                  onChange={(e) => setPipeSize(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                >
+                  {pipeSizes.map((s, idx) => (
+                    <option key={`edit-psize-${idx}`} value={s}>{s} มม.</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* 📍 ส่วนแก้ไขพิกัด GPS พร้อมปุ่มกดดูตำแหน่งก่อนบันทึก */}
+            {/* 🛠️ ระบบเลือกอุปกรณ์จาก Google Sheets สำหรับฟอร์มแก้ไข */}
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <Wrench className="w-3.5 h-3.5 text-blue-600" /> เพิ่ม/เลือกอุปกรณ์ซ่อมท่อ
+                </label>
+                {selectedEquipmentList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllEquipment}
+                    className="text-[10px] text-rose-600 hover:underline font-bold"
+                  >
+                    ล้างรายการที่เลือกเพิ่ม
+                  </button>
+                )}
+              </div>
+
+              <div className="relative space-y-2">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={handleSearchEquipmentChange}
+                      placeholder="พิมพ์ค้นหาชื่ออุปกรณ์..."
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                    />
+                    {suggestions.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 max-h-40 overflow-y-auto divide-y divide-slate-100">
+                        {suggestions.map((item, sIndex) => (
+                          <button
+                            key={`edit-suggestion-item-${item.id || sIndex}`}
+                            type="button"
+                            onClick={() => handleSelectEquipmentSuggestion(item)}
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition font-medium text-slate-700 flex justify-between"
+                          >
+                            <span>{item.name || item.itemName || item.อุปกรณ์}</span>
+                            <span className="text-[10px] text-slate-400">{item.unit || 'หน่วย'}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <input
+                    type="number"
+                    min="1"
+                    value={equipmentQuantity}
+                    onChange={(e) => setEquipmentQuantity(e.target.value)}
+                    className="w-16 bg-white border border-slate-200 rounded-xl px-2 py-2 text-xs font-bold text-center focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={handleAddEquipmentToList}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0"
+                  >
+                    เพิ่ม
+                  </button>
+                </div>
+
+                {selectedEquipmentList.length > 0 && (
+                  <div className="space-y-1.5 pt-2">
+                    {selectedEquipmentList.map((item, eqIdx) => {
+                      const uniqueEqKey = item.id || `edit-selected-equipment-${eqIdx}`;
+                      return (
+                        <div key={uniqueEqKey} className="bg-white p-2 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
+                          <span className="font-semibold text-slate-700">{item.name} x {item.quantity} {item.unit}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEquipmentItem(item.id)}
+                            className="text-slate-400 hover:text-rose-600 p-0.5 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">รายการอุปกรณ์ที่ใช้ซ่อม / หมายเหตุ (แก้ไขในช่องนี้ได้)</label>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="ระบุอุปกรณ์ที่ใช้ซ่อม..."
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+              />
+              <span className="text-[10px] text-slate-400 mt-1 block">ข้อมูลเดิมจะแสดงในช่องนี้ คุณสามารถแก้ไขหรือลบออกได้ก่อนกดบันทึก</span>
+            </div>
+
+            {/* 📍 ส่วนแก้ไขพิกัด GPS */}
             <div className="bg-blue-50/60 p-3.5 rounded-2xl border border-blue-200 space-y-2.5">
               <div className="flex justify-between items-center">
                 <label className="text-xs font-bold text-blue-900 flex items-center gap-1">
@@ -986,46 +1266,23 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   />
                 </div>
               </div>
-
-              {coords.lat && coords.lng && (
-                <div className="pt-1 text-right">
-                  <a
-                    href={`https://www.google.com/maps?q=${coords.lat},${coords.lng}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline bg-white px-3 py-1 rounded-lg border border-blue-200 shadow-2xs"
-                  >
-                    🗺️ กดดูพิกัดนี้บน Google Maps (ตรวจสอบก่อนบันทึก)
-                  </a>
-                </div>
-              )}
             </div>
 
+            {/* รูปภาพ 3 ระยะ */}
             <div className="space-y-4">
-              {/* ภาพก่อนซ่อม */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <label className="text-xs font-bold text-slate-700">📸 ภาพก่อนซ่อม ({images.before.length} รูป)</label>
                   <label className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1">
                     <Plus className="w-3.5 h-3.5" /> เพิ่มรูป
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      multiple 
-                      onChange={(e) => handleMultipleImagesChange('before', e.target.files)} 
-                      className="hidden" 
-                    />
+                    <input type="file" accept="image/*" multiple onChange={(e) => handleMultipleImagesChange('before', e)} className="hidden" />
                   </label>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {images.before.map((img, idx) => (
-                    <div key={idx} className="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group">
+                    <div key={`edit-before-${idx}`} className="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group">
                       <img src={img} alt="before" className="w-full h-full object-cover" />
-                      <button 
-                        type="button" 
-                        onClick={() => handleRemoveImage('before', idx)} 
-                        className="absolute top-1 right-1 bg-rose-600 text-white p-1 rounded-full shadow-md hover:bg-rose-700"
-                      >
+                      <button type="button" onClick={() => handleRemoveImage('before', idx)} className="absolute top-1 right-1 bg-rose-600 text-white p-1 rounded-full shadow-md">
                         <X className="w-3 h-3" />
                       </button>
                     </div>
@@ -1033,30 +1290,19 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               </div>
 
-              {/* ภาพระหว่างซ่อม */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <label className="text-xs font-bold text-slate-700">📸 ภาพระหว่างซ่อม ({images.inProgress.length} รูป)</label>
                   <label className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1">
                     <Plus className="w-3.5 h-3.5" /> เพิ่มรูป
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      multiple 
-                      onChange={(e) => handleMultipleImagesChange('inProgress', e.target.files)} 
-                      className="hidden" 
-                    />
+                    <input type="file" accept="image/*" multiple onChange={(e) => handleMultipleImagesChange('inProgress', e)} className="hidden" />
                   </label>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {images.inProgress.map((img, idx) => (
-                    <div key={idx} className="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group">
+                    <div key={`edit-inprog-${idx}`} className="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group">
                       <img src={img} alt="inProgress" className="w-full h-full object-cover" />
-                      <button 
-                        type="button" 
-                        onClick={() => handleRemoveImage('inProgress', idx)} 
-                        className="absolute top-1 right-1 bg-rose-600 text-white p-1 rounded-full shadow-md hover:bg-rose-700"
-                      >
+                      <button type="button" onClick={() => handleRemoveImage('inProgress', idx)} className="absolute top-1 right-1 bg-rose-600 text-white p-1 rounded-full shadow-md">
                         <X className="w-3 h-3" />
                       </button>
                     </div>
@@ -1064,30 +1310,19 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               </div>
 
-              {/* ภาพหลังซ่อมเสร็จ */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <label className="text-xs font-bold text-slate-700">📸 ภาพหลังซ่อมเสร็จ ({images.after.length} รูป)</label>
                   <label className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1">
                     <Plus className="w-3.5 h-3.5" /> เพิ่มรูป
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      multiple 
-                      onChange={(e) => handleMultipleImagesChange('after', e.target.files)} 
-                      className="hidden" 
-                    />
+                    <input type="file" accept="image/*" multiple onChange={(e) => handleMultipleImagesChange('after', e)} className="hidden" />
                   </label>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {images.after.map((img, idx) => (
-                    <div key={idx} className="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group">
+                    <div key={`edit-after-${idx}`} className="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group">
                       <img src={img} alt="after" className="w-full h-full object-cover" />
-                      <button 
-                        type="button" 
-                        onClick={() => handleRemoveImage('after', idx)} 
-                        className="absolute top-1 right-1 bg-rose-600 text-white p-1 rounded-full shadow-md hover:bg-rose-700"
-                      >
+                      <button type="button" onClick={() => handleRemoveImage('after', idx)} className="absolute top-1 right-1 bg-rose-600 text-white p-1 rounded-full shadow-md">
                         <X className="w-3 h-3" />
                       </button>
                     </div>
@@ -1111,17 +1346,17 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-2xl font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1 shadow-md disabled:opacity-50"
               >
                 {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                บันทึกการเปลี่ยนแปลงรูปและพิกัด
+                บันทึกการแก้ไขข้อมูล
               </button>
             </div>
           </div>
         ) : (
-          /* 📝 หน้าต่างบันทึกผลการทำงานปกติ (เมื่อเลือกกดปิดงานซ่อม) */
+          /* 📝 หน้าต่างบันทึกผลการทำงานปกติ (ปิดงานซ่อม) */
           <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-200 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div>
-                <h3 className="font-bold text-slate-800 text-sm">บันทึกผลการทำงาน: {selectedJob.receivedNo || selectedJob.id}</h3>
-                <p className="text-xs text-slate-500">{selectedJob.reporterName} ({selectedJob.phone})</p>
+                <h3 className="font-bold text-slate-800 text-sm">บันทึกผลการทำงาน: {selectedJob.receivedNo || selectedJob.JobID || selectedJob.id}</h3>
+                <p className="text-xs text-slate-500">{selectedJob.reporterName || selectedJob.ReporterName} ({selectedJob.phone || selectedJob.Phone})</p>
               </div>
               <button onClick={() => setSelectedJob(null)} className="text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer">
                 ยกเลิก
@@ -1183,8 +1418,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                           onChange={(e) => setUnrepairableReasonType(e.target.value)}
                           className="w-full bg-white border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-rose-500 text-slate-800 outline-none"
                         >
-                          {unrepairableReasons.map((r) => (
-                            <option key={r} value={r}>{r}</option>
+                          {unrepairableReasons.map((r, rIdx) => (
+                            <option key={`reason-opt-${rIdx}`} value={r}>{r}</option>
                           ))}
                         </select>
                       </div>
@@ -1208,7 +1443,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                           rows="2"
                           value={unrepairableDetails}
                           onChange={(e) => setUnrepairableDetails(e.target.value)}
-                          placeholder="ระบุสิ่งที่ต้องการการสนับสนุน เช่น ต้องการรถขุด, ประสานงานดับน้ำ..."
+                          placeholder="ระบุสิ่งที่ต้องการการสนับสนุน เช่น ต้องการรถขุด..."
                           className="w-full bg-white border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-rose-500 text-slate-800 outline-none"
                         />
                       </div>
@@ -1217,7 +1452,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {/* ชนิดท่อและขนาดท่อ (แสดงเมื่อไม่ได้เลือกซ่อมไม่ได้ และไม่ได้เลือกไม่ต้องใช้อุปกรณ์) */}
+              {/* ชนิดท่อและขนาดท่อ */}
               {!isUnrepairable && !isNoEquipmentUsed && (
                 <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                   <div>
@@ -1227,8 +1462,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                       onChange={(e) => setPipeType(e.target.value)}
                       className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
                     >
-                      {pipeTypes.map((t) => (
-                        <option key={t} value={t}>{t}</option>
+                      {pipeTypes.map((t, tIdx) => (
+                        <option key={`pipe-type-opt-${tIdx}`} value={t}>{t}</option>
                       ))}
                     </select>
                   </div>
@@ -1239,15 +1474,15 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                       onChange={(e) => setPipeSize(e.target.value)}
                       className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
                     >
-                      {pipeSizes.map((s) => (
-                        <option key={s} value={s}>{s} มม.</option>
+                      {pipeSizes.map((s, sIdx) => (
+                        <option key={`pipe-size-opt-${sIdx}`} value={s}>{s} มม.</option>
                       ))}
                     </select>
                   </div>
                 </div>
               )}
 
-              {/* ระบบเลือกอุปกรณ์จาก Google Sheets (แสดงเมื่อไม่ได้เลือกซ่อมไม่ได้ และไม่ได้เลือกไม่ต้องใช้อุปกรณ์) */}
+              {/* ระบบเลือกอุปกรณ์จาก Google Sheets */}
               {!isUnrepairable && !isNoEquipmentUsed && (
                 <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
                   <div className="flex justify-between items-center">
@@ -1277,9 +1512,9 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                         />
                         {suggestions.length > 0 && (
                           <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 max-h-40 overflow-y-auto divide-y divide-slate-100">
-                            {suggestions.map((item) => (
+                            {suggestions.map((item, sIndex) => (
                               <button
-                                key={item.id || item.name}
+                                key={`suggestion-item-${item.id || sIndex}`}
                                 type="button"
                                 onClick={() => handleSelectEquipmentSuggestion(item)}
                                 className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition font-medium text-slate-700 flex justify-between"
@@ -1311,18 +1546,21 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
                     {selectedEquipmentList.length > 0 && (
                       <div className="space-y-1.5 pt-2">
-                        {selectedEquipmentList.map((item) => (
-                          <div key={item.id} className="bg-white p-2 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
-                            <span className="font-semibold text-slate-700">{item.name} x {item.quantity} {item.unit}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveEquipmentItem(item.id)}
-                              className="text-slate-400 hover:text-rose-600 p-0.5"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
+                        {selectedEquipmentList.map((item, eqIdx) => {
+                          const uniqueEqKey = item.id || `selected-equipment-${eqIdx}`;
+                          return (
+                            <div key={uniqueEqKey} className="bg-white p-2 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
+                              <span className="font-semibold text-slate-700">{item.name} x {item.quantity} {item.unit}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveEquipmentItem(item.id)}
+                                className="text-slate-400 hover:text-rose-600 p-0.5 cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1339,17 +1577,9 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     <label className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50 rounded-xl p-2 flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[70px] transition">
                       <Camera className="w-5 h-5 text-slate-400" />
                       <span className="text-[9px] text-slate-500 font-bold">+ เพิ่มรูป</span>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        multiple 
-                        onChange={(e) => handleMultipleImagesChange('before', e.target.files)} 
-                        className="hidden" 
-                      />
+                      <input type="file" accept="image/*" multiple onChange={(e) => handleMultipleImagesChange('before', e)} className="hidden" />
                     </label>
-                    {images.before.length > 0 && (
-                      <p className="text-[10px] text-emerald-600 font-bold text-center">{images.before.length} รูป</p>
-                    )}
+                    {images.before.length > 0 && <p className="text-[10px] text-emerald-600 font-bold text-center">{images.before.length} รูป</p>}
                   </div>
 
                   <div className="space-y-1">
@@ -1357,17 +1587,9 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     <label className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50 rounded-xl p-2 flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[70px] transition">
                       <Camera className="w-5 h-5 text-slate-400" />
                       <span className="text-[9px] text-slate-500 font-bold">+ เพิ่มรูป</span>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        multiple 
-                        onChange={(e) => handleMultipleImagesChange('inProgress', e.target.files)} 
-                        className="hidden" 
-                      />
+                      <input type="file" accept="image/*" multiple onChange={(e) => handleMultipleImagesChange('inProgress', e)} className="hidden" />
                     </label>
-                    {images.inProgress.length > 0 && (
-                      <p className="text-[10px] text-emerald-600 font-bold text-center">{images.inProgress.length} รูป</p>
-                    )}
+                    {images.inProgress.length > 0 && <p className="text-[10px] text-emerald-600 font-bold text-center">{images.inProgress.length} รูป</p>}
                   </div>
 
                   <div className="space-y-1">
@@ -1375,22 +1597,14 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     <label className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50 rounded-xl p-2 flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[70px] transition">
                       <Camera className="w-5 h-5 text-slate-400" />
                       <span className="text-[9px] text-slate-500 font-bold">+ เพิ่มรูป</span>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        multiple 
-                        onChange={(e) => handleMultipleImagesChange('after', e.target.files)} 
-                        className="hidden" 
-                      />
+                      <input type="file" accept="image/*" multiple onChange={(e) => handleMultipleImagesChange('after', e)} className="hidden" />
                     </label>
-                    {images.after.length > 0 && (
-                      <p className="text-[10px] text-emerald-600 font-bold text-center">{images.after.length} รูป</p>
-                    )}
+                    {images.after.length > 0 && <p className="text-[10px] text-emerald-600 font-bold text-center">{images.after.length} รูป</p>}
                   </div>
                 </div>
               </div>
 
-              {/* 📍 ดึงพิกัด GPS พร้อมช่องแก้ไขและปุ่มกดดูแผนที่ */}
+              {/* 📍 ดึงพิกัด GPS */}
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
                 <div className="flex justify-between items-center">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
@@ -1429,19 +1643,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     />
                   </div>
                 </div>
-
-                {coords.lat && coords.lng && (
-                  <div className="pt-1 text-right">
-                    <a
-                      href={`https://www.google.com/maps?q=${coords.lat},${coords.lng}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline bg-white px-3 py-1 rounded-lg border border-blue-200 shadow-2xs"
-                    >
-                      🗺️ กดดูพิกัดนี้บน Google Maps (ตรวจสอบก่อนบันทึก)
-                    </a>
-                  </div>
-                )}
               </div>
 
               <div className="pt-2 flex gap-2">
@@ -1469,14 +1670,14 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         )}
       </div>
 
-      {/* ➕ Modal เปิดใบงานด่วน / แก้ไขใบงาน */}
+      {/* ➕ Modal เปิดใบงานด่วน */}
       {isAdHocModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-5 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
                 <PlusCircle className="w-4 h-4 text-rose-600" />
-                {editingJob ? 'แก้ไขข้อมูลใบแจ้งซ่อม' : 'เปิดใบงานด่วน (หน้างาน)'}
+                เปิดใบงานด่วน (หน้างาน)
               </h3>
               <button onClick={() => setIsAdHocModalOpen(false)} className="p-1 rounded-xl bg-slate-100 text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
@@ -1561,7 +1762,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 <select
                   value={adHocData.urgency}
                   onChange={(e) => setAdHocData({ ...adHocData, urgency: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-bold focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none"
                 >
                   <option value="ปกติ">ปกติ</option>
                   <option value="ด่วน">ด่วน</option>
@@ -1581,7 +1782,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   type="submit"
                   className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-2xl font-bold transition cursor-pointer shadow-md"
                 >
-                  {editingJob ? 'บันทึกการแก้ไข' : 'สร้างใบงานด่วน'}
+                  สร้างใบงานด่วน
                 </button>
               </div>
             </form>
