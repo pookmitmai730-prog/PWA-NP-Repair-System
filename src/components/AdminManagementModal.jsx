@@ -49,12 +49,15 @@ export default function AdminManagementModal({
     e.preventDefault();
     if (!adminUsernameInput.trim() || !adminNameInput.trim() || !adminPasswordInput.trim()) return;
 
+    const trimmedPhone = adminPhoneInput.trim();
+    const trimmedPassword = adminPasswordInput.trim();
+
     const payload = {
       username: adminUsernameInput.trim(),
       name: adminNameInput.trim(),
       position: adminPositionInput.trim() || 'แอดมิน',
-      phone: adminPhoneInput.trim() || '-',
-      password: adminPasswordInput.trim(),
+      phone: trimmedPhone ? (trimmedPhone.startsWith("'") ? trimmedPhone : `'${trimmedPhone}`) : '-',
+      password: trimmedPassword ? (trimmedPassword.startsWith("'") ? trimmedPassword : `'${trimmedPassword}`) : '',
       role: 'admin'
     };
 
@@ -71,8 +74,8 @@ export default function AdminManagementModal({
     setAdminUsernameInput(admin.username || '');
     setAdminNameInput(admin.name || '');
     setAdminPositionInput(admin.position !== '-' ? admin.position : '');
-    setAdminPhoneInput(admin.phone !== '-' ? admin.phone : '');
-    setAdminPasswordInput(admin.password || '');
+    setAdminPhoneInput(admin.phone && admin.phone !== '-' ? admin.phone.replace(/^'/, '') : '');
+    setAdminPasswordInput(admin.password ? admin.password.replace(/^'/, '') : '');
   };
 
   const resetAdminForm = () => {
@@ -87,14 +90,18 @@ export default function AdminManagementModal({
   // --- Handlers Worker ---
   const handleSaveWorker = (e) => {
     e.preventDefault();
-    if (!workerTeamNameInput.trim() || !workerUsernameInput.trim() || !workerPasswordInput.trim()) return;
+    // แก้ไขเงื่อนไขให้เช็กจาก workerUsernameInput และ workerPasswordInput (และแก้ชื่อทีมให้ดึงจาก username หรือค่าเริ่มต้นถ้าไม่ได้แยกช่อง)
+    if (!workerUsernameInput.trim() || !workerPasswordInput.trim()) return;
+
+    const trimmedPhone = workerPhoneInput.trim();
+    const trimmedPassword = workerPasswordInput.trim();
 
     const payload = {
-      teamName: workerTeamNameInput.trim(),
+      teamName: workerTeamNameInput.trim() || workerUsernameInput.trim(),
       position: workerPositionInput.trim() || 'ช่างภาคสนาม',
-      phone: workerPhoneInput.trim() || '-',
+      phone: trimmedPhone ? (trimmedPhone.startsWith("'") ? trimmedPhone : `'${trimmedPhone}`) : '-',
       username: workerUsernameInput.trim(),
-      password: workerPasswordInput.trim(),
+      password: trimmedPassword ? (trimmedPassword.startsWith("'") ? trimmedPassword : `'${trimmedPassword}`) : '',
       role: 'tech'
     };
 
@@ -110,9 +117,9 @@ export default function AdminManagementModal({
     setEditingWorkerUsername(worker.username);
     setWorkerTeamNameInput(worker.teamName || '');
     setWorkerPositionInput(worker.position !== '-' ? worker.position : '');
-    setWorkerPhoneInput(worker.phone !== '-' ? worker.phone : '');
+    setWorkerPhoneInput(worker.phone && worker.phone !== '-' ? worker.phone.replace(/^'/, '') : '');
     setWorkerUsernameInput(worker.username || '');
-    setWorkerPasswordInput(worker.password || '');
+    setWorkerPasswordInput(worker.password ? worker.password.replace(/^'/, '') : '');
   };
 
   const resetWorkerForm = () => {
@@ -233,7 +240,7 @@ export default function AdminManagementModal({
                       type="text"
                       value={adminPasswordInput}
                       onChange={(e) => setAdminPasswordInput(e.target.value)}
-                      placeholder="เช่น 1234"
+                      placeholder="เช่น 1234 หรือเบอร์โทร"
                       required
                       className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 font-mono font-bold"
                     />
@@ -271,12 +278,12 @@ export default function AdminManagementModal({
                           </span>
                           {a.phone && a.phone !== '-' && (
                             <span className="text-[11px] font-normal text-slate-500 flex items-center gap-1">
-                              <Phone className="w-3 h-3 text-indigo-600" /> {a.phone}
+                              <Phone className="w-3 h-3 text-indigo-600" /> {a.phone.replace(/^'/, '')}
                             </span>
                           )}
                         </p>
                         <p className="text-slate-500 font-mono text-[11px] mt-0.5">
-                          Username: <span className="text-indigo-600 font-bold">{a.username}</span> | Password: <span className="text-slate-700 font-bold">{a.password}</span>
+                          Username: <span className="text-indigo-600 font-bold">{a.username}</span> | Password: <span className="text-slate-700 font-bold">{a.password ? a.password.replace(/^'/, '') : ''}</span>
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
@@ -319,7 +326,6 @@ export default function AdminManagementModal({
                       value={workerTeamNameInput}
                       onChange={(e) => setWorkerTeamNameInput(e.target.value)}
                       placeholder="เช่น ทีมช่างซ่อม 1"
-                      required
                       className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 font-bold"
                     />
                   </div>
@@ -365,7 +371,7 @@ export default function AdminManagementModal({
                       type="text"
                       value={workerPasswordInput}
                       onChange={(e) => setWorkerPasswordInput(e.target.value)}
-                      placeholder="เช่น 123"
+                      placeholder="เช่น 123 หรือเบอร์โทร"
                       required
                       className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 font-mono font-bold"
                     />
@@ -405,12 +411,12 @@ export default function AdminManagementModal({
                           )}
                           {w.phone && w.phone !== '-' && (
                             <span className="text-[11px] font-normal text-slate-500 flex items-center gap-1">
-                              <Phone className="w-3 h-3 text-emerald-600" /> {w.phone}
+                              <Phone className="w-3 h-3 text-emerald-600" /> {w.phone.replace(/^'/, '')}
                             </span>
                           )}
                         </p>
                         <p className="text-slate-500 font-mono text-[11px] mt-0.5">
-                          Username: <span className="text-emerald-700 font-bold">{w.username}</span> | Password: <span className="text-slate-700 font-bold">{w.password}</span>
+                          Username: <span className="text-emerald-700 font-bold">{w.username}</span> | Password: <span className="text-slate-700 font-bold">{w.password ? w.password.replace(/^'/, '') : ''}</span>
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
@@ -421,7 +427,6 @@ export default function AdminManagementModal({
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        {/* ส่งค่า username และ teamName ไปลบให้สอดคล้องกับ Apps Script ล่าสุด */}
                         <button 
                           onClick={() => onDeleteWorkerAccount(w.username, w.teamName)} 
                           className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
