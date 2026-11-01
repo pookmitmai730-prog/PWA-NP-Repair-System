@@ -8,15 +8,10 @@ import FieldWorkerPortal from './components/FieldWorkerPortal';
 import ReportsView from './components/ReportsView';
 import RolePortal from './components/RolePortal';
 import AdminManagementModal from './components/AdminManagementModal';
-import { archiveCompletedJobToSheets } from './services/sheetsApi';
-import { 
-  subscribeToJobs, 
-  saveJobToFirebase, 
-  updateJobStatusInFirebase, 
-  subscribeToSystemConfig, 
-  saveSystemConfigToFirebase 
-} from './services/firebase';
-import { LayoutDashboard, Smartphone, BarChart3, LogOut, Shield, UserCheck } from 'lucide-react';
+import { LayoutDashboard, Smartphone, BarChart3, LogOut, Shield, UserCheck, RefreshCw } from 'lucide-react';
+
+// 🌐 URL ของ Google Apps Script Web App
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
 
 export default function App() {
   const [userRole, setUserRole] = useState(localStorage.getItem('pwa_user_role') || 'portal');
@@ -24,108 +19,140 @@ export default function App() {
 
   const [currentView, setCurrentView] = useState('dashboard');
   const [jobs, setJobs] = useState([]);
+  const [loadingJobs, setLoadingJobs] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAdminManageOpen, setIsAdminManageOpen] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
 
-  // ☁️ ข้อมูลการตั้งค่าระบบ (ซิงค์ผ่าน Firebase Realtime Database)
+  // ☁️ บัญชีผู้ใช้งานและข้อมูลใบงานดึงตรงจาก Google Sheets 100%
   const [adminUsers, setAdminUsers] = useState([]);
-  const [workerAccounts, setWorkerAccounts] = useState([
-    { id: 'w1', teamName: 'ทีมช่างซ่อม 1', phone: '0811111111', username: 'team1', password: '123' },
-    { id: 'w2', teamName: 'ทีมช่างซ่อม 2', phone: '0822222222', username: 'team2', password: '123' },
-  ]);
-  const [teams, setTeams] = useState([
-    { name: 'ทีมช่างซ่อม 1', phone: '0811111111' },
-    { name: 'ทีมช่างซ่อม 2', phone: '0822222222' },
-  ]);
+  const [workerAccounts, setWorkerAccounts] = useState([]);
 
-  // 1. ดึงข้อมูลงานซ่อมและ Config จาก Firebase แบบ Real-time
-  useEffect(() => {
-    const unsubscribeJobs = subscribeToJobs((jobList) => {
-      setJobs(jobList);
-    });
-
-    const unsubscribeConfig = subscribeToSystemConfig((config) => {
-      if (config) {
-        if (config.adminUsers) setAdminUsers(config.adminUsers);
-        if (config.workerAccounts) setWorkerAccounts(config.workerAccounts);
-        if (config.teams) setTeams(config.teams);
+  // 🔄 ฟังก์ชันดึงข้อมูลใบงาน (Jobs) จาก Google Sheets (ชีต Jobs_Archive)
+  const fetchJobsFromSheet = async () => {
+    setLoadingJobs(true);
+    try {
+      const res = await fetch(`${WEB_APP_URL}?action=get_jobs`);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setJobs(data);
+      } else if (data && data.jobs) {
+        setJobs(data.jobs);
       }
-    });
+    } catch (err) {
+      console.error("Error fetching jobs from Google Sheets:", err);
+    } finally {
+      setLoadingJobs(false);
+    }
+  };
 
-    return () => {
-      unsubscribeJobs();
-      unsubscribeConfig();
-    };
+  // ดึงข้อมูล Admins, Workers และ Jobs จาก Google Sheets เมื่อเปิดแอป
+  const fetchDataFromSheet = async () => {
+    try {
+      // ดึงข้อมูลแอดมิน
+      const adminRes = await fetch(`${WEB_APP_URL}?action=admins`);
+      const adminData = await adminRes.json();
+      if (Array.isArray(adminData)) setAdminUsers(adminData);
+
+      // ดึงข้อมูลช่างภาคสนาม
+      const workerRes = await fetch(`${WEB_APP_URL}?action=teams`);
+      const workerData = await workerRes.json();
+      if (Array.isArray(workerData)) setWorkerAccounts(workerData);
+
+      // ดึงข้อมูลใบงาน
+      await fetchJobsFromSheet();
+    } catch (err) {
+      console.error("Error fetching data from Google Sheets:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchDataFromSheet();
   }, []);
 
-  // ฟังก์ชันกลางบันทึก Config ทั้งหมดขึ้น Firebase
-  const updateFirebaseConfig = async (newAdmins, newWorkers, newTeams) => {
-    const configPayload = {
-      adminUsers: newAdmins,
-      workerAccounts: newWorkers,
-      teams: newTeams
-    };
+  // 🛡️ จัดการบันทึก/ลบ Admins ใน Google Sheets
+  const handleAddAdmin = async (newAdmin) => {
     try {
-      await saveSystemConfigToFirebase(configPayload);
+      await fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: "save_admin", data: newAdmin })
+      });
+      alert("บันทึกแอดมินลง Google Sheets เรียบร้อยแล้ว!");
+      fetchDataFromSheet();
     } catch (err) {
-      console.error("Error saving config to Firebase:", err);
+      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
     }
   };
 
-  // จัดการ Admin
-  const handleAddAdmin = (newAdmin) => {
-    const updated = [...adminUsers, newAdmin];
-    setAdminUsers(updated);
-    updateFirebaseConfig(updated, workerAccounts, teams);
+  const handleEditAdmin = async (id, updatedAdmin) => {
+    await handleAddAdmin(updatedAdmin);
   };
 
-  const handleEditAdmin = (id, updatedAdmin) => {
-    const updated = adminUsers.map(a => a.id === id ? { ...a, ...updatedAdmin } : a);
-    setAdminUsers(updated);
-    updateFirebaseConfig(updated, workerAccounts, teams);
+  const handleDeleteAdmin = async (username) => {
+    if (window.confirm(`คุณต้องการลบแอดมิน "${username}" ใช่หรือไม่?`)) {
+      try {
+        await fetch(WEB_APP_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: "delete_admin", data: { username } })
+        });
+        alert("ลบแอดมินเรียบร้อยแล้ว!");
+        fetchDataFromSheet();
+      } catch (err) {
+        alert("เกิดข้อผิดพลาดในการลบ");
+      }
+    }
   };
 
-  const handleDeleteAdmin = (id) => {
-    const updated = adminUsers.filter(a => a.id !== id);
-    setAdminUsers(updated);
-    updateFirebaseConfig(updated, workerAccounts, teams);
+  // 👥 จัดการบันทึก/ลบ Workers ใน Google Sheets
+  const handleAddWorkerAccount = async (newWorker) => {
+    try {
+      await fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: "save_worker", data: newWorker })
+      });
+      alert("บันทึกทีมช่างลง Google Sheets เรียบร้อยแล้ว!");
+      fetchDataFromSheet();
+    } catch (err) {
+      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+    }
   };
 
-  // จัดการบัญชีช่าง
-  const handleAddWorkerAccount = (newWorker) => {
-    const updated = [...workerAccounts, newWorker];
-    setWorkerAccounts(updated);
+  const handleEditWorkerAccount = async (id, updatedWorker) => {
+    await handleAddWorkerAccount(updatedWorker);
+  };
+
+  const handleDeleteWorkerAccount = async (id, username, teamName) => {
+    const targetName = teamName || username || id;
     
-    let updatedTeams = [...teams];
-    if (newWorker.teamName && !teams.some(t => t.name === newWorker.teamName)) {
-      updatedTeams = [...teams, { name: newWorker.teamName, phone: newWorker.phone || '-' }];
-      setTeams(updatedTeams);
+    if (window.confirm(`คุณต้องการลบบัญชีช่าง "${targetName}" ใช่หรือไม่?`)) {
+      try {
+        await fetch(WEB_APP_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            action: "delete_worker", 
+            data: { 
+              username: username || targetName, 
+              teamName: teamName || targetName 
+            } 
+          })
+        });
+        alert("ลบบัญชีช่างเรียบร้อยแล้ว!");
+        fetchDataFromSheet();
+      } catch (err) {
+        console.error("Error deleting worker:", err);
+        alert("เกิดข้อผิดพลาดในการลบ");
+      }
     }
-
-    updateFirebaseConfig(adminUsers, updated, updatedTeams);
   };
 
-  const handleEditWorkerAccount = (id, updatedWorker) => {
-    const updated = workerAccounts.map(w => w.id === id ? { ...w, ...updatedWorker } : w);
-    setWorkerAccounts(updated);
-    
-    let updatedTeams = [...teams];
-    if (updatedWorker.teamName && !teams.some(t => t.name === updatedWorker.teamName)) {
-      updatedTeams = [...teams, { name: updatedWorker.teamName, phone: updatedWorker.phone || '-' }];
-      setTeams(updatedTeams);
-    }
-
-    updateFirebaseConfig(adminUsers, updated, updatedTeams);
-  };
-
-  const handleDeleteWorkerAccount = (id) => {
-    const updated = workerAccounts.filter(w => w.id !== id);
-    setWorkerAccounts(updated);
-    updateFirebaseConfig(adminUsers, updated, teams);
-  };
-
-  // Login & Logout Handlers
+  // Login & Logout
   const handleAdminLogin = () => {
     setUserRole('admin');
     localStorage.setItem('pwa_user_role', 'admin');
@@ -139,7 +166,6 @@ export default function App() {
     localStorage.setItem('pwa_worker_team', teamName);
   };
 
-  // Logout หลักสำหรับปุ่มส่วนบน
   const handleLogout = () => {
     setUserRole('portal');
     setActiveWorkerTeam('');
@@ -148,94 +174,85 @@ export default function App() {
     setCurrentView('dashboard');
   };
 
-  // Logout เฉพาะสำหรับหน้าช่างภาคสนาม
-  const handleWorkerLogout = () => {
-    setActiveWorkerTeam('');
-    setUserRole('portal');
-    localStorage.removeItem('pwa_user_role');
-    localStorage.removeItem('pwa_worker_team');
-  };
-
   const stats = {
     total: jobs.length,
-    pending: jobs.filter(j => j.status === 'PENDING').length,
-    inProgress: jobs.filter(j => j.status === 'DISPATCHED' || j.status === 'IN_PROGRESS').length,
-    completed: jobs.filter(j => j.status === 'COMPLETED').length,
+    pending: jobs.filter(j => (j.Status || j.status) === 'PENDING').length,
+    inProgress: jobs.filter(j => (j.Status || j.status) === 'DISPATCHED' || (j.Status || j.status) === 'IN_PROGRESS').length,
+    completed: jobs.filter(j => (j.Status || j.status) === 'COMPLETED').length,
   };
 
+  // 📝 สร้างใบงานใหม่ บันทึกลง Google Sheets (Jobs_Archive)
   const handleCreateJob = async (newJobData) => {
     const jobId = newJobData.receivedNo || `S${Date.now()}`;
     const fullJob = {
-      id: jobId,
-      ...newJobData,
-      receivedNo: jobId,
-      status: 'PENDING',
-      technician: 'ยังไม่ระบุทีมช่าง',
-      urgency: 'ปกติ',
-      createdAt: newJobData.receivedAt || new Date().toISOString().replace('T', ' ').substring(0, 16),
-      updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      JobID: jobId,
+      Timestamp: newJobData.receivedAt || new Date().toISOString().replace('T', ' ').substring(0, 16),
+      ReporterName: newJobData.reporterName || '',
+      Phone: newJobData.phone || '',
+      Location: newJobData.location || '',
+      IssueType: newJobData.complaintTopic || newJobData.issueType || '',
+      PipeType: newJobData.pipeType || '',
+      PipeSize: newJobData.pipeSize || '',
+      Description: newJobData.notes || newJobData.description || '',
+      Technician: 'ยังไม่ระบุทีมช่าง',
+      Status: 'PENDING',
+      BeforeImg: newJobData.beforeImg || '',
+      InProgImg: newJobData.inProgImg || '',
+      AfterImg: newJobData.afterImg || '',
+      Notes: newJobData.notes || '',
+      ClosedAt: ''
     };
 
     try {
-      await saveJobToFirebase(fullJob);
+      await fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: "save_job", data: fullJob })
+      });
       alert(`บันทึกใบรับแจ้งเรียบร้อยแล้ว! เลขที่รับแจ้ง: ${jobId}`);
+      setIsModalOpen(false);
+      fetchJobsFromSheet();
     } catch (err) {
-      console.error("Firebase Save Error:", err);
-      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Firebase");
+      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
     }
   };
 
+  // 🔄 อัปเดตสถานะงานใน Google Sheets
   const handleStatusChange = async (jobId, newStatus, extraData = {}) => {
-    const currentJob = jobs.find(j => j.id === jobId || j.receivedNo === jobId);
+    const currentJob = jobs.find(j => j.JobID === jobId || j.id === jobId || j.receivedNo === jobId);
     if (!currentJob) return;
 
     const assignedTechnician = extraData.technician || (newStatus !== 'PENDING' 
-      ? (currentJob.technician && !currentJob.technician.includes('ยังไม่ระบุ') 
-          ? currentJob.technician 
-          : (workerAccounts[0] ? `${workerAccounts[0].teamName} (${workerAccounts[0].phone || '-'})` : 'ทีมช่าง กปภ.')) 
-      : currentJob.technician);
+      ? (currentJob.Technician && !currentJob.Technician.includes('ยังไม่ระบุ') 
+          ? currentJob.Technician 
+          : (workerAccounts[0] ? `${workerAccounts[0].teamName}` : 'ทีมช่าง กปภ.')) 
+      : currentJob.Technician);
 
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
     const updatedData = {
       ...currentJob,
       ...extraData,
-      status: newStatus,
-      technician: assignedTechnician,
-      urgency: extraData.urgency || currentJob.urgency || 'ปกติ',
-      dispatchedAt: newStatus === 'DISPATCHED' ? (extraData.dispatchedAt || currentJob.dispatchedAt || nowStr) : (currentJob.dispatchedAt || ''),
-      inProgressAt: newStatus === 'IN_PROGRESS' ? (extraData.inProgressAt || currentJob.inProgressAt || nowStr) : (currentJob.inProgressAt || ''),
-      completedAt: newStatus === 'COMPLETED' ? (extraData.completedAt || nowStr) : (currentJob.completedAt || ''),
-      updatedAt: nowStr
+      JobID: currentJob.JobID || currentJob.id || jobId,
+      Status: newStatus,
+      Technician: assignedTechnician,
+      ClosedAt: newStatus === 'COMPLETED' ? (extraData.completedAt || nowStr) : (currentJob.ClosedAt || '')
     };
 
     try {
-      await updateJobStatusInFirebase(currentJob.id || currentJob.receivedNo, updatedData);
-      setJobs(prevJobs => prevJobs.map(j => (j.id === currentJob.id || j.receivedNo === currentJob.receivedNo ? updatedData : j)));
-
-      if (newStatus === 'COMPLETED') {
-        const res = await archiveCompletedJobToSheets(updatedData);
-        console.log("Sheets Archive Result:", res.message);
-      }
+      await fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: "update_job", data: updatedData })
+      });
+      fetchJobsFromSheet();
     } catch (err) {
-      console.error("Error changing job status:", err);
       alert("เกิดข้อผิดพลาดในการอัปเดตสถานะ");
     }
   };
 
-  const handleManualSync = async () => {
-    setIsSyncing(true);
-    const completedJobs = jobs.filter(j => j.status === 'COMPLETED');
-    for (let job of completedJobs) {
-      await archiveCompletedJobToSheets(job);
-    }
-    setTimeout(() => {
-      setIsSyncing(false);
-      alert(`ซิงค์ข้อมูลเคสที่ปิดแล้ว (${completedJobs.length} รายการ) ลง Google Sheets เรียบร้อย!`);
-    }, 1000);
-  };
-
-  // 1. หน้า Portal เลือกสิทธิ์ (ส่ง jobs={jobs} เพื่อให้ค้นหาจากหน้าแรกได้ทันที)
   if (userRole === 'portal') {
     return (
       <RolePortal 
@@ -249,7 +266,6 @@ export default function App() {
     );
   }
 
-  // 2. หน้าประชาชนทั่วไป
   if (userRole === 'public') {
     return (
       <div className="min-h-screen bg-slate-950 text-white font-sans">
@@ -272,7 +288,6 @@ export default function App() {
     );
   }
 
-  // 3. หน้าช่างภาคสนาม
   if (userRole === 'worker') {
     return (
       <div className="min-h-screen bg-slate-100 font-sans">
@@ -280,13 +295,12 @@ export default function App() {
           jobs={jobs} 
           onUpdateJobStatus={handleStatusChange} 
           teams={workerAccounts.map(w => w.teamName)}
-          onLogout={handleWorkerLogout}
+          onLogout={handleLogout}
         />
       </div>
     );
   }
 
-  // 4. หน้า Admin หลัก
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
       <div className="bg-slate-900 text-white py-2 px-4 text-xs flex flex-wrap justify-between items-center border-b border-slate-800 sticky top-0 z-40">
@@ -294,10 +308,18 @@ export default function App() {
           <span className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
             <Shield className="w-3 h-3" /> ADMIN
           </span>
-          <span className="font-bold text-slate-200">สิทธิ์ผู้ดูแลระบบ (เข้าถึงได้ทุกส่วน)</span>
+          <span className="font-bold text-slate-200">สิทธิ์ผู้ดูแลระบบ (Google Sheets Database)</span>
         </div>
 
         <div className="flex items-center space-x-2">
+          <button 
+            onClick={fetchJobsFromSheet}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
+            title="รีเฟรชข้อมูล"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingJobs ? 'animate-spin' : ''}`} /> <span>รีเฟรช</span>
+          </button>
+
           <button 
             onClick={() => setCurrentView('dashboard')}
             className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${
@@ -344,12 +366,7 @@ export default function App() {
 
       {currentView === 'dashboard' && (
         <>
-          <Navbar 
-            onOpenModal={() => setIsModalOpen(true)} 
-            onSyncSheets={handleManualSync}
-            isSyncing={isSyncing}
-          />
-
+          <Navbar onOpenModal={() => setIsModalOpen(true)} />
           <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
             <StatsOverview stats={stats} />
             <TrackingSearch jobs={jobs} />
@@ -362,16 +379,14 @@ export default function App() {
         </>
       )}
 
-      {currentView === 'reports' && (
-        <ReportsView jobs={jobs} />
-      )}
+      {currentView === 'reports' && <ReportsView jobs={jobs} />}
 
       {currentView === 'field' && (
         <FieldWorkerPortal 
           jobs={jobs} 
           onUpdateJobStatus={handleStatusChange} 
           teams={workerAccounts.map(w => w.teamName)}
-          onLogout={handleWorkerLogout}
+          onLogout={handleLogout}
         />
       )}
 
@@ -387,11 +402,11 @@ export default function App() {
         adminUsers={adminUsers}
         onAddAdmin={handleAddAdmin}
         onEditAdmin={handleEditAdmin}
-        onDeleteAdmin={handleDeleteAdmin}
+        onDeleteAdmin={(id, username) => handleDeleteAdmin(username)}
         workerAccounts={workerAccounts}
         onAddWorkerAccount={handleAddWorkerAccount}
         onEditWorkerAccount={handleEditWorkerAccount}
-        onDeleteWorkerAccount={handleDeleteWorkerAccount}
+        onDeleteWorkerAccount={(id, username, teamName) => handleDeleteWorkerAccount(id, username, teamName)}
       />
     </div>
   );
