@@ -82,10 +82,12 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     if (!ENABLE_TELEGRAM_NOTIFY) return; 
     if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return;
     
+    const displayPhone = jobPayload.phone ? String(jobPayload.phone).replace(/^'/, '') : '-';
+
     try {
       const message = `🛠 *แจ้งมอบหมายงานซ่อม (กปภ.)* 🛠\n\n` +
         `📌 *เลขที่รับแจ้ง:* \`${jobPayload.receivedNo}\`\n` +
-        `👤 *ผู้แจ้ง:* ${jobPayload.reporterName} (${jobPayload.phone})\n` +
+        `👤 *ผู้แจ้ง:* ${jobPayload.reporterName} (${displayPhone})\n` +
         `📍 *สถานที่:* ${jobPayload.location}\n` +
         `🔧 *ปัญหา:* ${jobPayload.complaintTopic}\n` +
         `👷‍♂️ *ทีมช่างผู้รับผิดชอบ:* *${jobPayload.technician}*\n` +
@@ -109,10 +111,13 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       return;
     }
     const workerObj = workerAccounts.find(w => w.teamName === selectedTeam);
-    const techDetails = workerObj ? `${workerObj.teamName} (${workerObj.phone || '-'})` : selectedTeam;
+    const techDetails = workerObj ? `${workerObj.teamName} (${workerObj.phone ? String(workerObj.phone).replace(/^'/, '') : '-'})` : selectedTeam;
     
     const currentDateTime = getThaiTimestamp();
     const originalReceivedNo = getDisplayReceivedNo(selectedJobForDispatch);
+
+    const rawPhone = selectedJobForDispatch.phone || selectedJobForDispatch.Phone || '-';
+    const formattedPhone = rawPhone !== '-' ? (String(rawPhone).startsWith("'") ? rawPhone : `'${String(rawPhone).trim()}`) : '-';
 
     const dispatchPayload = {
       action: "dispatch_job",
@@ -121,8 +126,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       receivedNo: originalReceivedNo,
       reporterName: selectedJobForDispatch.reporterName || selectedJobForDispatch.ReporterName || 'ไม่ระบุชื่อ',
       ReporterName: selectedJobForDispatch.reporterName || selectedJobForDispatch.ReporterName || 'ไม่ระบุชื่อ',
-      phone: selectedJobForDispatch.phone || selectedJobForDispatch.Phone || '-',
-      Phone: selectedJobForDispatch.phone || selectedJobForDispatch.Phone || '-',
+      phone: formattedPhone,
+      Phone: formattedPhone,
       location: selectedJobForDispatch.location || selectedJobForDispatch.Location || '-',
       Location: selectedJobForDispatch.location || selectedJobForDispatch.Location || '-',
       complaintTopic: selectedJobForDispatch.complaintTopic || selectedJobForDispatch.issueType || selectedJobForDispatch.IssueType || '-',
@@ -174,9 +179,12 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     if (!newSelectedTeam || !editingTeamJob) return;
 
     const workerObj = workerAccounts.find(w => w.teamName === newSelectedTeam);
-    const techDetails = workerObj ? `${workerObj.teamName} (${workerObj.phone || '-'})` : newSelectedTeam;
+    const techDetails = workerObj ? `${workerObj.teamName} (${workerObj.phone ? String(workerObj.phone).replace(/^'/, '') : '-'})` : newSelectedTeam;
     const originalReceivedNo = getDisplayReceivedNo(editingTeamJob);
     const currentDateTime = getThaiTimestamp();
+
+    const rawPhone = editingTeamJob.phone || editingTeamJob.Phone || '-';
+    const formattedPhone = rawPhone !== '-' ? (String(rawPhone).startsWith("'") ? rawPhone : `'${String(rawPhone).trim()}`) : '-';
 
     const changeTeamPayload = {
       action: "dispatch_job",
@@ -184,7 +192,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       JobID: originalReceivedNo,
       receivedNo: originalReceivedNo,
       reporterName: editingTeamJob.reporterName || editingTeamJob.ReporterName || 'ไม่ระบุชื่อ',
-      phone: editingTeamJob.phone || editingTeamJob.Phone || '-',
+      phone: formattedPhone,
+      Phone: formattedPhone,
       location: editingTeamJob.location || editingTeamJob.Location || '-',
       complaintTopic: editingTeamJob.complaintTopic || editingTeamJob.issueType || editingTeamJob.IssueType || '-',
       urgency: editingTeamJob.Notes || editingTeamJob.urgency || 'ปกติ',
@@ -222,10 +231,12 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const handleOpenAdminEdit = (job) => {
     setEditingAdminJob(job);
     const currentUrgency = job.Notes || job.notes || job.urgency || job.Urgency || job.urgencyLevel || 'ปกติ';
+    const rawPhone = job.phone || job.Phone || '';
+    
     setAdminEditForm({
       receivedNo: getDisplayReceivedNo(job),
       reporterName: job.reporterName || job.ReporterName || '',
-      phone: job.phone || job.Phone || '',
+      phone: rawPhone ? String(rawPhone).replace(/^'/, '') : '',
       location: job.location || job.Location || '',
       complaintTopic: job.complaintTopic || job.issueType || job.IssueType || '',
       urgency: currentUrgency
@@ -235,6 +246,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const handleSaveAdminEdit = async (e) => {
     e.preventDefault();
     if (!editingAdminJob) return;
+
+    const trimmedPhone = adminEditForm.phone.trim();
+    const formattedPhone = trimmedPhone ? (trimmedPhone.startsWith("'") ? trimmedPhone : `'${trimmedPhone}`) : '-';
 
     const targetId = editingAdminJob.id || editingAdminJob.JobID || adminEditForm.receivedNo;
     const updatedData = {
@@ -246,8 +260,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       Timestamp: editingAdminJob.receivedAt || editingAdminJob.Timestamp || getThaiTimestamp(),
       reporterName: adminEditForm.reporterName,
       ReporterName: adminEditForm.reporterName,
-      phone: adminEditForm.phone,
-      Phone: adminEditForm.phone,
+      phone: formattedPhone,
+      Phone: formattedPhone,
       location: adminEditForm.location,
       Location: adminEditForm.location,
       complaintTopic: adminEditForm.complaintTopic,
@@ -374,6 +388,17 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     const uniqueJobKey = job.id || job.JobID || job.receivedNo || `job-${col.id}-${index}`;
                     
                     const currentUrgency = job.Notes || job.notes || job.urgency || job.Urgency || job.urgencyLevel || 'ปกติ';
+                    const displayPhone = job.phone || job.Phone ? String(job.phone || job.Phone).replace(/^'/, '') : '-';
+
+                    // จัดรูปแบบวันที่และเวลาให้เป็นแบบประเทศไทย
+                    const rawReceivedAt = job.receivedAt || job.Timestamp || job.createdAt;
+                    const formattedReceivedAt = rawReceivedAt ? formatThaiDateTimeString(rawReceivedAt) : '-';
+
+                    const rawDispatchedAt = job.dispatchedAt;
+                    const formattedDispatchedAt = rawDispatchedAt ? formatThaiDateTimeString(rawDispatchedAt) : '';
+
+                    const rawCompletedAt = job.completedAt;
+                    const formattedCompletedAt = rawCompletedAt ? formatThaiDateTimeString(rawCompletedAt) : '';
 
                     return (
                       <div key={uniqueJobKey} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition space-y-2.5 relative">
@@ -405,12 +430,12 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                         </div>
 
                         <div className="text-[10px] text-slate-400 space-y-0.5">
-                          <span className="block"><Clock className="w-3 h-3 inline mr-0.5" /> แจ้ง: {job.receivedAt || job.Timestamp || job.createdAt}</span>
-                          {job.dispatchedAt && (
-                            <span className="text-cyan-600 font-semibold block">สั่งงาน: {job.dispatchedAt}</span>
+                          <span className="block"><Clock className="w-3 h-3 inline mr-0.5" /> แจ้ง: {formattedReceivedAt}</span>
+                          {formattedDispatchedAt && (
+                            <span className="text-cyan-600 font-semibold block">สั่งงาน: {formattedDispatchedAt}</span>
                           )}
-                          {job.completedAt && (
-                            <span className="text-emerald-600 font-bold block">เสร็จ: {job.completedAt}</span>
+                          {formattedCompletedAt && (
+                            <span className="text-emerald-600 font-bold block">เสร็จ: {formattedCompletedAt}</span>
                           )}
                         </div>
 
@@ -420,7 +445,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                           </h5>
                           <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
                             <User className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span className="truncate">{job.reporterName || job.ReporterName} ({job.phone || job.Phone})</span>
+                            <span className="truncate">{job.reporterName || job.ReporterName} ({displayPhone})</span>
                           </p>
                           <p className="text-[11px] text-slate-500 flex items-start gap-1 mt-0.5">
                             <MapPin className="w-3 h-3 text-rose-400 shrink-0 mt-0.5" />
@@ -540,7 +565,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                   ) : (
                     workerAccounts.map((worker, wIndex) => (
                       <option key={worker.id || worker.teamName || `worker-${wIndex}`} value={worker.teamName}>
-                        {worker.teamName} {worker.phone && worker.phone !== '-' ? `(โทร: ${worker.phone})` : ''}
+                        {worker.teamName} {worker.phone && worker.phone !== '-' ? `(โทร: ${String(worker.phone).replace(/^'/, '')})` : ''}
                       </option>
                     ))
                   )}
@@ -590,7 +615,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                 >
                   {workerAccounts.map((worker, wIndex) => (
                     <option key={worker.id || worker.teamName || `new-worker-${wIndex}`} value={worker.teamName}>
-                      {worker.teamName} {worker.phone && worker.phone !== '-' ? `(โทร: ${worker.phone})` : ''}
+                      {worker.teamName} {worker.phone && worker.phone !== '-' ? `(โทร: ${String(worker.phone).replace(/^'/, '')})` : ''}
                     </option>
                   ))}
                 </select>
