@@ -8,7 +8,8 @@ import {
   KeyRound, 
   UserCheck, 
   ShieldAlert,
-  Phone
+  Phone,
+  Briefcase
 } from 'lucide-react';
 
 export default function AdminManagementModal({ 
@@ -23,98 +24,101 @@ export default function AdminManagementModal({
   onEditWorkerAccount,
   onDeleteWorkerAccount
 }) {
-  // Navigation State ('admins' สำหรับจัดการแอดมิน, 'workers' สำหรับจัดการช่างภาคสนาม)
   const [activeTab, setActiveTab] = useState('admins');
 
-  // Form State: Admin Account Management
+  // Form State: Admin
   const [adminUsernameInput, setAdminUsernameInput] = useState('');
   const [adminNameInput, setAdminNameInput] = useState('');
+  const [adminPositionInput, setAdminPositionInput] = useState('');
+  const [adminPhoneInput, setAdminPhoneInput] = useState('');
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
-  const [editingAdminId, setEditingAdminId] = useState(null);
+  const [editingAdminUsername, setEditingAdminUsername] = useState(null);
 
-  // Form State: Field Worker Account Management (เพิ่มช่องเบอร์โทรศัพท์ และเอาส่วนทีมช่างออก)
+  // Form State: Worker
   const [workerTeamNameInput, setWorkerTeamNameInput] = useState('');
+  const [workerPositionInput, setWorkerPositionInput] = useState('');
   const [workerPhoneInput, setWorkerPhoneInput] = useState('');
   const [workerUsernameInput, setWorkerUsernameInput] = useState('');
   const [workerPasswordInput, setWorkerPasswordInput] = useState('');
-  const [editingWorkerId, setEditingWorkerId] = useState(null);
+  const [editingWorkerUsername, setEditingWorkerUsername] = useState(null);
 
   if (!isOpen) return null;
 
-  // --- Handlers: Admin Actions ---
+  // --- Handlers Admin ---
   const handleSaveAdmin = (e) => {
     e.preventDefault();
     if (!adminUsernameInput.trim() || !adminNameInput.trim() || !adminPasswordInput.trim()) return;
 
-    if (editingAdminId) {
-      onEditAdmin(editingAdminId, { 
-        username: adminUsernameInput.trim(), 
-        name: adminNameInput.trim(), 
-        password: adminPasswordInput.trim() 
-      });
-      setEditingAdminId(null);
-    } else {
-      onAddAdmin({ 
-        id: `admin_${Date.now()}`, 
-        username: adminUsernameInput.trim(), 
-        name: adminNameInput.trim(), 
-        password: adminPasswordInput.trim() 
-      });
-    }
+    const payload = {
+      username: adminUsernameInput.trim(),
+      name: adminNameInput.trim(),
+      position: adminPositionInput.trim() || 'แอดมิน',
+      phone: adminPhoneInput.trim() || '-',
+      password: adminPasswordInput.trim(),
+      role: 'admin'
+    };
 
+    if (editingAdminUsername) {
+      onEditAdmin(editingAdminUsername, payload);
+    } else {
+      onAddAdmin(payload);
+    }
     resetAdminForm();
   };
 
   const handleEditAdminClick = (admin) => {
-    setEditingAdminId(admin.id);
+    setEditingAdminUsername(admin.username);
     setAdminUsernameInput(admin.username || '');
-    setAdminNameInput(admin.name);
-    setAdminPasswordInput(admin.password);
+    setAdminNameInput(admin.name || '');
+    setAdminPositionInput(admin.position !== '-' ? admin.position : '');
+    setAdminPhoneInput(admin.phone !== '-' ? admin.phone : '');
+    setAdminPasswordInput(admin.password || '');
   };
 
   const resetAdminForm = () => {
-    setEditingAdminId(null);
+    setEditingAdminUsername(null);
     setAdminUsernameInput('');
     setAdminNameInput('');
+    setAdminPositionInput('');
+    setAdminPhoneInput('');
     setAdminPasswordInput('');
   };
 
-  // --- Handlers: Field Worker Actions (บันทึกทีมช่าง + เบอร์โทร + Username/Password) ---
+  // --- Handlers Worker ---
   const handleSaveWorker = (e) => {
     e.preventDefault();
     if (!workerTeamNameInput.trim() || !workerUsernameInput.trim() || !workerPasswordInput.trim()) return;
 
-    const workerData = {
+    const payload = {
       teamName: workerTeamNameInput.trim(),
+      position: workerPositionInput.trim() || 'ช่างภาคสนาม',
       phone: workerPhoneInput.trim() || '-',
       username: workerUsernameInput.trim(),
-      password: workerPasswordInput.trim()
+      password: workerPasswordInput.trim(),
+      role: 'tech'
     };
 
-    if (editingWorkerId) {
-      onEditWorkerAccount(editingWorkerId, workerData);
-      setEditingWorkerId(null);
+    if (editingWorkerUsername) {
+      onEditWorkerAccount(editingWorkerUsername, payload);
     } else {
-      onAddWorkerAccount({ 
-        id: `worker_${Date.now()}`, 
-        ...workerData 
-      });
+      onAddWorkerAccount(payload);
     }
-
     resetWorkerForm();
   };
 
   const handleEditWorkerClick = (worker) => {
-    setEditingWorkerId(worker.id);
+    setEditingWorkerUsername(worker.username);
     setWorkerTeamNameInput(worker.teamName || '');
-    setWorkerPhoneInput(worker.phone && worker.phone !== '-' ? worker.phone : '');
+    setWorkerPositionInput(worker.position !== '-' ? worker.position : '');
+    setWorkerPhoneInput(worker.phone !== '-' ? worker.phone : '');
     setWorkerUsernameInput(worker.username || '');
     setWorkerPasswordInput(worker.password || '');
   };
 
   const resetWorkerForm = () => {
-    setEditingWorkerId(null);
+    setEditingWorkerUsername(null);
     setWorkerTeamNameInput('');
+    setWorkerPositionInput('');
     setWorkerPhoneInput('');
     setWorkerUsernameInput('');
     setWorkerPasswordInput('');
@@ -124,15 +128,15 @@ export default function AdminManagementModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 font-sans">
       <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         
-        {/* Modal Header */}
+        {/* Header */}
         <div className="bg-slate-900 text-white p-5 flex justify-between items-center shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400">
               <Shield className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-white">ตั้งค่าผู้ใช้งานและสิทธิ์ในระบบ</h3>
-              <p className="text-xs text-slate-400">จัดการบัญชีผู้ดูแลระบบ (Admin) และสิทธิ์การใช้งานช่างภาคสนาม</p>
+              <h3 className="font-bold text-base text-white">จัดการสิทธิ์ผู้ใช้งาน (Google Sheets DB)</h3>
+              <p className="text-xs text-slate-400">จัดการตาราง AdminUsers และ Teams ใน Google Sheets</p>
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition cursor-pointer">
@@ -140,7 +144,7 @@ export default function AdminManagementModal({
           </button>
         </div>
 
-        {/* Navigation Tabs */}
+        {/* Tabs */}
         <div className="flex border-b border-slate-100 bg-slate-50 p-2 gap-2 text-xs font-bold shrink-0">
           <button
             onClick={() => setActiveTab('admins')}
@@ -149,7 +153,7 @@ export default function AdminManagementModal({
             }`}
           >
             <Shield className="w-4 h-4" />
-            <span>จัดการผู้ดูแลระบบ (Admins)</span>
+            <span>จัดการแอดมิน (AdminUsers)</span>
           </button>
 
           <button
@@ -159,151 +163,186 @@ export default function AdminManagementModal({
             }`}
           >
             <Smartphone className="w-4 h-4" />
-            <span>กำหนดสิทธิ์ช่างภาคสนาม (Workers)</span>
+            <span>จัดการช่างภาคสนาม (Teams)</span>
           </button>
         </div>
 
-        {/* Modal Content Body */}
+        {/* Content */}
         <div className="p-6 overflow-y-auto space-y-6">
           
-          {/* TAB 1: Admin Management */}
+          {/* TAB 1: Admins */}
           {activeTab === 'admins' && (
             <div className="space-y-5">
               <form onSubmit={handleSaveAdmin} className="bg-indigo-50/60 border border-indigo-100 p-4 rounded-2xl space-y-3">
                 <p className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
                   <KeyRound className="w-4 h-4 text-indigo-600" />
-                  {editingAdminId ? 'แก้ไขข้อมูลบัญชีแอดมิน' : 'เพิ่มสิทธิ์บัญชีผู้ดูแลระบบ (Admin) ใหม่'}
+                  {editingAdminUsername ? 'แก้ไขบัญชีแอดมิน' : 'เพิ่มบัญชีผู้ดูแลระบบ (Admin) ใหม่'}
                 </p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ชื่อผู้ใช้งาน (Username) *</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Username *</label>
                     <input
                       type="text"
+                      disabled={!!editingAdminUsername}
                       value={adminUsernameInput}
                       onChange={(e) => setAdminUsernameInput(e.target.value)}
                       placeholder="เช่น admin1"
                       required
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 font-medium disabled:bg-slate-100"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ชื่อ/ตำแหน่งแอดมิน *</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ชื่อ-สกุล *</label>
                     <input
                       type="text"
                       value={adminNameInput}
                       onChange={(e) => setAdminNameInput(e.target.value)}
-                      placeholder="เช่น ผอ.สมชาย"
+                      placeholder="เช่น สมชาย ใจดี"
                       required
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 font-medium"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">รหัสผ่าน (Password) *</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ตำแหน่ง</label>
+                    <input
+                      type="text"
+                      value={adminPositionInput}
+                      onChange={(e) => setAdminPositionInput(e.target.value)}
+                      placeholder="เช่น หัวหน้างาน"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">เบอร์โทร</label>
+                    <input
+                      type="text"
+                      value={adminPhoneInput}
+                      onChange={(e) => setAdminPhoneInput(e.target.value)}
+                      placeholder="เช่น 0812345678"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Password *</label>
                     <input
                       type="text"
                       value={adminPasswordInput}
                       onChange={(e) => setAdminPasswordInput(e.target.value)}
                       placeholder="เช่น 1234"
                       required
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 font-mono font-bold"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 font-mono font-bold"
                     />
                   </div>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-1">
-                  {editingAdminId && (
+                  {editingAdminUsername && (
                     <button
                       type="button"
                       onClick={resetAdminForm}
-                      className="bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl cursor-pointer"
+                      className="bg-slate-200 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl cursor-pointer"
                     >
                       ยกเลิก
                     </button>
                   )}
-                  <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-xs cursor-pointer">
-                    {editingAdminId ? 'บันทึกการแก้ไข' : '+ เพิ่มแอดมินใหม่'}
+                  <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-1.5 rounded-xl shadow-xs cursor-pointer">
+                    {editingAdminUsername ? 'บันทึกแก้ไข' : '+ เพิ่มแอดมิน'}
                   </button>
                 </div>
               </form>
 
               <div className="space-y-2">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">รายชื่อแอดมินในระบบ ({adminUsers.length + 1})</p>
-                
-                {/* Default System Admin Card */}
-                <div className="flex justify-between items-center bg-slate-50 border border-slate-200 px-4 py-3 rounded-2xl text-xs">
-                  <div>
-                    <p className="font-bold text-slate-800 flex items-center gap-1.5">
-                      <ShieldAlert className="w-4 h-4 text-amber-500" /> Default Admin (รหัสตั้งต้นระบบ)
-                    </p>
-                    <p className="text-slate-500 font-mono text-[11px]">Password: 1234</p>
-                  </div>
-                  <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-md">
-                    ระบบหลัก
-                  </span>
-                </div>
-
-                {/* Custom Admin List */}
-                {adminUsers.map((a) => (
-                  <div key={a.id} className="flex justify-between items-center bg-white border border-slate-200 px-4 py-3 rounded-2xl text-xs shadow-xs">
-                    <div>
-                      <p className="font-bold text-slate-800">{a.name} <span className="text-slate-400 font-normal">({a.username})</span></p>
-                      <p className="text-slate-500 font-mono text-[11px]">Username: <span className="text-indigo-600 font-bold">{a.username}</span> | Password: <span className="text-slate-700 font-bold">{a.password}</span></p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">รายชื่อแอดมินใน Google Sheets ({adminUsers.length})</p>
+                {adminUsers.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">ยังไม่มีข้อมูลแอดมินใน Google Sheets</p>
+                ) : (
+                  adminUsers.map((a) => (
+                    <div key={a.username} className="flex justify-between items-center bg-white border border-slate-200 px-4 py-3 rounded-2xl text-xs shadow-xs">
+                      <div>
+                        <p className="font-bold text-slate-800 flex items-center gap-2">
+                          <span>{a.name}</span>
+                          <span className="text-[11px] font-normal text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                            {a.position || 'แอดมิน'}
+                          </span>
+                          {a.phone && a.phone !== '-' && (
+                            <span className="text-[11px] font-normal text-slate-500 flex items-center gap-1">
+                              <Phone className="w-3 h-3 text-indigo-600" /> {a.phone}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-slate-500 font-mono text-[11px] mt-0.5">
+                          Username: <span className="text-indigo-600 font-bold">{a.username}</span> | Password: <span className="text-slate-700 font-bold">{a.password}</span>
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button 
+                          onClick={() => handleEditAdminClick(a)} 
+                          className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
+                          title="แก้ไข"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => onDeleteAdmin(a.username)} 
+                          className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                          title="ลบ"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button 
-                        onClick={() => handleEditAdminClick(a)} 
-                        className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
-                        title="แก้ไข"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => onDeleteAdmin(a.id)} 
-                        className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                        title="ลบ"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           )}
 
-          {/* TAB 2: Field Worker Management (เพิ่มช่องเบอร์โทรศัพท์เรียบร้อย) */}
+          {/* TAB 2: Workers */}
           {activeTab === 'workers' && (
             <div className="space-y-5">
               <form onSubmit={handleSaveWorker} className="bg-emerald-50/60 border border-emerald-100 p-4 rounded-2xl space-y-3">
                 <p className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
                   <UserCheck className="w-4 h-4 text-emerald-600" />
-                  {editingWorkerId ? 'แก้ไขบัญชีช่างภาคสนาม' : 'เพิ่มชื่อทีม, เบอร์โทร และสร้าง Username/Password'}
+                  {editingWorkerUsername ? 'แก้ไขบัญชีช่างภาคสนาม' : 'เพิ่มทีมช่าง และกำหนดรหัสผ่าน'}
                 </p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ชื่อทีมช่าง / หัวหน้าทีม *</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ชื่อทีมช่าง (teamName) *</label>
                     <input
                       type="text"
                       value={workerTeamNameInput}
                       onChange={(e) => setWorkerTeamNameInput(e.target.value)}
                       placeholder="เช่น ทีมช่างซ่อม 1"
                       required
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 font-bold"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 font-bold"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">เบอร์โทรศัพท์</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ตำแหน่ง (position)</label>
+                    <input
+                      type="text"
+                      value={workerPositionInput}
+                      onChange={(e) => setWorkerPositionInput(e.target.value)}
+                      placeholder="เช่น ช่างตระเวนสาย"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">เบอร์โทร (phone)</label>
                     <input
                       type="text"
                       value={workerPhoneInput}
                       onChange={(e) => setWorkerPhoneInput(e.target.value)}
-                      placeholder="เช่น 0811111111"
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 font-medium"
+                      placeholder="เช่น 0812345678"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 font-medium"
                     />
                   </div>
 
@@ -311,11 +350,12 @@ export default function AdminManagementModal({
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">Username *</label>
                     <input
                       type="text"
+                      disabled={!!editingWorkerUsername}
                       value={workerUsernameInput}
                       onChange={(e) => setWorkerUsernameInput(e.target.value)}
                       placeholder="เช่น team1"
                       required
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 font-medium"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 font-medium disabled:bg-slate-100"
                     />
                   </div>
 
@@ -327,44 +367,49 @@ export default function AdminManagementModal({
                       onChange={(e) => setWorkerPasswordInput(e.target.value)}
                       placeholder="เช่น 123"
                       required
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 font-mono font-bold"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 font-mono font-bold"
                     />
                   </div>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-1">
-                  {editingWorkerId && (
+                  {editingWorkerUsername && (
                     <button
                       type="button"
                       onClick={resetWorkerForm}
-                      className="bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl cursor-pointer"
+                      className="bg-slate-200 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl cursor-pointer"
                     >
                       ยกเลิก
                     </button>
                   )}
-                  <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-xs cursor-pointer">
-                    {editingWorkerId ? 'บันทึกการแก้ไข' : '+ เพิ่มบัญชีช่างใหม่'}
+                  <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-1.5 rounded-xl shadow-xs cursor-pointer">
+                    {editingWorkerUsername ? 'บันทึกแก้ไข' : '+ เพิ่มทีมช่าง'}
                   </button>
                 </div>
               </form>
 
               <div className="space-y-2">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">บัญชีเข้าใช้งานของช่างภาคสนาม ({workerAccounts.length})</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">บัญชีทีมช่างใน Google Sheets ({workerAccounts.length})</p>
                 {workerAccounts.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-4">ยังไม่มีการเพิ่มบัญชีช่างภาคสนาม</p>
+                  <p className="text-xs text-slate-400 text-center py-4">ยังไม่มีข้อมูลทีมช่างใน Google Sheets</p>
                 ) : (
                   workerAccounts.map((w) => (
-                    <div key={w.id} className="flex justify-between items-center bg-white border border-slate-200 px-4 py-3 rounded-2xl text-xs shadow-xs">
+                    <div key={w.username || w.teamName} className="flex justify-between items-center bg-white border border-slate-200 px-4 py-3 rounded-2xl text-xs shadow-xs">
                       <div>
                         <p className="font-bold text-slate-800 flex items-center gap-2">
                           <span>{w.teamName}</span>
+                          {w.position && w.position !== '-' && (
+                            <span className="text-[11px] font-normal text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+                              <Briefcase className="w-3 h-3 inline mr-0.5" /> {w.position}
+                            </span>
+                          )}
                           {w.phone && w.phone !== '-' && (
                             <span className="text-[11px] font-normal text-slate-500 flex items-center gap-1">
                               <Phone className="w-3 h-3 text-emerald-600" /> {w.phone}
                             </span>
                           )}
                         </p>
-                        <p className="text-slate-500 font-mono text-[11px]">
+                        <p className="text-slate-500 font-mono text-[11px] mt-0.5">
                           Username: <span className="text-emerald-700 font-bold">{w.username}</span> | Password: <span className="text-slate-700 font-bold">{w.password}</span>
                         </p>
                       </div>
@@ -376,8 +421,9 @@ export default function AdminManagementModal({
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
+                        {/* ส่งค่า username และ teamName ไปลบให้สอดคล้องกับ Apps Script ล่าสุด */}
                         <button 
-                          onClick={() => onDeleteWorkerAccount(w.id)} 
+                          onClick={() => onDeleteWorkerAccount(w.username, w.teamName)} 
                           className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
                           title="ลบ"
                         >
