@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
-import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash } from 'lucide-react';
+import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash, Trash2 } from 'lucide-react';
 
-// 🌐 URL ของ Google Apps Script Web App (ใช้ตัวเดียวกับหน้าช่างภาคสนาม)
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzLRYvfkGZPfhOffS-9aPjmPh1pHJClIWGh-OkPQRVSJHDz3i27OOmPtvSYEH1IcJnZTA/exec";
+// 🌐 URL ของ Google Apps Script Web App ล่าสุด
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
+
+// 🔔 [สวิตช์ควบคุม Telegram] เปิดใช้งานการแจ้งเตือนอัตโนมัติ
+const ENABLE_TELEGRAM_NOTIFY = true; 
+const TELEGRAM_BOT_TOKEN = "8601147798:AAFNBUcoRYH4tvZfyvWgxaXP9xrWiR4D6kk";
+const TELEGRAM_CHAT_ID = "-1003925252865";
 
 export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] }) {
   const [selectedJobForDispatch, setSelectedJobForDispatch] = useState(null);
@@ -14,14 +19,15 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const [editingTeamJob, setEditingTeamJob] = useState(null);
   const [newSelectedTeam, setNewSelectedTeam] = useState('');
 
-  // 🔴 State สำหรับ Modal แก้ไขข้อมูล/เลขที่รับแจ้งของแอดมิน
+  // 🔴 State สำหรับ Modal แก้ไขข้อมูลของแอดมิน
   const [editingAdminJob, setEditingAdminJob] = useState(null);
   const [adminEditForm, setAdminEditForm] = useState({
     receivedNo: '',
     reporterName: '',
     phone: '',
     location: '',
-    complaintTopic: ''
+    complaintTopic: '',
+    urgency: 'ปกติ'
   });
 
   const columns = [
@@ -31,10 +37,31 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     { id: 'COMPLETED', title: 'ซ่อมเสร็จสิ้น (ปิดงาน)', color: 'bg-emerald-600', bgLight: 'bg-emerald-50/50', border: 'border-emerald-200' },
   ];
 
+  const formatThaiDateTimeString = (dateInput) => {
+    if (!dateInput) return '-';
+    let date = new Date(dateInput);
+    if (isNaN(date.getTime())) {
+      return String(dateInput).replace('T', ' '); 
+    }
+
+    const thaiMonths = [
+      'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+      'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+    ];
+
+    const day = date.getDate();
+    const month = thaiMonths[date.getMonth()];
+    const year = date.getFullYear() + 543;
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    return `${day} ${month} ${year} เวลา ${hours}.${minutes} น.`;
+  };
+
   const getThaiTimestamp = () => {
     const now = new Date();
     const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-    return thaiTime.toISOString().replace('T', ' ').substring(0, 16);
+    return formatThaiDateTimeString(thaiTime);
   };
 
   const normalizeStatus = (status) => {
@@ -46,7 +73,36 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     return status;
   };
 
-  // 🚀 ยืนยันจ่ายงานช่าง พร้อมยิงข้อมูลแจ้งเตือนเข้า Telegram
+  const getDisplayReceivedNo = (job) => {
+    return job.receivedNo || job.JobID || job.id || '-';
+  };
+
+  // 📲 ฟังก์ชันส่งแจ้งเตือนเข้า Telegram สอดคล้องกับ Apps Script
+  const sendTelegramNotification = async (jobPayload) => {
+    if (!ENABLE_TELEGRAM_NOTIFY) return; 
+    if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return;
+    
+    try {
+      const message = `🛠 *แจ้งมอบหมายงานซ่อม (กปภ.)* 🛠\n\n` +
+        `📌 *เลขที่รับแจ้ง:* \`${jobPayload.receivedNo}\`\n` +
+        `👤 *ผู้แจ้ง:* ${jobPayload.reporterName} (${jobPayload.phone})\n` +
+        `📍 *สถานที่:* ${jobPayload.location}\n` +
+        `🔧 *ปัญหา:* ${jobPayload.complaintTopic}\n` +
+        `👷‍♂️ *ทีมช่างผู้รับผิดชอบ:* *${jobPayload.technician}*\n` +
+        `⚡ *ความเร่งด่วน:* ${jobPayload.urgency}\n` +
+        `📅 *เวลาสั่งงาน:* ${jobPayload.dispatchedAt}`;
+
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message, parse_mode: "Markdown" })
+      });
+    } catch (err) {
+      console.error("Telegram error:", err);
+    }
+  };
+
+  // 🚀 ยืนยันจ่ายงานช่าง พร้อมบันทึกวัน-เวลาไทยและส่งแจ้งเตือน Telegram
   const handleConfirmDispatch = async () => {
     if (!selectedTeam) {
       alert("กรุณาเลือกทีมช่างก่อนทำการจ่ายงาน");
@@ -56,101 +112,199 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     const techDetails = workerObj ? `${workerObj.teamName} (${workerObj.phone || '-'})` : selectedTeam;
     
     const currentDateTime = getThaiTimestamp();
+    const originalReceivedNo = getDisplayReceivedNo(selectedJobForDispatch);
 
     const dispatchPayload = {
       action: "dispatch_job",
-      jobData: {
-        id: selectedJobForDispatch.id,
-        receivedNo: selectedJobForDispatch.receivedNo || selectedJobForDispatch.id,
-        reporterName: selectedJobForDispatch.reporterName || 'ไม่ระบุชื่อ',
-        phone: selectedJobForDispatch.phone || '-',
-        location: selectedJobForDispatch.location || '-',
-        complaintTopic: selectedJobForDispatch.complaintTopic || selectedJobForDispatch.issueType || '-',
-        techName: workerObj?.teamName || selectedTeam,
-        techPhone: workerObj?.phone || '-',
-        urgency: urgencyLevel,
-        status: 'DISPATCHED',
-        dispatchedAt: currentDateTime
-      }
+      id: selectedJobForDispatch.id || selectedJobForDispatch.JobID || originalReceivedNo,
+      JobID: originalReceivedNo,
+      receivedNo: originalReceivedNo,
+      reporterName: selectedJobForDispatch.reporterName || selectedJobForDispatch.ReporterName || 'ไม่ระบุชื่อ',
+      ReporterName: selectedJobForDispatch.reporterName || selectedJobForDispatch.ReporterName || 'ไม่ระบุชื่อ',
+      phone: selectedJobForDispatch.phone || selectedJobForDispatch.Phone || '-',
+      Phone: selectedJobForDispatch.phone || selectedJobForDispatch.Phone || '-',
+      location: selectedJobForDispatch.location || selectedJobForDispatch.Location || '-',
+      Location: selectedJobForDispatch.location || selectedJobForDispatch.Location || '-',
+      complaintTopic: selectedJobForDispatch.complaintTopic || selectedJobForDispatch.issueType || selectedJobForDispatch.IssueType || '-',
+      IssueType: selectedJobForDispatch.complaintTopic || selectedJobForDispatch.issueType || selectedJobForDispatch.IssueType || '-',
+      technician: techDetails,
+      Technician: techDetails,
+      techName: workerObj?.teamName || selectedTeam,
+      techPhone: workerObj?.phone || '-',
+      urgency: urgencyLevel,
+      Notes: urgencyLevel,
+      status: 'DISPATCHED',
+      Status: 'DISPATCHED',
+      dispatchedAt: currentDateTime
     };
 
     try {
-      // 📡 ส่งข้อมูลผ่าน text/plain เพื่อยิง Telegram ผ่าน Apps Script แบบทะลุกรอบ CORS
       await fetch(WEB_APP_URL, {
         method: "POST",
-        mode: "no-cors",
-        headers: {
-          "Content-Type": "text/plain;charset=utf-8"
-        },
-        body: JSON.stringify(dispatchPayload)
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "dispatch_job",
+          jobData: dispatchPayload
+        })
       });
+
+      await sendTelegramNotification(dispatchPayload);
     } catch (err) {
-      console.error("Error sending dispatch notification to Telegram:", err);
+      console.error("Error sending dispatch to Google Sheets:", err);
     }
 
-    // อัปเดตสถานะในระบบหลัก
-    onStatusChange(selectedJobForDispatch.id, 'DISPATCHED', { 
+    onStatusChange(selectedJobForDispatch.id || selectedJobForDispatch.JobID, 'DISPATCHED', { 
+      receivedNo: originalReceivedNo,
       technician: techDetails,
       techName: workerObj?.teamName || selectedTeam,
       techPhone: workerObj?.phone || '-',
       dispatchedAt: currentDateTime,
-      urgency: urgencyLevel
+      urgency: urgencyLevel,
+      Notes: urgencyLevel
     });
 
     setSelectedJobForDispatch(null);
     setSelectedTeam('');
     setUrgencyLevel('ปกติ');
-    alert("จ่ายงานช่างและส่งแจ้งเตือน Telegram สำเร็จ!");
+    alert("จ่ายงานช่างและบันทึกลง Google Sheets สำเร็จ!");
   };
 
-  const handleConfirmChangeTeam = () => {
+  // 🚀 เปลี่ยนทีมช่าง พร้อมบันทึกวัน-เวลาไทยและแจ้งเตือนผ่าน Telegram
+  const handleConfirmChangeTeam = async () => {
     if (!newSelectedTeam || !editingTeamJob) return;
 
     const workerObj = workerAccounts.find(w => w.teamName === newSelectedTeam);
     const techDetails = workerObj ? `${workerObj.teamName} (${workerObj.phone || '-'})` : newSelectedTeam;
+    const originalReceivedNo = getDisplayReceivedNo(editingTeamJob);
+    const currentDateTime = getThaiTimestamp();
 
-    onStatusChange(editingTeamJob.id, editingTeamJob.status, {
+    const changeTeamPayload = {
+      action: "dispatch_job",
+      id: editingTeamJob.id || editingTeamJob.JobID || originalReceivedNo,
+      JobID: originalReceivedNo,
+      receivedNo: originalReceivedNo,
+      reporterName: editingTeamJob.reporterName || editingTeamJob.ReporterName || 'ไม่ระบุชื่อ',
+      phone: editingTeamJob.phone || editingTeamJob.Phone || '-',
+      location: editingTeamJob.location || editingTeamJob.Location || '-',
+      complaintTopic: editingTeamJob.complaintTopic || editingTeamJob.issueType || editingTeamJob.IssueType || '-',
+      urgency: editingTeamJob.Notes || editingTeamJob.urgency || 'ปกติ',
       technician: techDetails,
+      Technician: techDetails,
       techName: workerObj?.teamName || newSelectedTeam,
-      techPhone: workerObj?.phone || '-'
-    });
+      techPhone: workerObj?.phone || '-',
+      status: 'DISPATCHED',
+      Status: 'DISPATCHED',
+      dispatchedAt: currentDateTime
+    };
+
+    try {
+      await fetch(WEB_APP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "dispatch_job",
+          jobData: changeTeamPayload
+        })
+      });
+
+      await sendTelegramNotification(changeTeamPayload);
+    } catch (err) {
+      console.error("Error changing team in Google Sheets:", err);
+    }
+
+    onStatusChange(editingTeamJob.id || editingTeamJob.JobID, editingTeamJob.status, changeTeamPayload);
 
     setEditingTeamJob(null);
     setNewSelectedTeam('');
+    alert("เปลี่ยนทีมช่างและบันทึกลง Google Sheets เรียบร้อยแล้ว");
   };
 
-  // เปิด Modal แก้ไขข้อมูลสำหรับแอดมิน
   const handleOpenAdminEdit = (job) => {
     setEditingAdminJob(job);
+    const currentUrgency = job.Notes || job.notes || job.urgency || job.Urgency || job.urgencyLevel || 'ปกติ';
     setAdminEditForm({
-      receivedNo: job.receivedNo || job.id,
-      reporterName: job.reporterName || '',
-      phone: job.phone || '',
-      location: job.location || '',
-      complaintTopic: job.complaintTopic || job.issueType || ''
+      receivedNo: getDisplayReceivedNo(job),
+      reporterName: job.reporterName || job.ReporterName || '',
+      phone: job.phone || job.Phone || '',
+      location: job.location || job.Location || '',
+      complaintTopic: job.complaintTopic || job.issueType || job.IssueType || '',
+      urgency: currentUrgency
     });
   };
 
-  // บันทึกการแก้ไขข้อมูลของแอดมิน
-  const handleSaveAdminEdit = (e) => {
+  const handleSaveAdminEdit = async (e) => {
     e.preventDefault();
     if (!editingAdminJob) return;
 
+    const targetId = editingAdminJob.id || editingAdminJob.JobID || adminEditForm.receivedNo;
     const updatedData = {
+      action: "create_job",
+      id: targetId,
+      JobID: adminEditForm.receivedNo,
       receivedNo: adminEditForm.receivedNo,
+      timestamp: editingAdminJob.receivedAt || editingAdminJob.Timestamp || getThaiTimestamp(),
+      Timestamp: editingAdminJob.receivedAt || editingAdminJob.Timestamp || getThaiTimestamp(),
       reporterName: adminEditForm.reporterName,
+      ReporterName: adminEditForm.reporterName,
       phone: adminEditForm.phone,
+      Phone: adminEditForm.phone,
       location: adminEditForm.location,
-      complaintTopic: adminEditForm.complaintTopic
+      Location: adminEditForm.location,
+      complaintTopic: adminEditForm.complaintTopic,
+      issueType: adminEditForm.complaintTopic,
+      IssueType: adminEditForm.complaintTopic,
+      description: adminEditForm.complaintTopic,
+      Description: adminEditForm.complaintTopic,
+      urgency: adminEditForm.urgency,
+      Notes: adminEditForm.urgency, 
+      status: editingAdminJob.status || editingAdminJob.Status || 'PENDING',
+      Status: editingAdminJob.status || editingAdminJob.Status || 'PENDING',
+      technician: editingAdminJob.technician || editingAdminJob.Technician || '-'
     };
 
-    onStatusChange(editingAdminJob.id, editingAdminJob.status, updatedData);
+    try {
+      await fetch(WEB_APP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "create_job",
+          jobData: updatedData
+        })
+      });
+    } catch (err) {
+      console.error("Error updating job in Google Sheets:", err);
+    }
+
+    onStatusChange(targetId, updatedData.status, updatedData);
     setEditingAdminJob(null);
-    alert("อัปเดตข้อมูลและเลขที่รับแจ้งเรียบร้อยแล้ว");
+    alert("อัปเดตข้อมูลเรียบร้อยแล้ว");
+  };
+
+  const handleDeleteJob = async (jobToDelete) => {
+    const targetId = jobToDelete.id || jobToDelete.JobID || getDisplayReceivedNo(jobToDelete);
+    if (!window.confirm(`คุณต้องการลบใบงานเลขที่ ${getDisplayReceivedNo(jobToDelete)} ใช่หรือไม่?`)) return;
+
+    try {
+      await fetch(WEB_APP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "delete_job",
+          jobData: { id: targetId }
+        })
+      });
+
+      setTimeout(() => {
+        window.location.reload(); 
+      }, 500);
+    } catch (err) {
+      console.error("Error deleting job:", err);
+      alert("เกิดข้อผิดพลาดในการลบใบงาน");
+    }
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 font-sans">
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-3">
         <h3 className="font-bold text-slate-800 text-base flex items-center gap-2 shrink-0">
           <Wrench className="w-5 h-5 text-blue-600" />
@@ -181,18 +335,18 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {columns.map((col) => {
-          const colJobs = jobs.filter(j => {
-            const normalizedStatus = normalizeStatus(j.status);
+          const colJobs = (jobs || []).filter(j => {
+            const normalizedStatus = normalizeStatus(j.status || j.Status);
             const matchStatus = normalizedStatus === col.id;
             if (!matchStatus) return false;
 
             if (!pipelineSearch.trim()) return true;
             const q = pipelineSearch.trim().toLowerCase();
-            const receivedNo = String(j.receivedNo || j.id || '').toLowerCase();
-            const reporterName = String(j.reporterName || '').toLowerCase();
-            const phone = String(j.phone || '').toLowerCase();
-            const location = String(j.location || '').toLowerCase();
-            const issue = String(j.complaintTopic || j.issueType || '').toLowerCase();
+            const receivedNo = String(getDisplayReceivedNo(j)).toLowerCase();
+            const reporterName = String(j.reporterName || j.ReporterName || '').toLowerCase();
+            const phone = String(j.phone || j.Phone || '').toLowerCase();
+            const location = String(j.location || j.Location || '').toLowerCase();
+            const issue = String(j.complaintTopic || j.issueType || j.IssueType || '').toLowerCase();
 
             return receivedNo.includes(q) || reporterName.includes(q) || phone.includes(q) || location.includes(q) || issue.includes(q);
           });
@@ -216,117 +370,123 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     <span>ไม่มีรายการในหมวดนี้</span>
                   </div>
                 ) : (
-                  colJobs.map((job) => (
-                    <div key={job.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition space-y-2.5 relative">
-                      
-                      {/* ปุ่มแก้ไขข้อมูลงานสำหรับแอดมิน */}
-                      <button
-                        onClick={() => handleOpenAdminEdit(job)}
-                        className="absolute top-3 right-3 p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
-                        title="แก้ไขข้อมูล / เลขที่รับแจ้ง"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
+                  colJobs.map((job, index) => {
+                    const uniqueJobKey = job.id || job.JobID || job.receivedNo || `job-${col.id}-${index}`;
+                    
+                    const currentUrgency = job.Notes || job.notes || job.urgency || job.Urgency || job.urgencyLevel || 'ปกติ';
 
-                      <div className="flex justify-between items-start pr-6">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
-                            {job.receivedNo || job.id}
-                          </span>
-                          {job.urgency && job.urgency !== 'ปกติ' && (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 ${
-                              job.urgency === 'ด่วนมาก' 
-                                ? 'bg-rose-100 text-rose-700 border border-rose-200 animate-pulse' 
-                                : 'bg-amber-100 text-amber-700 border border-amber-200'
-                            }`}>
-                              <AlertTriangle className="w-3 h-3" /> {job.urgency}
+                    return (
+                      <div key={uniqueJobKey} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition space-y-2.5 relative">
+                        
+                        <button
+                          onClick={() => handleOpenAdminEdit(job)}
+                          className="absolute top-3 right-3 p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                          title="แก้ไขข้อมูล"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+
+                        <div className="flex justify-between items-start pr-6">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
+                              {getDisplayReceivedNo(job)}
                             </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="text-[10px] text-slate-400 space-y-0.5">
-                        <span className="block"><Clock className="w-3 h-3 inline mr-0.5" /> แจ้ง: {job.receivedAt || job.createdAt}</span>
-                        {job.dispatchedAt && (
-                          <span className="text-cyan-600 font-semibold block">สั่งงาน: {job.dispatchedAt}</span>
-                        )}
-                        {job.completedAt && (
-                          <span className="text-emerald-600 font-bold block">เสร็จ: {job.completedAt}</span>
-                        )}
-                      </div>
-
-                      <div>
-                        <h5 className="font-bold text-slate-800 text-xs leading-snug line-clamp-2">
-                          {job.complaintTopic || job.issueType}
-                        </h5>
-                        <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-                          <User className="w-3 h-3 text-slate-400 shrink-0" />
-                          <span className="truncate">{job.reporterName} ({job.phone})</span>
-                        </p>
-                        <p className="text-[11px] text-slate-500 flex items-start gap-1 mt-0.5">
-                          <MapPin className="w-3 h-3 text-rose-400 shrink-0 mt-0.5" />
-                          <span className="line-clamp-2">{job.location}</span>
-                        </p>
-                      </div>
-
-                      {normalizeStatus(job.status) !== 'PENDING' && (
-                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] space-y-1 relative">
-                          <div className="flex justify-between items-center">
-                            <p className="font-bold text-blue-700 flex items-center gap-1">
-                              <Users className="w-3 h-3" /> ทีมรับงาน: {job.techName || job.technician}
-                            </p>
                             
-                            {normalizeStatus(job.status) !== 'COMPLETED' && (
-                              <button
-                                onClick={() => {
-                                  setEditingTeamJob(job);
-                                  setNewSelectedTeam(job.techName || workerAccounts[0]?.teamName || '');
-                                }}
-                                className="text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-800 px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition cursor-pointer"
-                                title="เปลี่ยนทีมช่าง"
-                              >
-                                <Edit3 className="w-3 h-3" /> เปลี่ยนทีม
-                              </button>
+                            {currentUrgency && currentUrgency !== 'ปกติ' && (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-0.5 ${
+                                currentUrgency === 'ด่วนมาก' 
+                                  ? 'bg-rose-100 text-rose-700 border border-rose-200 animate-pulse' 
+                                  : 'bg-amber-100 text-amber-700 border border-amber-200'
+                              }`}>
+                                <AlertTriangle className="w-3 h-3" /> {currentUrgency}
+                              </span>
                             )}
                           </div>
-                          
-                          {job.techPhone && job.techPhone !== '-' && (
-                            <p className="text-slate-600 flex items-center gap-1 font-mono">
-                              <Phone className="w-3 h-3 text-emerald-600" /> โทร: {job.techPhone}
-                            </p>
+                        </div>
+
+                        <div className="text-[10px] text-slate-400 space-y-0.5">
+                          <span className="block"><Clock className="w-3 h-3 inline mr-0.5" /> แจ้ง: {job.receivedAt || job.Timestamp || job.createdAt}</span>
+                          {job.dispatchedAt && (
+                            <span className="text-cyan-600 font-semibold block">สั่งงาน: {job.dispatchedAt}</span>
+                          )}
+                          {job.completedAt && (
+                            <span className="text-emerald-600 font-bold block">เสร็จ: {job.completedAt}</span>
                           )}
                         </div>
-                      )}
 
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                        <span className="text-slate-400 font-medium">จัดการสถานะ</span>
-                        <div className="flex gap-1">
-                          {col.id === 'PENDING' && (
-                            <button
-                              onClick={() => {
-                                setSelectedJobForDispatch(job);
-                                setSelectedTeam(workerAccounts[0]?.teamName || '');
-                                setUrgencyLevel('ปกติ');
-                              }}
-                              className="bg-cyan-600 hover:bg-cyan-700 text-white px-2.5 py-1 rounded-lg font-bold transition shadow-sm cursor-pointer"
-                            >
-                              จ่ายงานช่าง
-                            </button>
-                          )}
-                          {col.id === 'DISPATCHED' && (
-                            <span className="text-[11px] text-cyan-700 bg-cyan-50 border border-cyan-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
-                              ⏳ รอช่างเข้าตรวจสอบ
-                            </span>
-                          )}
-                          {col.id === 'IN_PROGRESS' && (
-                            <span className="text-[10px] text-slate-400 italic bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
-                              รอช่างปิดงาน
-                            </span>
-                          )}
+                        <div>
+                          <h5 className="font-bold text-slate-800 text-xs leading-snug line-clamp-2">
+                            {job.complaintTopic || job.issueType || job.IssueType || '-'}
+                          </h5>
+                          <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+                            <User className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate">{job.reporterName || job.ReporterName} ({job.phone || job.Phone})</span>
+                          </p>
+                          <p className="text-[11px] text-slate-500 flex items-start gap-1 mt-0.5">
+                            <MapPin className="w-3 h-3 text-rose-400 shrink-0 mt-0.5" />
+                            <span className="line-clamp-2">{job.location || job.Location}</span>
+                          </p>
+                        </div>
+
+                        {normalizeStatus(job.status || job.Status) !== 'PENDING' && (
+                          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] space-y-1 relative">
+                            <div className="flex justify-between items-center">
+                              <p className="font-bold text-blue-700 flex items-center gap-1">
+                                <Users className="w-3 h-3" /> ทีมรับงาน: {job.techName || job.technician || job.Technician}
+                              </p>
+                              
+                              {normalizeStatus(job.status || job.Status) !== 'COMPLETED' && (
+                                <button
+                                  onClick={() => {
+                                    setEditingTeamJob(job);
+                                    setNewSelectedTeam(job.techName || job.technician || workerAccounts[0]?.teamName || '');
+                                  }}
+                                  className="text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-800 px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition cursor-pointer"
+                                  title="เปลี่ยนทีมช่าง"
+                                >
+                                  <Edit3 className="w-3 h-3" /> เปลี่ยนทีม
+                                </button>
+                              )}
+                            </div>
+                            
+                            {job.techPhone && job.techPhone !== '-' && (
+                              <p className="text-slate-600 flex items-center gap-1 font-mono">
+                                <Phone className="w-3 h-3 text-emerald-600" /> โทร: {job.techPhone}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400 font-medium">จัดการสถานะ</span>
+                          <div className="flex gap-1">
+                            {col.id === 'PENDING' && (
+                              <button
+                                onClick={() => {
+                                  setSelectedJobForDispatch(job);
+                                  setSelectedTeam(workerAccounts[0]?.teamName || '');
+                                  setUrgencyLevel('ปกติ');
+                                }}
+                                className="bg-cyan-600 hover:bg-cyan-700 text-white px-2.5 py-1 rounded-lg font-bold transition shadow-sm cursor-pointer"
+                              >
+                                จ่ายงานช่าง
+                              </button>
+                            )}
+                            {col.id === 'DISPATCHED' && (
+                              <span className="text-[11px] text-cyan-700 bg-cyan-50 border border-cyan-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
+                                ⏳ รอช่างเข้าตรวจสอบ
+                              </span>
+                            )}
+                            {col.id === 'IN_PROGRESS' && (
+                              <span className="text-[10px] text-slate-400 italic bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+                                รอช่างปิดงาน
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -339,7 +499,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h4 className="font-bold text-slate-800 text-sm">จ่ายงานซ่อม: {selectedJobForDispatch.receivedNo || selectedJobForDispatch.id}</h4>
+              <h4 className="font-bold text-slate-800 text-sm">จ่ายงานซ่อม: {getDisplayReceivedNo(selectedJobForDispatch)}</h4>
               <button onClick={() => setSelectedJobForDispatch(null)} className="cursor-pointer"><X className="w-5 h-5 text-slate-400" /></button>
             </div>
 
@@ -378,8 +538,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                   {workerAccounts.length === 0 ? (
                     <option value="">ไม่มีบัญชีช่าง (กรุณาเพิ่มบัญชีช่างในตั้งค่าแอดมินก่อน)</option>
                   ) : (
-                    workerAccounts.map((worker) => (
-                      <option key={worker.id || worker.teamName} value={worker.teamName}>
+                    workerAccounts.map((worker, wIndex) => (
+                      <option key={worker.id || worker.teamName || `worker-${wIndex}`} value={worker.teamName}>
                         {worker.teamName} {worker.phone && worker.phone !== '-' ? `(โทร: ${worker.phone})` : ''}
                       </option>
                     ))
@@ -412,7 +572,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h4 className="font-bold text-slate-800 text-sm">เปลี่ยนทีมช่าง: {editingTeamJob.receivedNo || editingTeamJob.id}</h4>
+              <h4 className="font-bold text-slate-800 text-sm">เปลี่ยนทีมช่าง: {getDisplayReceivedNo(editingTeamJob)}</h4>
               <button onClick={() => setEditingTeamJob(null)} className="cursor-pointer"><X className="w-5 h-5 text-slate-400" /></button>
             </div>
 
@@ -428,8 +588,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                   onChange={(e) => setNewSelectedTeam(e.target.value)}
                   className="w-full border border-slate-200 rounded-xl p-3 text-xs bg-white font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
                 >
-                  {workerAccounts.map((worker) => (
-                    <option key={worker.id || worker.teamName} value={worker.teamName}>
+                  {workerAccounts.map((worker, wIndex) => (
+                    <option key={worker.id || worker.teamName || `new-worker-${wIndex}`} value={worker.teamName}>
                       {worker.teamName} {worker.phone && worker.phone !== '-' ? `(โทร: ${worker.phone})` : ''}
                     </option>
                   ))}
@@ -455,85 +615,151 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         </div>
       )}
 
-      {/* Modal สำหรับแอดมินแก้ไขข้อมูล / เลขที่รับแจ้ง */}
+      {/* Modal สำหรับแอดมินแก้ไขข้อมูล */}
       {editingAdminJob && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                <Hash className="w-5 h-5 text-blue-600" />
-                แก้ไขข้อมูล / เลขที่รับแจ้ง (แอดมิน)
-              </h4>
-              <button onClick={() => setEditingAdminJob(null)} className="cursor-pointer">
-                <X className="w-5 h-5 text-slate-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-100 overflow-hidden transform transition-all">
+            
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex justify-between items-center text-white">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/10 rounded-xl backdrop-blur-sm">
+                  <Hash className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm tracking-wide">แก้ไขข้อมูลใบงาน</h4>
+                  <p className="text-[11px] text-blue-100 opacity-90">จัดการข้อมูล (ล็อกเลขที่รับแจ้งเพื่อใช้ติดตามสถานะ)</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setEditingAdminJob(null)} 
+                className="p-1.5 hover:bg-white/10 rounded-full transition cursor-pointer"
+              >
+                <X className="w-5 h-5 text-white" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveAdminEdit} className="space-y-3">
+            <form onSubmit={handleSaveAdminEdit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่รับแจ้ง / Smart 1662 *</label>
-                <input 
-                  type="text"
-                  value={adminEditForm.receivedNo}
-                  onChange={(e) => setAdminEditForm(prev => ({ ...prev, receivedNo: e.target.value }))}
-                  required
-                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold text-blue-600 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อผู้แจ้ง</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>เลขที่รับแจ้ง / Smart 1662 (อ้างอิงสำหรับติดตามสถานะ)</span>
+                  <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                    🔒 ล็อกข้อมูล
+                  </span>
+                </label>
+                <div className="relative">
                   <input 
                     type="text"
-                    value={adminEditForm.reporterName}
-                    onChange={(e) => setAdminEditForm(prev => ({ ...prev, reporterName: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">เบอร์โทรศัพท์</label>
-                  <input 
-                    type="text"
-                    value={adminEditForm.phone}
-                    onChange={(e) => setAdminEditForm(prev => ({ ...prev, phone: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500 font-mono"
+                    value={adminEditForm.receivedNo}
+                    disabled
+                    className="w-full bg-slate-100 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-mono font-bold text-slate-500 cursor-not-allowed shadow-inner"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">สถานที่เกิดเหตุ *</label>
-                <textarea 
-                  rows="2"
-                  value={adminEditForm.location}
-                  onChange={(e) => setAdminEditForm(prev => ({ ...prev, location: e.target.value }))}
-                  required
-                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
-                ></textarea>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">ชื่อผู้แจ้ง</label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <User className="w-3.5 h-3.5" />
+                    </span>
+                    <input 
+                      type="text"
+                      value={adminEditForm.reporterName}
+                      onChange={(e) => setAdminEditForm(prev => ({ ...prev, reporterName: e.target.value }))}
+                      placeholder="ระบุชื่อผู้แจ้ง"
+                      className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">เบอร์โทรศัพท์</label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Phone className="w-3.5 h-3.5" />
+                    </span>
+                    <input 
+                      type="text"
+                      value={adminEditForm.phone}
+                      onChange={(e) => setAdminEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                      placeholder="ระบุเบอร์โทร"
+                      className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-xs font-mono font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">หัวข้อปัญหา</label>
-                <input 
-                  type="text"
-                  value={adminEditForm.complaintTopic}
-                  onChange={(e) => setAdminEditForm(prev => ({ ...prev, complaintTopic: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-blue-500"
-                />
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <span>สถานที่เกิดเหตุ</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute top-3 left-3.5 pointer-events-none text-slate-400">
+                    <MapPin className="w-3.5 h-3.5" />
+                  </span>
+                  <textarea 
+                    rows="2"
+                    value={adminEditForm.location}
+                    onChange={(e) => setAdminEditForm(prev => ({ ...prev, location: e.target.value }))}
+                    required
+                    placeholder="ระบุสถานที่ หรือจุดสังเกต..."
+                    className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl pl-10 pr-4 py-2.5 text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm resize-none"
+                  ></textarea>
+                </div>
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">หัวข้อปัญหา</label>
+                  <input 
+                    type="text"
+                    value={adminEditForm.complaintTopic}
+                    onChange={(e) => setAdminEditForm(prev => ({ ...prev, complaintTopic: e.target.value }))}
+                    placeholder="เช่น ท่อแตก, น้ำไม่ไหล"
+                    className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">ระดับความเร่งด่วน</label>
+                  <select
+                    value={adminEditForm.urgency}
+                    onChange={(e) => setAdminEditForm(prev => ({ ...prev, urgency: e.target.value }))}
+                    className="w-full bg-slate-50/80 border border-slate-200 rounded-2xl px-3 py-3 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm cursor-pointer"
+                  >
+                    <option value="ปกติ">ปกติ</option>
+                    <option value="ด่วน">ด่วน</option>
+                    <option value="ด่วนมาก">ด่วนมาก</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-4 border-t border-slate-100">
+                {normalizeStatus(editingAdminJob.status || editingAdminJob.Status) !== 'COMPLETED' && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteJob(editingAdminJob)}
+                    className="bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold py-3 px-4 rounded-2xl cursor-pointer border border-rose-200/60 flex items-center gap-1.5 transition shadow-sm"
+                    title="ลบใบงาน"
+                  >
+                    <Trash2 className="w-4 h-4" /> 
+                    <span>ลบ</span>
+                  </button>
+                )}
+                
                 <button
                   type="button"
                   onClick={() => setEditingAdminJob(null)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl cursor-pointer"
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-3 rounded-2xl transition cursor-pointer"
                 >
                   ยกเลิก
                 </button>
+                
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer"
+                  className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold py-3 rounded-2xl shadow-lg shadow-blue-500/25 transition cursor-pointer"
                 >
                   บันทึกการแก้ไข
                 </button>
