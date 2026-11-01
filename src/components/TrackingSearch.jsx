@@ -4,29 +4,48 @@ import {
   User, MapPin, Package, ShieldCheck, ArrowRight, Activity, Wrench, Users
 } from 'lucide-react';
 
-export default function TrackingSearch({ jobs, teams }) {
+export default function TrackingSearch({ jobs = [], teams = [] }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResult, setSearchResult] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
 
-  // 🕒 ฟังก์ชันช่วยแปลงรูปแบบวัน-เวลาให้แสดงผลมีทั้งวันและเวลาครบถ้วน (แปลง 'T' เป็นช่องว่าง)
-  const formatThaiDateTime = (dateTimeStr) => {
-    if (!dateTimeStr) return '-';
-    return String(dateTimeStr).replace('T', ' ');
+  // 📅 ฟังก์ชันแปลงรูปแบบวันที่และเวลาเป็นภาษาไทยเต็มรูปแบบ (เช่น 19 ตุลาคม 2569 เวลา 14.30 น.)
+  const formatThaiDateTime = (dateInput) => {
+    if (!dateInput) return '-';
+    let date = new Date(dateInput);
+    if (isNaN(date.getTime())) {
+      return String(dateInput).replace('T', ' '); 
+    }
+
+    const thaiMonths = [
+      'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+      'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+    ];
+
+    const day = date.getDate();
+    const month = thaiMonths[date.getMonth()];
+    const year = date.getFullYear() + 543;
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    // ถ้าเวลาเป็น 00:00 ให้แสดงเฉพาะ วัน เดือน ปี
+    if (hours === '00' && minutes === '00' && typeof dateInput === 'string' && !dateInput.includes(':')) {
+      return `${day} ${month} ${year}`;
+    }
+
+    return `${day} ${month} ${year} เวลา ${hours}.${minutes} น.`;
   };
 
   // 🔍 ฟังก์ชันค้นหาเบอร์โทรศัพท์ของทีมช่างจากข้อมูลผู้รับจ้าง (teams) ในระบบแอดมิน
   const getTeamPhone = (job) => {
-    // ถ้าในใบงานมี techPhone อยู่แล้ว ให้ใช้ค่านั้นก่อน
-    if (job.techPhone && job.techPhone !== '-') {
-      return job.techPhone;
+    const jobTechPhone = job.techPhone || job.TechPhone;
+    if (jobTechPhone && jobTechPhone !== '-') {
+      return jobTechPhone;
     }
 
-    // ถ้าไม่มี ให้ดึงชื่อทีมช่างจากงาน
-    const teamName = job.techName || job.technician;
+    const teamName = job.techName || job.technician || job.Technician;
     if (!teamName || !teams || !Array.isArray(teams)) return '-';
 
-    // ค้นหาในรายชื่อ teams ที่แอดมินบันทึกข้อมูลผู้รับจ้างไว้
     const matchedTeam = teams.find(t => {
       const tName = typeof t === 'string' ? t : (t.teamName || t.name);
       return tName && teamName.includes(tName);
@@ -39,22 +58,45 @@ export default function TrackingSearch({ jobs, teams }) {
     return '-';
   };
 
+  // 🛠️ ฟังก์ชันแปลงสถานะไม่ว่าจะมาจาก Google Sheets หรือระบบเดิม
+  const normalizeStatus = (status) => {
+    if (!status) return 'PENDING';
+    const s = String(status).toUpperCase();
+    if (s.includes('PENDING') || s.includes('รอดำเนินการ') || s.includes('รอรับเรื่อง')) return 'PENDING';
+    if (s.includes('DISPATCHED') || s.includes('มอบหมาย') || s.includes('จ่ายงาน')) return 'DISPATCHED';
+    if (s.includes('IN_PROGRESS') || s.includes('กำลังดำเนินการ') || s.includes('กำลังซ่อม')) return 'IN_PROGRESS';
+    if (s.includes('COMPLETED') || s.includes('เสร็จสิ้น') || s.includes('ปิดงาน')) return 'COMPLETED';
+    if (s.includes('UNREPAIRABLE') || s.includes('ซ่อมไม่ได้')) return 'UNREPAIRABLE';
+    return s;
+  };
+
   const handleSearch = (e) => {
     e.preventDefault();
-    if (!searchTerm.trim()) return;
+    if (!searchTerm.trim() || !jobs) return;
 
     const term = searchTerm.trim().toLowerCase();
-    const found = jobs.find(
-      j => (j.receivedNo && j.receivedNo.toLowerCase().includes(term)) ||
-           (j.id && j.id.toLowerCase().includes(term)) ||
-           (j.phone && j.phone.includes(term))
-    );
+    
+    // แปลง jobs เป็น Array (กรณีรับค่ามาเป็น Object หรือ Array)
+    let jobsArray = [];
+    if (Array.isArray(jobs)) {
+      jobsArray = jobs;
+    } else if (typeof jobs === 'object' && jobs !== null) {
+      jobsArray = Object.values(jobs);
+    }
+
+    const found = jobsArray.find(j => {
+      const receivedNo = String(j.receivedNo || j.smart1662No || j.JobID || j.id || '').toLowerCase();
+      const jobID = String(j.JobID || j.id || '').toLowerCase();
+      const phone = String(j.phone || j.Phone || '').toLowerCase();
+      return receivedNo === term || jobID === term || receivedNo.includes(term) || phone.includes(term);
+    });
 
     setSearchResult(found || null);
     setHasSearched(true);
   };
 
-  const getStepIndex = (status) => {
+  const getStepIndex = (rawStatus) => {
+    const status = normalizeStatus(rawStatus);
     switch (status) {
       case 'PENDING': return 1;
       case 'DISPATCHED': return 2;
@@ -64,7 +106,26 @@ export default function TrackingSearch({ jobs, teams }) {
     }
   };
 
-  const currentStep = searchResult ? getStepIndex(searchResult.status) : 0;
+  // 📊 ดึงข้อมูลรายละเอียดงานให้รองรับทั้งคีย์ภาษาไทย/อังกฤษจาก Google Sheets
+  const getJobDetails = (job) => {
+    if (!job || typeof job !== 'object') return {};
+    return {
+      receivedNo: job.receivedNo || job.smart1662No || job.JobID || job.id || '-',
+      status: job.status || job.Status || 'PENDING',
+      complaintTopic: job.complaintTopic || job.issueType || job.IssueType || 'แจ้งซ่อมท่อประปา',
+      location: job.location || job.Location || '-',
+      technician: job.techName || job.technician || job.Technician || '',
+      reporterName: job.reporterName || job.ReporterName || 'ไม่ระบุชื่อ',
+      phone: job.phone || job.Phone || '-',
+      receivedAt: job.receivedAt || job.Timestamp || job.createdAt || '',
+      completedAt: job.completedAt || job.ClosedAt || null,
+      dispatchedAt: job.dispatchedAt || null,
+      inProgressAt: job.inProgressAt || null
+    };
+  };
+
+  const jobInfo = searchResult && searchResult !== 'NOT_FOUND' ? getJobDetails(searchResult) : null;
+  const currentStep = jobInfo ? getStepIndex(jobInfo.status) : 0;
 
   const steps = [
     { 
@@ -72,33 +133,33 @@ export default function TrackingSearch({ jobs, teams }) {
       label: 'รับแจ้งเรื่อง', 
       desc: 'บันทึกคำร้องเข้าระบบ', 
       icon: Clock,
-      time: formatThaiDateTime(searchResult?.receivedAt || searchResult?.createdAt)
+      time: formatThaiDateTime(jobInfo?.receivedAt)
     },
     { 
       step: 2, 
       label: 'จ่ายงานช่าง', 
       desc: 'มอบหมายทีมช่างภาคสนาม', 
       icon: ShieldCheck,
-      time: searchResult?.dispatchedAt ? formatThaiDateTime(searchResult.dispatchedAt) : (searchResult?.status !== 'PENDING' ? 'จ่ายงานแล้ว' : 'รอจ่ายงาน')
+      time: jobInfo?.dispatchedAt ? formatThaiDateTime(jobInfo.dispatchedAt) : (jobInfo?.status !== 'PENDING' ? 'จ่ายงานแล้ว' : 'รอจ่ายงาน')
     },
     { 
       step: 3, 
       label: 'กำลังซ่อมแซม', 
       desc: 'ทีมช่างเข้าหน้างาน', 
       icon: Truck,
-      time: searchResult?.inProgressAt ? formatThaiDateTime(searchResult.inProgressAt) : (searchResult?.status === 'IN_PROGRESS' || searchResult?.status === 'COMPLETED' ? 'ดำเนินการแล้ว' : 'รอดำเนินการ')
+      time: jobInfo?.inProgressAt ? formatThaiDateTime(jobInfo.inProgressAt) : (normalizeStatus(jobInfo?.status) === 'IN_PROGRESS' || normalizeStatus(jobInfo?.status) === 'COMPLETED' ? 'ดำเนินการแล้ว' : 'รอดำเนินการ')
     },
     { 
       step: 4, 
       label: 'ซ่อมเสร็จสิ้น', 
       desc: 'เปิดจ่ายน้ำปกติ / ปิดงาน', 
       icon: CheckCircle2,
-      time: searchResult?.completedAt ? formatThaiDateTime(searchResult.completedAt) : (searchResult?.status === 'COMPLETED' ? 'เสร็จสิ้น' : 'รอปิดงาน')
+      time: jobInfo?.completedAt ? formatThaiDateTime(jobInfo.completedAt) : (normalizeStatus(jobInfo?.status) === 'COMPLETED' ? 'เสร็จสิ้น' : 'รอปิดงาน')
     },
   ];
 
   return (
-    <div className="relative overflow-hidden bg-slate-950 text-white p-6 sm:p-8 rounded-3xl shadow-2xl border border-slate-800 space-y-6">
+    <div className="relative overflow-hidden bg-slate-950 text-white p-6 sm:p-8 rounded-3xl shadow-2xl border border-slate-800 space-y-6 font-sans">
       <div className="absolute -top-24 -right-24 w-72 h-72 bg-blue-600/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -143,14 +204,14 @@ export default function TrackingSearch({ jobs, teams }) {
 
       {hasSearched && (
         <div className="relative z-10 pt-2">
-          {searchResult ? (
+          {jobInfo ? (
             <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 space-y-6 shadow-2xl backdrop-blur-md">
               <div className="flex flex-wrap justify-between items-center gap-3 border-b border-slate-800 pb-4">
                 <div className="space-y-1">
                   <span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold block">เลขที่รับแจ้ง (Tracking No.)</span>
                   <div className="flex items-center gap-2">
                     <span className="font-mono font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 text-lg sm:text-xl">
-                      {searchResult.receivedNo || searchResult.id}
+                      {jobInfo.receivedNo}
                     </span>
                     <span className="bg-slate-800 text-slate-300 text-[10px] font-mono px-2.5 py-0.5 rounded-md border border-slate-700">
                       กปภ.
@@ -165,9 +226,9 @@ export default function TrackingSearch({ jobs, teams }) {
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
                     </span>
-                    {searchResult.status === 'COMPLETED' ? 'ซ่อมเสร็จสิ้น (ปิดงาน)' : 
-                     searchResult.status === 'IN_PROGRESS' ? 'กำลังดำเนินการซ่อม' : 
-                     searchResult.status === 'DISPATCHED' ? 'มอบหมายช่างแล้ว' : 'รอรับเรื่อง/จัดส่งช่าง'}
+                    {normalizeStatus(jobInfo.status) === 'COMPLETED' ? 'ซ่อมเสร็จสิ้น (ปิดงาน)' : 
+                     normalizeStatus(jobInfo.status) === 'IN_PROGRESS' ? 'กำลังดำเนินการซ่อม' : 
+                     normalizeStatus(jobInfo.status) === 'DISPATCHED' ? 'มอบหมายช่างแล้ว' : 'รอรับเรื่อง/จัดส่งช่าง'}
                   </span>
                 </div>
               </div>
@@ -210,7 +271,7 @@ export default function TrackingSearch({ jobs, teams }) {
                       <Wrench className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase font-bold block">หัวข้อการร้องเรียน</span>
-                        <p className="font-bold text-slate-200 text-sm">{searchResult.complaintTopic || searchResult.issueType}</p>
+                        <p className="font-bold text-slate-200 text-sm">{jobInfo.complaintTopic}</p>
                       </div>
                     </div>
 
@@ -218,17 +279,16 @@ export default function TrackingSearch({ jobs, teams }) {
                       <MapPin className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase font-bold block">บริเวณที่เกิดเหตุ</span>
-                        <p className="text-slate-300 leading-relaxed">{searchResult.location}</p>
+                        <p className="text-slate-300 leading-relaxed">{jobInfo.location}</p>
                       </div>
                     </div>
 
-                    {/* 🛠️ ส่วนแสดงข้อมูลทีมช่างและเบอร์โทรที่ดึงมาจากข้อมูลผู้รับจ้าง (teams) */}
-                    {(searchResult.technician || searchResult.techName) && (
+                    {jobInfo.technician && (
                       <div className="bg-blue-950/40 border border-blue-900/50 p-3 rounded-xl space-y-1.5">
                         <span className="text-[10px] text-cyan-400 uppercase font-bold block flex items-center gap-1">
                           <Users className="w-3.5 h-3.5" /> ทีมช่างผู้รับผิดชอบ
                         </span>
-                        <p className="font-bold text-slate-200">{searchResult.techName || searchResult.technician}</p>
+                        <p className="font-bold text-slate-200">{jobInfo.technician}</p>
                         {getTeamPhone(searchResult) !== '-' ? (
                           <a 
                             href={`tel:${getTeamPhone(searchResult)}`} 
@@ -248,7 +308,7 @@ export default function TrackingSearch({ jobs, teams }) {
                       <User className="w-4 h-4 text-blue-400 shrink-0" />
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase font-bold block">ข้อมูลผู้ร้องเรียน</span>
-                        <p className="font-semibold text-slate-200">{searchResult.reporterName}</p>
+                        <p className="font-semibold text-slate-200">{jobInfo.reporterName}</p>
                       </div>
                     </div>
 
@@ -256,7 +316,7 @@ export default function TrackingSearch({ jobs, teams }) {
                       <Phone className="w-4 h-4 text-emerald-400 shrink-0" />
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase font-bold block">เบอร์โทรศัพท์ผู้แจ้ง</span>
-                        <p className="font-mono text-emerald-400 font-bold">{searchResult.phone}</p>
+                        <p className="font-mono text-emerald-400 font-bold">{jobInfo.phone}</p>
                       </div>
                     </div>
 
@@ -264,16 +324,16 @@ export default function TrackingSearch({ jobs, teams }) {
                       <Clock className="w-4 h-4 text-slate-400 shrink-0" />
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase font-bold block">วันเวลาที่รับแจ้ง</span>
-                        <p className="font-mono text-slate-400 text-[11px]">{formatThaiDateTime(searchResult.receivedAt || searchResult.createdAt)}</p>
+                        <p className="font-mono text-slate-400 text-[11px]">{formatThaiDateTime(jobInfo.receivedAt)}</p>
                       </div>
                     </div>
 
-                    {searchResult.completedAt && (
+                    {jobInfo.completedAt && (
                       <div className="flex items-center gap-2 pt-1">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                         <div>
                           <span className="text-[10px] text-emerald-500 uppercase font-bold block">วันที่ซ่อมเสร็จสิ้น</span>
-                          <p className="font-mono text-emerald-300 text-[11px]">{formatThaiDateTime(searchResult.completedAt)}</p>
+                          <p className="font-mono text-emerald-300 text-[11px]">{formatThaiDateTime(jobInfo.completedAt)}</p>
                         </div>
                       </div>
                     )}
