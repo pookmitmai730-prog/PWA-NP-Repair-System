@@ -1,14 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Trash2, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, ShieldAlert, Search, Loader2, Plus, Image as ImageIcon, Save, RotateCcw } from 'lucide-react';
+import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, Search, Loader2, Plus, Image as ImageIcon, Save, RotateCcw } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 
 // 🌐 URL ของ Google Apps Script Web App
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
-
-// 🔔 [สวิตช์ควบคุม Telegram] เปิดใช้งานการแจ้งเตือนอัตโนมัติเมื่อปิดงาน
-const ENABLE_TELEGRAM_NOTIFY = true; 
-const TELEGRAM_BOT_TOKEN = "8601147798:AAFNBUcoRYH4tvZfyvWgxaXP9xrWiR4D6kk";
-const TELEGRAM_CHAT_ID = "-1003925252865";
 
 // รายการอุปกรณ์สำรอง (Fallback Data)
 const DEFAULT_EQUIPMENT_LIST = [
@@ -21,14 +16,11 @@ const DEFAULT_EQUIPMENT_LIST = [
   { id: 'EQ-007', name: 'หน้าจานเหล็ก 110 มม.', unit: 'ชุด' },
 ];
 
-export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLogout, onJobCreated, onDeleteJob }) {
+export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLogout, onJobCreated }) {
   const [currentTeam, setCurrentTeam] = useState(localStorage.getItem('pwa_worker_team') || '');
   const [selectedJob, setSelectedJob] = useState(null);
   
-  // State สำหรับเปิด Modal เพิ่มใบงานด่วนหน้างาน (Ad-hoc Job)
   const [isAdHocModalOpen, setIsAdHocModalOpen] = useState(false);
-
-  // 📸 State สำหรับระบบค้นหาและแก้ไขรูปภาพ/ข้อมูลใบงานที่ปิดแล้ว
   const [completedSearchTerm, setCompletedSearchTerm] = useState('');
   const [editingPhotoJob, setEditingPhotoJob] = useState(null);
 
@@ -44,7 +36,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
   const [images, setImages] = useState({ before: [], inProgress: [], after: [] });
   
-  // 🛠️ State สำหรับระบบเลือกอุปกรณ์และทีมช่างจาก Google Sheets
   const [equipmentList, setEquipmentList] = useState(DEFAULT_EQUIPMENT_LIST);
   const [isLoadingEquipment, setIsLoadingEquipment] = useState(false);
   
@@ -58,16 +49,14 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const [selectedEquipmentList, setSelectedEquipmentList] = useState([]);
   const [notes, setNotes] = useState('');
 
-  // 💧 State เพิ่มเติม: เช็คบ็อกซ์น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์
   const [isNoEquipmentUsed, setIsNoEquipmentUsed] = useState(false);
+  const [isSurfaceRestored, setIsSurfaceRestored] = useState(false); // 🛠️ เพิ่มสถานะสำหรับซ่อมคืนผิวหลังซ่อมท่อ
 
-  // ⚠️ State เพิ่มเติมสำหรับกรณีไม่สามารถซ่อมได้
   const [isUnrepairable, setIsUnrepairable] = useState(false);
   const [unrepairableReasonType, setUnrepairableReasonType] = useState('ติดสิ่งกีดขวาง/โครงสร้างอาคาร/สิ่งปลูกสร้าง');
   const [customUnrepairableReason, setCustomUnrepairableReason] = useState('');
   const [unrepairableDetails, setUnrepairableDetails] = useState('');
 
-  // State สำหรับชนิดท่อและขนาดท่อ
   const [pipeType, setPipeType] = useState('HDPE');
   const [pipeSize, setPipeSize] = useState('110');
 
@@ -89,19 +78,17 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     'อื่นๆ (ระบุในรายละเอียด)'
   ];
 
-  // 🔗 ฟังก์ชันแปลงลิงก์ Google Drive ให้เป็น Direct Image URL สำหรับแสดงผลในแท็ก <img />
   const convertGoogleDriveUrl = (url) => {
     if (!url || typeof url !== 'string') return '';
     const cleanUrl = url.trim();
     const match = cleanUrl.match(/\/d\/([a-zA-Z0-9_-]+)|id=([a-zA-Z0-9_-]+)/);
     if (match && (match[1] || match[2])) {
       const fileId = match[1] || match[2];
-      return `https://lh3.googleusercontent.com/d/${fileId}`;
+      return `https://lh3.googleusercontent.com/d/${fileId}=s800`;
     }
     return cleanUrl;
   };
 
-  // 📸 ฟังก์ชันแปลงรูปภาพ พร้อมตัดค่าซ้ำป้องกันภาพเบิ้ล
   const parseImages = (imgData) => {
     if (!imgData) return [];
     try {
@@ -136,53 +123,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     return [];
   };
 
-  // 📲 ฟังก์ชันส่งแจ้งเตือนเข้า Telegram หลังจากปิดงานซ่อม
-  const sendTelegramNotification = async (jobPayload) => {
-    if (!ENABLE_TELEGRAM_NOTIFY) return;
-    if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return;
-
-    try {
-      let firstPhoto = "";
-      const afterImgs = jobPayload.afterImg || jobPayload.AfterImg || [];
-      const beforeImgs = jobPayload.beforeImg || jobPayload.BeforeImg || [];
-      
-      if (Array.isArray(afterImgs) && afterImgs.length > 0) {
-        firstPhoto = afterImgs[0];
-      } else if (Array.isArray(beforeImgs) && beforeImgs.length > 0) {
-        firstPhoto = beforeImgs[0];
-      } else if (typeof afterImgs === 'string' && afterImgs.trim() !== '') {
-        firstPhoto = afterImgs.split(',')[0].trim();
-      }
-
-      const isUnrep = jobPayload.status === 'UNREPAIRABLE';
-      const statusHeader = isUnrep ? '❌ *แจ้งซ่อมไม่สำเร็จ / มีอุปสรรค* ❌' : '✅ *แจ้งปิดงานซ่อมสำเร็จ* ✅';
-
-      let message = `${statusHeader}\n\n` +
-                    `📌 *เลขที่รับแจ้ง:* \`${jobPayload.receivedNo || jobPayload.JobID}\`\n` +
-                    `📍 *สถานที่:* ${jobPayload.location}\n` +
-                    `👷‍♂️ *ทีมซ่อม:* ${jobPayload.technician}\n` +
-                    `🛠 *อุปกรณ์ที่ใช้:* ${jobPayload.equipment}\n` +
-                    `🕒 *เวลาปิดงาน:* ${jobPayload.closedAt}`;
-
-      if (firstPhoto) {
-        message += `\n\n🔗 [คลิกดูรูปภาพ/ผลการซ่อม](${firstPhoto})`;
-      }
-
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: TELEGRAM_CHAT_ID,
-          text: message,
-          parse_mode: "Markdown"
-        })
-      });
-    } catch (err) {
-      console.error("Failed to send Telegram notification:", err);
-    }
-  };
-
-  // 🌐 ดึงข้อมูลรายการอุปกรณ์และทีมช่างจาก Google Sheets
   useEffect(() => {
     const fetchEquipmentFromSheets = async () => {
       setIsLoadingEquipment(true);
@@ -229,12 +169,21 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       setSuggestions([]);
     } else {
       const query = value.trim().toLowerCase();
-      const filtered = equipmentList.filter(item => {
-        const itemName = String(
-          item.name || item.itemName || item.ชื่ออุปกรณ์ || item.รายการ || item.อุปกรณ์ || ''
-        ).trim().toLowerCase();
-        return itemName.includes(query);
-      });
+      const filtered = equipmentList
+        .filter(item => {
+          const itemName = String(
+            item.name || item.itemName || item.ชื่ออุปกรณ์ || item.รายการ || item.อุปกรณ์ || ''
+          ).trim().toLowerCase();
+          return itemName.includes(query);
+        })
+        .sort((a, b) => {
+          const nameA = String(a.name || a.itemName || a.อุปกรณ์ || '').toLowerCase();
+          const nameB = String(b.name || b.itemName || b.อุปกรณ์ || '').toLowerCase();
+          if (nameA.startsWith(query) && !nameB.startsWith(query)) return -1;
+          if (!nameA.startsWith(query) && nameB.startsWith(query)) return 1;
+          return nameA.localeCompare(nameB, 'th');
+        });
+      
       setSuggestions(filtered);
     }
   };
@@ -276,6 +225,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setSearchTerm('');
     setSelectedEquipmentItem(null);
     setEquipmentQuantity(1);
+    setSuggestions([]);
   };
 
   const handleRemoveEquipmentItem = (id) => {
@@ -296,9 +246,23 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const handleToggleNoEquipment = (checked) => {
     setIsNoEquipmentUsed(checked);
     if (checked) {
+      setIsSurfaceRestored(false); // ปิดตัวเลือกอื่น
       setSelectedEquipmentList([]);
       setSearchTerm('');
       setNotes('น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์');
+    } else {
+      setNotes('');
+    }
+  };
+
+  // 🛠️ ฟังก์ชันจัดการเมื่อติ๊ก "ซ่อมคืนผิวหลังซ่อมท่อ"
+  const handleToggleSurfaceRestored = (checked) => {
+    setIsSurfaceRestored(checked);
+    if (checked) {
+      setIsNoEquipmentUsed(false); // ปิดตัวเลือกอื่น
+      setSelectedEquipmentList([]);
+      setSearchTerm('');
+      setNotes('ซ่อมคืนผิวหลังซ่อมท่อเรียบร้อยแล้ว');
     } else {
       setNotes('');
     }
@@ -492,21 +456,21 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         }
       };
 
-      await fetch(WEB_APP_URL, {
+      const res = await fetch(WEB_APP_URL, {
         method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(jobDataPayload)
       });
+
+      const result = await res.json();
 
       const updatedData = {
         ...editingPhotoJob,
         pipeType: pipeType,
         pipeSize: pipeSize,
         equipment: notes,
-        beforeImg: cleanBeforeImg,
-        inProgImg: cleanInProgImg,
-        afterImg: cleanAfterImg,
+        beforeImg: result.beforeImgUrl ? parseImages(result.beforeImgUrl) : cleanBeforeImg,
+        afterImg: result.afterImgUrl ? parseImages(result.afterImgUrl) : cleanAfterImg,
+        inProgImg: result.inProgImgUrl ? parseImages(result.inProgImgUrl) : cleanInProgImg,
         latitude: coords.lat || '',
         longitude: coords.lng || ''
       };
@@ -524,7 +488,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 🛠️ แก้ไขฟังก์ชันรับไฟล์รูปภาพไม่ให้เบิ้ลซ้ำซ้อน
   const handleMultipleImagesChange = async (type, e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -663,8 +626,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
       await fetch(WEB_APP_URL, {
         method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(jobDataPayload)
       });
 
@@ -674,6 +635,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       setSelectedJob(newAdHocJob);
       setIsUnrepairable(false);
       setIsNoEquipmentUsed(false);
+      setIsSurfaceRestored(false);
       setCoords({ lat: null, lng: null });
       alert("สร้างเลขที่รับแจ้งสำเร็จ! กรุณาถ่ายภาพและบันทึกผลการซ่อม");
     } catch (err) {
@@ -709,6 +671,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       finalEquipment = `❌ ไม่สามารถซ่อมได้เนื่องจาก: ${finalReason} (${unrepairableDetails.trim()})`;
     } else if (isNoEquipmentUsed) {
       finalEquipment = 'น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์';
+    } else if (isSurfaceRestored) {
+      finalEquipment = 'ซ่อมคืนผิวหลังซ่อมท่อเรียบร้อยแล้ว'; // 🛠️ กำหนดข้อความเมื่อเลือกซ่อมคืนผิว
     } else {
       finalEquipment = notes || selectedEquipmentList.map(i => `${i.name} (${i.quantity} ${i.unit})`).join(', ') || '-';
     }
@@ -734,10 +698,10 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         Location: selectedJob.location || selectedJob.Location || '-',
         issueType: selectedJob.complaintTopic || selectedJob.IssueType || 'ท่อแตกรั่ว',
         IssueType: selectedJob.complaintTopic || selectedJob.IssueType || 'ท่อแตกรั่ว',
-        pipeType: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeType,
-        PipeType: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeType,
-        pipeSize: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeSize,
-        PipeSize: (isUnrepairable || isNoEquipmentUsed) ? '-' : pipeSize,
+        pipeType: (isUnrepairable || isNoEquipmentUsed || isSurfaceRestored) ? '-' : pipeType,
+        PipeType: (isUnrepairable || isNoEquipmentUsed || isSurfaceRestored) ? '-' : pipeType,
+        pipeSize: (isUnrepairable || isNoEquipmentUsed || isSurfaceRestored) ? '-' : pipeSize,
+        PipeSize: (isUnrepairable || isNoEquipmentUsed || isSurfaceRestored) ? '-' : pipeSize,
         description: selectedJob.details || selectedJob.Description || 'ดำเนินการซ่อมเสร็จสิ้น',
         Description: selectedJob.details || selectedJob.Description || 'ดำเนินการซ่อมเสร็จสิ้น',
         technician: currentTeam,
@@ -765,15 +729,10 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     try {
       await fetch(WEB_APP_URL, {
         method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(jobDataPayload)
       });
 
-      // 📲 ส่งแจ้งเตือนเข้า Telegram หลังจากทีมช่างปิดงานเรียบร้อยแล้ว
-      await sendTelegramNotification(jobDataPayload.jobData);
-
-      await onUpdateJobStatus(targetJobId, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
+      await onUpdateJobStatus(targetId, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
 
       alert(isUnrepairable 
         ? `บันทึกรายงานซ่อมไม่ได้เรียบร้อยแล้ว` 
@@ -790,6 +749,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       setSelectedEquipmentList([]);
       setIsUnrepairable(false);
       setIsNoEquipmentUsed(false);
+      setIsSurfaceRestored(false);
       setUnrepairableDetails('');
       setCustomUnrepairableReason('');
       setPipeType('HDPE');
@@ -905,7 +865,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       <div className="p-4 space-y-4">
         {!selectedJob && !editingPhotoJob ? (
           <div className="space-y-6">
-            {/* 📋 Section 1: รายการงานค้างปฏิบัติงาน */}
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -1005,6 +964,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                               setSelectedJob(job);
                               setIsUnrepairable(false);
                               setIsNoEquipmentUsed(false);
+                              setIsSurfaceRestored(false);
                               setCoords({ 
                                 lat: job.latitude || job.Latitude || null, 
                                 lng: job.longitude || job.Longitude || null 
@@ -1022,6 +982,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                               setSelectedJob(job);
                               setIsUnrepairable(false);
                               setIsNoEquipmentUsed(false);
+                              setIsSurfaceRestored(false);
                               setCoords({ 
                                 lat: job.latitude || job.Latitude || null, 
                                 lng: job.longitude || job.Longitude || null 
@@ -1039,7 +1000,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               )}
             </div>
 
-            {/* 📸 Section 2: จัดการรูปภาพและข้อมูลใบงานที่ปิดแล้ว */}
             <div className="space-y-3 pt-4 border-t border-slate-200">
               <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
                 <ImageIcon className="w-4 h-4 text-indigo-600" />
@@ -1086,7 +1046,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
             </div>
           </div>
         ) : editingPhotoJob ? (
-          /* 🖼️ หน้าต่างแก้ไขข้อมูล รูปภาพ และพิกัด สำหรับใบงานที่ปิดแล้ว */
           <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-200 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div>
@@ -1104,7 +1063,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               </button>
             </div>
 
-            {/* ฟอร์มแก้ไขข้อมูลท่อและขนาดท่อ */}
             <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">ชนิดท่อ</label>
@@ -1132,7 +1090,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               </div>
             </div>
 
-            {/* 🛠️ ระบบเลือกอุปกรณ์จาก Google Sheets สำหรับฟอร์มแก้ไข */}
             <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
               <div className="flex justify-between items-center">
                 <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
@@ -1227,7 +1184,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               <span className="text-[10px] text-slate-400 mt-1 block">ข้อมูลเดิมจะแสดงในช่องนี้ คุณสามารถแก้ไขหรือลบออกได้ก่อนกดบันทึก</span>
             </div>
 
-            {/* 📍 ส่วนแก้ไขพิกัด GPS */}
             <div className="bg-blue-50/60 p-3.5 rounded-2xl border border-blue-200 space-y-2.5">
               <div className="flex justify-between items-center">
                 <label className="text-xs font-bold text-blue-900 flex items-center gap-1">
@@ -1268,7 +1224,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               </div>
             </div>
 
-            {/* รูปภาพ 3 ระยะ */}
             <div className="space-y-4">
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
@@ -1351,7 +1306,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
             </div>
           </div>
         ) : (
-          /* 📝 หน้าต่างบันทึกผลการทำงานปกติ (ปิดงานซ่อม) */
           <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-200 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div>
@@ -1364,30 +1318,50 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
             </div>
 
             <form onSubmit={handleSubmitFix} className="space-y-4">
-              {/* 💧 ตัวเลือก 1: น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์ */}
               {!isUnrepairable && (
-                <div className={`p-3.5 rounded-2xl border transition-all ${
-                  isNoEquipmentUsed ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50 border-slate-200'
-                }`}>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input 
-                      type="checkbox"
-                      checked={isNoEquipmentUsed}
-                      onChange={(e) => handleToggleNoEquipment(e.target.checked)}
-                      className="w-5 h-5 text-emerald-600 rounded-lg focus:ring-emerald-500 border-slate-300 cursor-pointer"
-                    />
-                    <div>
-                      <span className={`text-xs font-bold block ${isNoEquipmentUsed ? 'text-emerald-700' : 'text-slate-700'}`}>
-                        💧 น้ำไหลปกติแล้ว / ไม่ได้ใช้อุปกรณ์ซ่อม
-                      </span>
-                      <span className="text-[10px] text-slate-500">ติ๊กถูกหากตรวจสอบแล้วพบว่าน้ำไหลปกติและไม่ได้ใช้อุปกรณ์ใดๆ</span>
-                    </div>
-                  </label>
+                <div className="space-y-2">
+                  <div className={`p-3.5 rounded-2xl border transition-all ${
+                    isNoEquipmentUsed ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input 
+                        type="checkbox"
+                        checked={isNoEquipmentUsed}
+                        onChange={(e) => handleToggleNoEquipment(e.target.checked)}
+                        className="w-5 h-5 text-emerald-600 rounded-lg focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                      />
+                      <div>
+                        <span className={`text-xs font-bold block ${isNoEquipmentUsed ? 'text-emerald-700' : 'text-slate-700'}`}>
+                          💧 น้ำไหลปกติแล้ว / ไม่ได้ใช้อุปกรณ์ซ่อม
+                        </span>
+                        <span className="text-[10px] text-slate-500">ติ๊กถูกหากตรวจสอบแล้วพบว่าน้ำไหลปกติและไม่ได้ใช้อุปกรณ์ใดๆ</span>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* 🛠️ เพิ่มตัวเลือก: ซ่อมคืนผิวหลังซ่อมท่อ */}
+                  <div className={`p-3.5 rounded-2xl border transition-all ${
+                    isSurfaceRestored ? 'bg-blue-50 border-blue-300' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input 
+                        type="checkbox"
+                        checked={isSurfaceRestored}
+                        onChange={(e) => handleToggleSurfaceRestored(e.target.checked)}
+                        className="w-5 h-5 text-blue-600 rounded-lg focus:ring-blue-500 border-slate-300 cursor-pointer"
+                      />
+                      <div>
+                        <span className={`text-xs font-bold block ${isSurfaceRestored ? 'text-blue-700' : 'text-slate-700'}`}>
+                          🛣️ ซ่อมคืนผิวหลังซ่อมท่อ (ไม่ต้องเบิกอุปกรณ์)
+                        </span>
+                        <span className="text-[10px] text-slate-500">ติ๊กถูกกรณีงานคืนผิวทาง เทคอนกรีต/ยางมะตอย โดยไม่ได้ใช้อุปกรณ์ท่อเพิ่ม</span>
+                      </div>
+                    </label>
+                  </div>
                 </div>
               )}
 
-              {/* ⚠️ ตัวเลือก 2: ไม่สามารถซ่อมได้ */}
-              {!isNoEquipmentUsed && (
+              {!isNoEquipmentUsed && !isSurfaceRestored && (
                 <div className={`p-3.5 rounded-2xl border transition-all ${
                   isUnrepairable ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 border-slate-200'
                 }`}>
@@ -1397,7 +1371,10 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                       checked={isUnrepairable}
                       onChange={(e) => {
                         setIsUnrepairable(e.target.checked);
-                        if (e.target.checked) setIsNoEquipmentUsed(false);
+                        if (e.target.checked) {
+                          setIsNoEquipmentUsed(false);
+                          setIsSurfaceRestored(false);
+                        }
                       }}
                       className="w-5 h-5 text-rose-600 rounded-lg focus:ring-rose-500 border-slate-300 cursor-pointer"
                     />
@@ -1452,8 +1429,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {/* ชนิดท่อและขนาดท่อ */}
-              {!isUnrepairable && !isNoEquipmentUsed && (
+              {!isUnrepairable && !isNoEquipmentUsed && !isSurfaceRestored && (
                 <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">ชนิดท่อที่ซ่อม *</label>
@@ -1482,8 +1458,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {/* ระบบเลือกอุปกรณ์จาก Google Sheets */}
-              {!isUnrepairable && !isNoEquipmentUsed && (
+              {!isUnrepairable && !isNoEquipmentUsed && !isSurfaceRestored && (
                 <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
                   <div className="flex justify-between items-center">
                     <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
@@ -1567,7 +1542,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               )}
 
-              {/* แนบรูปภาพ 3 ระยะ */}
               <div className="space-y-3">
                 <label className="block text-xs font-bold text-slate-700">📸 แนบรูปภาพปฏิบัติงาน *</label>
 
@@ -1604,7 +1578,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                 </div>
               </div>
 
-              {/* 📍 ดึงพิกัด GPS */}
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
                 <div className="flex justify-between items-center">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
@@ -1670,7 +1643,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         )}
       </div>
 
-      {/* ➕ Modal เปิดใบงานด่วน */}
       {isAdHocModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-5 space-y-4">
