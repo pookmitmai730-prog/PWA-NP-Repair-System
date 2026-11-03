@@ -255,7 +255,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
-  // 🛠️ ฟังก์ชันจัดการเมื่อติ๊ก "ซ่อมคืนผิวหลังซ่อมท่อ"
   const handleToggleSurfaceRestored = (checked) => {
     setIsSurfaceRestored(checked);
     if (checked) {
@@ -461,7 +460,13 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         body: JSON.stringify(jobDataPayload)
       });
 
-      const result = await res.json();
+      const responseText = await res.text();
+      let result = {};
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseErr) {
+        result = { status: 'success' };
+      }
 
       const updatedData = {
         ...editingPhotoJob,
@@ -672,7 +677,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     } else if (isNoEquipmentUsed) {
       finalEquipment = 'น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์';
     } else if (isSurfaceRestored) {
-      finalEquipment = 'ซ่อมคืนผิวหลังซ่อมท่อเรียบร้อยแล้ว'; // 🛠️ กำหนดข้อความเมื่อเลือกซ่อมคืนผิว
+      finalEquipment = 'ซ่อมคืนผิวหลังซ่อมท่อเรียบร้อยแล้ว';
     } else {
       finalEquipment = notes || selectedEquipmentList.map(i => `${i.name} (${i.quantity} ${i.unit})`).join(', ') || '-';
     }
@@ -681,6 +686,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     const cleanBeforeImg = Array.from(new Set(images.before));
     const cleanInProgImg = Array.from(new Set(images.inProgress));
     const cleanAfterImg = Array.from(new Set(images.after));
+
+    const targetStatus = isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED';
 
     const jobDataPayload = {
       action: "archive_job",
@@ -706,8 +713,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         Description: selectedJob.details || selectedJob.Description || 'ดำเนินการซ่อมเสร็จสิ้น',
         technician: currentTeam,
         Technician: currentTeam,
-        status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
-        Status: isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED',
+        status: targetStatus,
+        Status: targetStatus,
         beforeImg: cleanBeforeImg,
         BeforeImg: cleanBeforeImg,
         inProgImg: cleanInProgImg,
@@ -727,22 +734,39 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     };
 
     try {
-      await fetch(WEB_APP_URL, {
+      const response = await fetch(WEB_APP_URL, {
         method: 'POST',
         body: JSON.stringify(jobDataPayload)
       });
 
-      await onUpdateJobStatus(targetId, isUnrepairable ? 'UNREPAIRABLE' : 'COMPLETED', jobDataPayload.jobData);
+      const responseText = await response.text();
+      let result = {};
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseErr) {
+        result = { status: 'success' };
+      }
+
+      if (result && result.status === 'error') {
+        throw new Error(result.message || 'Unknown server error');
+      }
+
+      const finalUpdatedData = {
+        ...jobDataPayload.jobData,
+        beforeImg: result.beforeImgUrl ? parseImages(result.beforeImgUrl) : cleanBeforeImg,
+        inProgImg: result.inProgImgUrl ? parseImages(result.inProgImgUrl) : cleanInProgImg,
+        afterImg: result.afterImgUrl ? parseImages(result.afterImgUrl) : cleanAfterImg
+      };
+
+      if (onUpdateJobStatus) {
+        await onUpdateJobStatus(targetJobId, targetStatus, finalUpdatedData);
+      }
 
       alert(isUnrepairable 
         ? `บันทึกรายงานซ่อมไม่ได้เรียบร้อยแล้ว` 
         : `ปิดงานซ่อมเรียบร้อยแล้ว!`
       );
-    } catch (err) {
-      console.error("Error submitting fix:", err);
-      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
-    } finally {
-      setIsSubmitting(false);
+
       setSelectedJob(null);
       setImages({ before: [], inProgress: [], after: [] });
       setNotes('');
@@ -755,6 +779,12 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
       setPipeType('HDPE');
       setPipeSize('110');
       setCoords({ lat: null, lng: null });
+
+    } catch (err) {
+      console.error("Error submitting fix:", err);
+      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล: " + (err.message || 'กรุณาลองใหม่อีกครั้ง'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1339,7 +1369,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                     </label>
                   </div>
 
-                  {/* 🛠️ เพิ่มตัวเลือก: ซ่อมคืนผิวหลังซ่อมท่อ */}
                   <div className={`p-3.5 rounded-2xl border transition-all ${
                     isSurfaceRestored ? 'bg-blue-50 border-blue-300' : 'bg-slate-50 border-slate-200'
                   }`}>
