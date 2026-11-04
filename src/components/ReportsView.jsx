@@ -34,7 +34,7 @@ export default function ReportsView({ jobs, currentUser }) {
 
   // 📅 ฟังก์ชันแปลงรูปแบบวันที่และเวลาเป็นภาษาไทยเต็มรูปแบบ[cite: 7]
   const formatThaiDate = (dateInput) => {
-    if (!dateInput) return '-';
+    if (!dateInput || dateInput === '-') return '-';
     let date = new Date(dateInput);
     if (isNaN(date.getTime())) {
       return dateInput; 
@@ -58,10 +58,8 @@ export default function ReportsView({ jobs, currentUser }) {
     return `${day} ${month} ${year} เวลา ${hours}.${minutes} น.`;
   };
 
-  const parseJobDate = (job) => {
-    const rawDate = job.Timestamp || job.receivedAt || job.createdAt || job.completedAt;
-    if (!rawDate) return new Date(0);
-
+  const parseJobDate = (rawDate) => {
+    if (!rawDate || rawDate === '-') return new Date(0);
     let parsedDate;
     if (typeof rawDate === 'string' && rawDate.includes('/')) {
       const parts = rawDate.split(' ')[0].split('/');
@@ -73,8 +71,6 @@ export default function ReportsView({ jobs, currentUser }) {
     } else {
       parsedDate = new Date(rawDate);
     }
-
-    // 🛡️ ตรวจสอบความถูกต้อง หากวันที่ไม่สมบูรณ์ให้คืนค่าเริ่มต้นแทนเพื่อป้องกันแอปพัง
     return isNaN(parsedDate.getTime()) ? new Date(0) : parsedDate;
   };
 
@@ -98,29 +94,36 @@ export default function ReportsView({ jobs, currentUser }) {
     const now = new Date();
 
     const filtered = jobsArray.filter(job => {
-      const jobDate = parseJobDate(job);
-      const jobDateStr = jobDate.toISOString().split('T')[0];
+      // 1. 🎯 เงื่อนไขการกรองรายงาน: ใช้ "วันที่ซ่อมเสร็จ" (ClosedAt) เป็นเงื่อนไขหลัก
+      const rawClosedAt = job.ClosedAt || job.closedAt;
+      const isCompletedOrClosed = (job.Status === 'COMPLETED' || job.status === 'COMPLETED' || job.Status === 'UNREPAIRABLE' || job.status === 'UNREPAIRABLE');
 
-      // 1. กรองตามช่วงวันที่กำหนดเอง (ถ้ามีการเลือก StartDate หรือ EndDate)[cite: 7]
-      if (startDate || endDate) {
-        if (startDate && jobDateStr < startDate) return false;
-        if (endDate && jobDateStr > endDate) return false;
-      } else if (reportType !== 'all') {
-        // 2. กรองตามแท็กรอบเวลาดั้งเดิม[cite: 7]
-        if (reportType === 'daily') {
-          if (jobDateStr !== todayStr) return false;
-        } else if (reportType === 'weekly') {
-          const diffTime = Math.abs(now - jobDate);
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          if (diffDays > 7) return false;
-        } else if (reportType === 'monthly') {
-          if (jobDate.getMonth() !== now.getMonth() || jobDate.getFullYear() !== now.getFullYear()) return false;
-        } else if (reportType === 'yearly') {
-          if (jobDate.getFullYear() !== now.getFullYear()) return false;
+      if (startDate || endDate || reportType !== 'all') {
+        // หากมีการเลือกช่วงเวลาหรือตัวกรองรอบเวลา งานนั้นต้องมีวันที่ซ่อมเสร็จจึงจะนำมาคิดในรายงานตามช่วงเวลา
+        if (!isCompletedOrClosed || !rawClosedAt || rawClosedAt === '-') return false;
+
+        const closedDate = parseJobDate(rawClosedAt);
+        const closedDateStr = closedDate.toISOString().split('T')[0];
+
+        if (startDate || endDate) {
+          if (startDate && closedDateStr < startDate) return false;
+          if (endDate && closedDateStr > endDate) return false;
+        } else {
+          if (reportType === 'daily') {
+            if (closedDateStr !== todayStr) return false;
+          } else if (reportType === 'weekly') {
+            const diffTime = Math.abs(now - closedDate);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays > 7) return false;
+          } else if (reportType === 'monthly') {
+            if (closedDate.getMonth() !== now.getMonth() || closedDate.getFullYear() !== now.getFullYear()) return false;
+          } else if (reportType === 'yearly') {
+            if (closedDate.getFullYear() !== now.getFullYear()) return false;
+          }
         }
       }
 
-      // 3. กรองตามคำค้นหาในช่อง Search[cite: 7]
+      // 2. กรองตามคำค้นหาในช่อง Search[cite: 7]
       if (tableSearchTerm.trim()) {
         const term = tableSearchTerm.trim().toLowerCase();
         const matchNo = (job.JobID || job.receivedNo || '').toLowerCase().includes(term);
@@ -147,12 +150,15 @@ export default function ReportsView({ jobs, currentUser }) {
       }
     });
 
-    return Array.from(uniqueMap.values()).sort((a, b) => parseJobDate(b) - parseJobDate(a));
+    return Array.from(uniqueMap.values()).sort((a, b) => parseJobDate(b.ClosedAt || b.Timestamp) - parseJobDate(a.ClosedAt || a.Timestamp));
   };
 
   const filteredJobs = getFilteredJobs();
   const completedCount = filteredJobs.filter(j => j.Status === 'COMPLETED' || j.status === 'COMPLETED').length;
-  const inProgressCount = filteredJobs.filter(j => j.Status === 'DISPATCHED' || j.Status === 'IN_PROGRESS' || j.status === 'IN_PROGRESS').length;
+  const inProgressCount = (jobs || []).filter(j => {
+    const s = j.Status || j.status;
+    return s === 'DISPATCHED' || s === 'IN_PROGRESS' || s === 'PENDING';
+  }).length;
   
   const unrepairableJobsList = filteredJobs.filter(j => j.Status === 'UNREPAIRABLE' || j.status === 'UNREPAIRABLE');
 
@@ -385,7 +391,7 @@ export default function ReportsView({ jobs, currentUser }) {
             </div>
             <div class="info-row">
               <span><strong>วันเวลาที่รับแจ้ง:</strong> ${formatThaiDate(job.Timestamp)}</span>
-              <span><strong>วันเวลาแล้วเสร็จ:</strong> <span style="color: #059669; font-weight: bold;">${job.ClosedAt ? formatThaiDate(job.ClosedAt) : 'ยังไม่ปิดงาน'}</span></span>
+              <span><strong>วันเวลาแล้วเสร็จ:</strong> <span style="color: #059669; font-weight: bold;">${job.ClosedAt && job.ClosedAt !== '-' ? formatThaiDate(job.ClosedAt) : 'ยังไม่ปิดงาน'}</span></span>
             </div>
           </div>
           <div class="section-block">
@@ -444,7 +450,7 @@ export default function ReportsView({ jobs, currentUser }) {
           <div className="bg-slate-50 border border-slate-200/80 p-2 rounded-2xl flex flex-wrap items-center gap-2 shadow-2xs">
             <div className="flex items-center gap-1.5 px-2 text-slate-600 text-xs font-bold">
               <CalendarDays className="w-4 h-4 text-blue-600" />
-              <span>เลือกช่วงวันที่:</span>
+              <span>เลือกช่วงวันที่ (ซ่อมเสร็จ):</span>
             </div>
 
             <div className="flex items-center gap-1.5">
@@ -454,7 +460,7 @@ export default function ReportsView({ jobs, currentUser }) {
                   value={startDate}
                   onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
                   className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
-                  title="จากวันที่"
+                  title="จากวันที่ซ่อมเสร็จ"
                 />
               </div>
 
@@ -466,7 +472,7 @@ export default function ReportsView({ jobs, currentUser }) {
                   value={endDate}
                   onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
                   className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
-                  title="ถึงวันที่"
+                  title="ถึงวันที่ซ่อมเสร็จ"
                 />
               </div>
 
@@ -493,8 +499,8 @@ export default function ReportsView({ jobs, currentUser }) {
           <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-wrap gap-1">
             {[
               { id: 'all', label: 'ทั้งหมด' },
-              { id: 'daily', label: 'วันนี้' },
-              { id: 'weekly', label: '7 วัน' },
+              { id: 'daily', label: 'ซ่อมเสร็จวันนี้' },
+              { id: 'weekly', label: '7 วันที่แล้ว' },
               { id: 'monthly', label: 'เดือนนี้' }
             ].map((tab) => (
               <button
@@ -518,7 +524,7 @@ export default function ReportsView({ jobs, currentUser }) {
           <div className="flex items-center gap-2">
             <Info className="w-4 h-4 text-blue-600 shrink-0" />
             <span>
-              กำลังแสดงข้อมูลระหว่างวันที่: <strong className="font-bold underline">{startDate ? formatShortThaiDate(startDate) : 'เริ่มต้น'}</strong> ถึง <strong className="font-bold underline">{endDate ? formatShortThaiDate(endDate) : 'ปัจจุบัน'}</strong>
+              กำลังแสดงงานที่ <strong>ซ่อมเสร็จ</strong> ระหว่างวันที่: <strong className="font-bold underline">{startDate ? formatShortThaiDate(startDate) : 'เริ่มต้น'}</strong> ถึง <strong className="font-bold underline">{endDate ? formatShortThaiDate(endDate) : 'ปัจจุบัน'}</strong>
             </span>
           </div>
           <span className="bg-blue-600 text-white px-2.5 py-0.5 rounded-full font-bold text-[11px]">
@@ -529,7 +535,7 @@ export default function ReportsView({ jobs, currentUser }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white p-6 rounded-3xl shadow-md space-y-2">
-          <p className="text-xs text-blue-100 font-medium">ใบแจ้งซ่อมทั้งหมด</p>
+          <p className="text-xs text-blue-100 font-medium">รายการในรายงาน (ตามเงื่อนไข)</p>
           <h3 className="text-3xl font-bold">{filteredJobs.length} <span className="text-sm font-normal">เคส</span></h3>
         </div>
         <div className="bg-gradient-to-br from-emerald-600 to-teal-700 text-white p-6 rounded-3xl shadow-md space-y-2">
@@ -537,7 +543,7 @@ export default function ReportsView({ jobs, currentUser }) {
           <h3 className="text-3xl font-bold">{completedCount} <span className="text-sm font-normal">จุด</span></h3>
         </div>
         <div className="bg-gradient-to-br from-amber-500 to-orange-600 text-white p-6 rounded-3xl shadow-md space-y-2">
-          <p className="text-xs text-amber-100 font-medium">กำลังดำเนินการ / ค้างซ่อม</p>
+          <p className="text-xs text-amber-100 font-medium">กำลังดำเนินการ / ค้างซ่อมทั้งหมด</p>
           <h3 className="text-3xl font-bold">{inProgressCount} <span className="text-sm font-normal">จุด</span></h3>
         </div>
       </div>
@@ -606,7 +612,7 @@ export default function ReportsView({ jobs, currentUser }) {
         <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50">
           <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
             <FileText className="w-5 h-5 text-blue-600" />
-            รายการใบแจ้งซ่อมจาก Google Sheets ({filteredJobs.length} รายการ)
+            รายการรายงานผลการซ่อม ({filteredJobs.length} รายการ)
           </h3>
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
             <div className="relative w-full sm:w-72">
@@ -631,7 +637,7 @@ export default function ReportsView({ jobs, currentUser }) {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 border-b border-slate-100">
-                <th className="p-4 font-semibold">เลขที่รับแจ้ง (JobID)</th>
+                <th className="p-4 font-semibold">เลขที่รับแจ้ง / วันเวลา</th>
                 <th className="p-4 font-semibold">ผู้แจ้ง / เบอร์โทร</th>
                 <th className="p-4 font-semibold">หัวข้อร้องเรียน</th>
                 <th className="p-4 font-semibold">บริเวณ / ชนิดท่อ</th>
@@ -645,7 +651,7 @@ export default function ReportsView({ jobs, currentUser }) {
               {currentJobs.length === 0 ? (
                 <tr>
                   <td colSpan="8" className="text-center py-12 text-slate-400">
-                    <p className="text-sm font-bold">ไม่พบข้อมูลใบแจ้งซ่อมตามคำค้นหานี้</p>
+                    <p className="text-sm font-bold">ไม่พบข้อมูลรายงานตามเงื่อนไขนี้</p>
                     <p className="text-xs text-slate-400 mt-1">ลองเปลี่ยนช่วงวันที่ หรือเลือกคำค้นหาอื่น</p>
                   </td>
                 </tr>
@@ -655,12 +661,23 @@ export default function ReportsView({ jobs, currentUser }) {
                   const lng = job.Longitude || job.longitude;
                   const hasCoords = lat && lng && !isNaN(lat) && !isNaN(lng);
 
+                  const isDone = (job.Status === 'COMPLETED' || job.status === 'COMPLETED');
+                  const isUnrep = (job.Status === 'UNREPAIRABLE' || job.status === 'UNREPAIRABLE');
+
                   return (
                     <tr key={job.JobID || job.id} className="hover:bg-slate-50/80 transition">
                       <td className="p-4">
                         <span className="font-mono font-bold text-blue-600">{getDisplayReceivedNo(job)}</span>
-                        <p className="text-[11px] text-slate-400 mt-0.5">แจ้ง: {formatThaiDate(job.Timestamp)}</p>
-                        {job.ClosedAt && <p className="text-[10px] text-emerald-600 font-bold">เสร็จ: {formatThaiDate(job.ClosedAt)}</p>}
+                        <p className="text-[11px] text-slate-500 mt-0.5">รับแจ้ง: {formatThaiDate(job.Timestamp)}</p>
+                        {isDone || isUnrep ? (
+                          <p className="text-[11px] text-emerald-600 font-bold mt-0.5">
+                            ซ่อมเสร็จ: {job.ClosedAt && job.ClosedAt !== '-' ? formatThaiDate(job.ClosedAt) : '-'}
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-amber-600 font-medium mt-0.5">
+                            สถานะ: รอดำเนินการ / กำลังซ่อม
+                          </p>
+                        )}
                       </td>
                       <td className="p-4">
                         <p className="font-bold text-slate-800">{job.ReporterName || 'ไม่ระบุชื่อ'}</p>
@@ -677,19 +694,19 @@ export default function ReportsView({ jobs, currentUser }) {
                       </td>
                       <td className="p-4 text-center">
                         <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] inline-flex items-center gap-1.5 border shadow-2xs ${
-                          (job.Status === 'COMPLETED') ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                          (job.Status === 'UNREPAIRABLE') ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                          (job.Status === 'IN_PROGRESS') ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                          isDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          isUnrep ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                          (job.Status === 'IN_PROGRESS' || job.status === 'IN_PROGRESS') ? 'bg-blue-50 text-blue-700 border-blue-200' :
                           'bg-amber-50 text-amber-700 border-amber-200'
                         }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${
-                            (job.Status === 'COMPLETED') ? 'bg-emerald-500' :
-                            (job.Status === 'UNREPAIRABLE') ? 'bg-rose-500' :
-                            (job.Status === 'IN_PROGRESS') ? 'bg-blue-500' : 'bg-amber-500'
+                            isDone ? 'bg-emerald-500' :
+                            isUnrep ? 'bg-rose-500' :
+                            (job.Status === 'IN_PROGRESS' || job.status === 'IN_PROGRESS') ? 'bg-blue-500' : 'bg-amber-500'
                           }`} />
-                          {job.Status === 'COMPLETED' ? 'ปิดงานแล้ว' : 
-                           job.Status === 'UNREPAIRABLE' ? 'ซ่อมไม่ได้' :
-                           job.Status === 'IN_PROGRESS' ? 'กำลังซ่อม' : 'รอดำเนินการ'}
+                          {isDone ? 'ปิดงานแล้ว' : 
+                           isUnrep ? 'ซ่อมไม่ได้' :
+                           (job.Status === 'IN_PROGRESS' || job.status === 'IN_PROGRESS') ? 'กำลังซ่อม' : 'รอดำเนินการ'}
                         </span>
                       </td>
                       <td className="p-4 text-center">
@@ -775,7 +792,7 @@ export default function ReportsView({ jobs, currentUser }) {
                 <div key={job.JobID} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-2xs space-y-2">
                   <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">{job.JobID}</span>
                   <p className="text-xs text-slate-600"><strong>สถานที่:</strong> {job.Location}</p>
-                  <p className="text-xs text-slate-500"><strong>แจ้งเมื่อ:</strong> {formatThaiDate(job.Timestamp)}</p>
+                  <p className="text-xs text-slate-500"><strong>วันที่ซ่อมเสร็จ/บันทึก:</strong> {formatThaiDate(job.ClosedAt)}</p>
                   <p className="text-xs text-rose-900"><strong>สาเหตุ:</strong> {job.Description || '-'}</p>
                 </div>
               ))}
