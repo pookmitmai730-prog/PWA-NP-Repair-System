@@ -127,17 +127,10 @@ export default function RolePortal({
     );
   };
 
-  // 📲 ฟังก์ชันสำหรับส่งแจ้งเตือน Telegram (เปิดใช้งานตามสวิตช์ ENABLE_TELEGRAM_NOTIFY)
+  // 📲 ฟังก์ชันสำหรับส่งแจ้งเตือน Telegram
   const sendTelegramNotification = async (jobPayload) => {
-    if (!ENABLE_TELEGRAM_NOTIFY) {
-      console.log("ℹ️ Telegram notification is currently disabled.");
-      return;
-    }
-
-    if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") {
-      console.warn("⚠️ Telegram Bot Token is not configured.");
-      return;
-    }
+    if (!ENABLE_TELEGRAM_NOTIFY) return;
+    if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return;
 
     const message = `🚨 *แจ้งเตือนใบสั่งซ่อมใหม่ (ประชาชนทั่วไป)* 🚨\n\n` +
       `📌 *เลขที่รับแจ้ง:* ${jobPayload.receivedNo}\n` +
@@ -162,7 +155,7 @@ export default function RolePortal({
     }
   };
 
-  // 🚀 ส่งข้อมูลแจ้งซ่อมจากประชาชนทั่วไป บันทึกลง Google Sheets สอดคล้องกับ Apps Script ล่าสุด
+  // 🚀 ส่งข้อมูลแจ้งซ่อมจากประชาชนทั่วไป บันทึกลง Google Sheets
   const handlePublicSubmit = async (e) => {
     e.preventDefault();
     if (!publicData.location.trim()) {
@@ -171,24 +164,30 @@ export default function RolePortal({
     }
 
     setIsSubmitting(true);
+    
+    // 🕒 1. ปรับรูปแบบวันที่และเวลาให้เป็นรูปแบบประเทศไทย (พ.ศ.) เช่น 3/11/2569 20:30
     const now = new Date();
-    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-    const currentDateTime = thaiTime.toISOString().replace('T', ' ').substring(0, 16);
+    const thaiYear = now.getFullYear() + 543;
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const currentDateTimeThai = `${day}/${month}/${thaiYear} ${hours}:${minutes}`;
 
     const finalComplaintTopic = publicData.complaintTopicType === 'อื่นๆ' 
       ? (publicData.customComplaintTopic.trim() || 'อื่นๆ') 
       : publicData.complaintTopicType;
 
-    const trimmedPhone = publicData.phone.trim();
-    // เติม single quote (') นำหน้าเบอร์โทร เพื่อป้องกันเลข 0 หายใน Google Sheets
-    const formattedPhone = trimmedPhone ? (trimmedPhone.startsWith("'") ? trimmedPhone : `'${trimmedPhone}`) : '-';
+    // 📞 2. แก้ไขเบอร์โทรศัพท์: เติมเครื่องหมาย ' นำหน้าเพื่อให้ Excel/Google Sheets มองเป็นข้อความและแสดงเลข 0 ข้างหน้าครบถ้วน
+    const rawPhone = publicData.phone.trim();
+    const formattedPhone = rawPhone ? (rawPhone.startsWith("'") ? rawPhone : `'${rawPhone}`) : '-';
 
     const newPublicJob = {
       id: 'JOB-' + Date.now().toString().slice(-6),
       JobID: publicData.receivedNo,
       receivedNo: publicData.receivedNo,
-      receivedAt: currentDateTime,
-      Timestamp: currentDateTime,
+      receivedAt: currentDateTimeThai,
+      Timestamp: currentDateTimeThai,
       channel: 'แจ้งผ่านระบบเว็บไซต์ประชาชน',
       complaintType: finalComplaintTopic,
       complainantInfo: formattedPhone,
@@ -209,10 +208,12 @@ export default function RolePortal({
       Notes: publicData.urgency,
       technician: '-',
       Technician: '-',
+      // 📍 3. ส่งพิกัด Latitude และ Longitude
       latitude: coords.lat || '',
       Latitude: coords.lat || '',
       longitude: coords.lng || '',
       Longitude: coords.lng || '',
+      // 🖼️ 4. ส่งลิงก์รูปถ่าย (เก็บใน beforeImg / BeforeImg เพื่อให้ระบบบันทึกลง Drive และแสดงในตารางคอลัมน์ L)
       beforeImg: publicFormImages.length > 0 ? publicFormImages[0] : '',
       BeforeImg: publicFormImages.length > 0 ? publicFormImages[0] : ''
     };
@@ -230,7 +231,6 @@ export default function RolePortal({
         body: JSON.stringify(jobDataPayload)
       });
 
-      // ส่งแจ้งเตือน Telegram ตามที่เปิดใช้งาน
       await sendTelegramNotification(newPublicJob);
 
       if (onJobCreated) onJobCreated(newPublicJob);
