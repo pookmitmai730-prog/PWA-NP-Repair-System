@@ -4,7 +4,7 @@ import { X, Sparkles, AlertCircle, FileText, Loader2, AlertTriangle, User, Phone
 // 🌐 URL ของ Google Apps Script Web App หลักสำหรับบันทึกข้อมูล
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
 
-// 🔔 เปิดการใช้งานการแจ้งเตือน Telegram (ตั้งเป็น true เพื่อใช้งาน)
+// 🔔 เปิดการใช้งานการแจ้งเตือน Telegram
 const ENABLE_TELEGRAM_NOTIFY = true; 
 const TELEGRAM_BOT_TOKEN = "8601147798:AAFNBUcoRYH4tvZfyvWgxaXP9xrWiR4D6kk";
 const TELEGRAM_CHAT_ID = "-1003925252865";
@@ -39,6 +39,14 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
     return `${day} ${month} ${year} เวลา ${hours}.${minutes} น.`;
   };
 
+  // 📱 ฟังก์ชันจัดฟอร์แมตเบอร์โทรศัพท์ให้ใส่ Single Quote (') นำหน้า ป้องกัน Google Sheets ตัดเลข 0
+  const formatPhoneForSheet = (phoneStr) => {
+    if (!phoneStr || phoneStr === '-') return '-';
+    const cleanPhone = String(phoneStr).trim().replace(/^'/, '');
+    if (!cleanPhone || cleanPhone === '-') return '-';
+    return `'${cleanPhone}`;
+  };
+
   const [loading, setLoading] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -61,14 +69,15 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // 📲 ฟังก์ชันสำหรับส่งแจ้งเตือน Telegram (เปิดใช้งานตามสวิตช์ ENABLE_TELEGRAM_NOTIFY)
   const sendTelegramNotification = async (jobPayload) => {
     if (!ENABLE_TELEGRAM_NOTIFY) return;
     if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return;
 
+    const displayPhone = jobPayload.phone ? String(jobPayload.phone).replace(/^'/, '') : '-';
+
     const message = `🚨 *รับแจ้งซ่อมใหม่ (ระบบ กปภ.)* 🚨\n\n` +
       `📌 *เลขที่รับแจ้ง:* \`${jobPayload.receivedNo}\`\n` +
-      `👤 *ผู้แจ้ง:* ${jobPayload.reporterName} (${jobPayload.phone})\n` +
+      `👤 *ผู้แจ้ง:* ${jobPayload.reporterName} (${displayPhone})\n` +
       `📍 *สถานที่:* ${jobPayload.location}\n` +
       `🔧 *ปัญหา:* ${jobPayload.complaintTopic}\n` +
       `⚡ *ความเร่งด่วน:* ${jobPayload.urgency}\n` +
@@ -155,12 +164,14 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
             }
           }
 
+          const rawOcrPhone = data.phone || data.complainantInfo || prev.phone;
+
           setFormData(prev => ({
             ...prev,
             receivedNo: data.receivedNo || prev.receivedNo,
             receivedAt: data.receivedAt ? data.receivedAt.replace(' ', 'T') : prev.receivedAt,
             reporterName: data.reporterName || prev.reporterName,
-            phone: data.phone || data.complainantInfo || prev.phone,
+            phone: rawOcrPhone ? String(rawOcrPhone).replace(/^'/, '') : prev.phone,
             location: data.location || prev.location,
             complaintTopic: data.complaintTopic || prev.complaintTopic,
             urgency: detectedUrgency,
@@ -179,7 +190,6 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // 🛡️ บังคับตรวจสอบการกรอกข้อมูลให้ครบทุกช่องก่อนบันทึก
     if (!formData.receivedNo.trim()) {
       alert("กรุณากรอกเลขที่รับแจ้ง");
       return;
@@ -212,9 +222,11 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
       ? formData.customComplaintTopic.trim() 
       : formData.complaintTopic;
 
-    // แปลงวันที่เป็นรูปแบบไทย (วัน เดือน ปีพ.ศ. เวลา) สำหรับบันทึกและแสดงผล
     const thaiDateTimeFormatted = formatThaiDateTimeString(formData.receivedAt);
     const manualReceivedNo = formData.receivedNo.trim();
+
+    // 🔴 ฟอร์แมตเบอร์โทรศัพท์ด้วย formatPhoneForSheet
+    const formattedPhone = formatPhoneForSheet(formData.phone);
 
     const jobPayload = {
       action: "create_job",
@@ -227,8 +239,8 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
       receivedAtThai: thaiDateTimeFormatted,
       reporterName: formData.reporterName.trim(),
       ReporterName: formData.reporterName.trim(),
-      phone: formData.phone.trim(),
-      Phone: formData.phone.trim(),
+      phone: formattedPhone,
+      Phone: formattedPhone,
       location: formData.location.trim(),
       Location: formData.location.trim(),
       complaintTopic: finalTopic,
@@ -255,7 +267,6 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
         })
       });
 
-      // 📲 ส่งแจ้งเตือนเข้า Telegram หลังจากบันทึกข้อมูลสำเร็จ
       await sendTelegramNotification(jobPayload);
 
       if (onJobCreated) {
@@ -287,7 +298,6 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 overflow-y-auto font-sans animate-fadeIn">
       <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden my-8 border border-slate-100 transform transition-all">
         
-        {/* Header Modal */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex justify-between items-center text-white">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-white/10 rounded-xl backdrop-blur-sm">
@@ -309,7 +319,6 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
 
         <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
           
-          {/* ส่วนอัปโหลดรูป AI OCR */}
           <div className="p-4 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-100 rounded-2xl space-y-2.5 shadow-xs">
             <label className="block text-xs font-bold text-blue-900 flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-blue-600" /> อัปโหลดรูปภาพใบแจ้งซ่อม เพื่อให้ AI กรอกข้อมูลอัตโนมัติ
