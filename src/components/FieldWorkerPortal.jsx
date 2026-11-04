@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, Search, Loader2, Plus, Image as ImageIcon, Save, RotateCcw } from 'lucide-react';
+import { Truck, MapPin, Camera, CheckCircle2, Wrench, Send, Phone, User, LogOut, Lock, Navigation, AlertTriangle, PlusCircle, X, Edit3, Search, Loader2, Plus, Image as ImageIcon, Save, RotateCcw, ExternalLink } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 
 // 🌐 URL ของ Google Apps Script Web App
@@ -50,7 +50,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const [notes, setNotes] = useState('');
 
   const [isNoEquipmentUsed, setIsNoEquipmentUsed] = useState(false);
-  const [isSurfaceRestored, setIsSurfaceRestored] = useState(false); // 🛠️ เพิ่มสถานะสำหรับซ่อมคืนผิวหลังซ่อมท่อ
+  const [isSurfaceRestored, setIsSurfaceRestored] = useState(false);
 
   const [isUnrepairable, setIsUnrepairable] = useState(false);
   const [unrepairableReasonType, setUnrepairableReasonType] = useState('ติดสิ่งกีดขวาง/โครงสร้างอาคาร/สิ่งปลูกสร้าง');
@@ -246,7 +246,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const handleToggleNoEquipment = (checked) => {
     setIsNoEquipmentUsed(checked);
     if (checked) {
-      setIsSurfaceRestored(false); // ปิดตัวเลือกอื่น
+      setIsSurfaceRestored(false);
       setSelectedEquipmentList([]);
       setSearchTerm('');
       setNotes('น้ำไหลปกติแล้ว ไม่ได้ใช้อุปกรณ์');
@@ -258,7 +258,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   const handleToggleSurfaceRestored = (checked) => {
     setIsSurfaceRestored(checked);
     if (checked) {
-      setIsNoEquipmentUsed(false); // ปิดตัวเลือกอื่น
+      setIsNoEquipmentUsed(false);
       setSelectedEquipmentList([]);
       setSearchTerm('');
       setNotes('ซ่อมคืนผิวหลังซ่อมท่อเรียบร้อยแล้ว');
@@ -918,6 +918,13 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   const topicText = job.complaintTopic || job.IssueType || job.issueType || 'ท่อแตกรั่ว';
                   const uniqueJobKey = job.id || job.JobID || job.receivedNo || `worker-job-${index}`;
                   const currentStatus = normalizeStatus(job.status || job.Status);
+                  
+                  // พิกัดจุดรั่ว (ถ้ามี)
+                  const jobLat = job.latitude || job.Latitude;
+                  const jobLng = job.longitude || job.Longitude;
+
+                  // รูปภาพที่ประชาชนแนบมา (ถ้ามี)
+                  const citizenImg = job.beforeImg || job.BeforeImg;
 
                   return (
                     <div key={uniqueJobKey} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3 relative overflow-hidden">
@@ -971,6 +978,42 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                           <MapPin className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                           <span>{locationText}</span>
                         </p>
+
+                        {/* 📸 ปุ่มดูรูปที่ประชาชนแนบมา และ 🗺️ ปุ่มนำทางพิกัดแผนที่ (แสดงเฉพาะเมื่อมีข้อมูลเท่านั้น) */}
+                        {(citizenImg || (jobLat && jobLng)) && (
+                          <div className="pt-1.5 flex flex-wrap gap-1.5">
+                            {citizenImg && (
+                              <a
+                                href={citizenImg}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs"
+                              >
+                                <ImageIcon className="w-3.5 h-3.5 text-blue-600" /> ดูรูปถ่ายแจ้งซ่อม
+                              </a>
+                            )}
+                            {jobLat && jobLng && (
+                              <>
+                                <a
+                                  href={`https://maps.google.com/?q=${jobLat},${jobLng}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs border border-blue-200"
+                                >
+                                  <MapPin className="w-3.5 h-3.5 text-rose-500" /> ดูแผนที่จุดท่อรั่ว
+                                </a>
+                                <a
+                                  href={`https://www.google.com/maps/dir/?api=1&destination=${jobLat},${jobLng}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs border border-emerald-200"
+                                >
+                                  <Navigation className="w-3.5 h-3.5 text-emerald-600" /> นำทางไปยังจุดเกิดเหตุ <ExternalLink className="w-2.5 h-2.5" />
+                                </a>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="pt-2 border-t border-slate-100 flex gap-2 pl-2">
