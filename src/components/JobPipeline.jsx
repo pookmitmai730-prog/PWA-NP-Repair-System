@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash, Trash2 } from 'lucide-react';
+import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash, Trash2, ExternalLink, Image as ImageIcon } from 'lucide-react';
 
 // 🌐 URL ของ Google Apps Script Web App ล่าสุด
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
@@ -13,6 +13,10 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const [selectedJobForDispatch, setSelectedJobForDispatch] = useState(null);
   const [selectedTeam, setSelectedTeam] = useState('');
   const [urgencyLevel, setUrgencyLevel] = useState('ปกติ');
+  
+  // 📍 State สำหรับระบุ/แก้ไขพิกัดจุดรั่วตอนจ่ายงาน
+  const [dispatchLat, setDispatchLat] = useState('');
+  const [dispatchLng, setDispatchLng] = useState('');
 
   const [pipelineSearch, setPipelineSearch] = useState('');
 
@@ -89,6 +93,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         `📌 *เลขที่รับแจ้ง:* \`${jobPayload.receivedNo}\`\n` +
         `👤 *ผู้แจ้ง:* ${jobPayload.reporterName} (${displayPhone})\n` +
         `📍 *สถานที่:* ${jobPayload.location}\n` +
+        (jobPayload.latitude && jobPayload.longitude ? `🗺 *พิกัดจุดรั่ว:* [เปิดแผนที่ Google Maps](https://maps.google.com/?q=${jobPayload.latitude},${jobPayload.longitude})\n` : '') +
         `🔧 *ปัญหา:* ${jobPayload.complaintTopic}\n` +
         `👷‍♂️ *ทีมช่างผู้รับผิดชอบ:* *${jobPayload.technician}*\n` +
         `⚡ *ความเร่งด่วน:* ${jobPayload.urgency}\n` +
@@ -104,20 +109,28 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     }
   };
 
-  // 🚀 ยืนยันจ่ายงานช่าง พร้อมบันทึกวัน-เวลาไทยและส่งแจ้งเตือน Telegram
+  // 🚀 ยืนยันจ่ายงานช่าง พร้อมบันทึกพิกัดและส่งแจ้งเตือน Telegram
   const handleConfirmDispatch = async () => {
     if (!selectedTeam) {
       alert("กรุณาเลือกทีมช่างก่อนทำการจ่ายงาน");
       return;
     }
     const workerObj = workerAccounts.find(w => w.teamName === selectedTeam);
-    const techDetails = workerObj ? `${workerObj.teamName} (${workerObj.phone ? String(workerObj.phone).replace(/^'/, '') : '-'})` : selectedTeam;
+    const workerPhoneFormatted = workerObj && workerObj.phone && workerObj.phone !== '-' 
+      ? (String(workerObj.phone).startsWith("'") ? workerObj.phone : `'${String(workerObj.phone).trim()}`) 
+      : '-';
+    
+    const techDetails = workerObj ? `${workerObj.teamName} (${String(workerPhoneFormatted).replace(/^'/, '')})` : selectedTeam;
     
     const currentDateTime = getThaiTimestamp();
     const originalReceivedNo = getDisplayReceivedNo(selectedJobForDispatch);
 
     const rawPhone = selectedJobForDispatch.phone || selectedJobForDispatch.Phone || '-';
     const formattedPhone = rawPhone !== '-' ? (String(rawPhone).startsWith("'") ? rawPhone : `'${String(rawPhone).trim()}`) : '-';
+
+    // ใช้พิกัดที่ระบุใหม่ หรือพิกัดเดิมที่มีอยู่
+    const finalLat = dispatchLat || selectedJobForDispatch.latitude || selectedJobForDispatch.Latitude || '';
+    const finalLng = dispatchLng || selectedJobForDispatch.longitude || selectedJobForDispatch.Longitude || '';
 
     const dispatchPayload = {
       action: "dispatch_job",
@@ -135,12 +148,18 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       technician: techDetails,
       Technician: techDetails,
       techName: workerObj?.teamName || selectedTeam,
-      techPhone: workerObj?.phone || '-',
+      techPhone: workerPhoneFormatted,
       urgency: urgencyLevel,
       Notes: urgencyLevel,
       status: 'DISPATCHED',
       Status: 'DISPATCHED',
-      dispatchedAt: currentDateTime
+      dispatchedAt: currentDateTime,
+      latitude: finalLat,
+      Latitude: finalLat,
+      longitude: finalLng,
+      Longitude: finalLng,
+      beforeImg: selectedJobForDispatch.beforeImg || selectedJobForDispatch.BeforeImg || '',
+      BeforeImg: selectedJobForDispatch.beforeImg || selectedJobForDispatch.BeforeImg || ''
     };
 
     try {
@@ -162,24 +181,32 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       receivedNo: originalReceivedNo,
       technician: techDetails,
       techName: workerObj?.teamName || selectedTeam,
-      techPhone: workerObj?.phone || '-',
+      techPhone: String(workerPhoneFormatted).replace(/^'/, ''),
       dispatchedAt: currentDateTime,
       urgency: urgencyLevel,
-      Notes: urgencyLevel
+      Notes: urgencyLevel,
+      latitude: finalLat,
+      longitude: finalLng
     });
 
     setSelectedJobForDispatch(null);
     setSelectedTeam('');
     setUrgencyLevel('ปกติ');
+    setDispatchLat('');
+    setDispatchLng('');
     alert("จ่ายงานช่างและบันทึกลง Google Sheets สำเร็จ!");
   };
 
-  // 🚀 เปลี่ยนทีมช่าง พร้อมบันทึกวัน-เวลาไทยและแจ้งเตือนผ่าน Telegram
+  // 🚀 เปลี่ยนทีมช่าง
   const handleConfirmChangeTeam = async () => {
     if (!newSelectedTeam || !editingTeamJob) return;
 
     const workerObj = workerAccounts.find(w => w.teamName === newSelectedTeam);
-    const techDetails = workerObj ? `${workerObj.teamName} (${workerObj.phone ? String(workerObj.phone).replace(/^'/, '') : '-'})` : newSelectedTeam;
+    const workerPhoneFormatted = workerObj && workerObj.phone && workerObj.phone !== '-' 
+      ? (String(workerObj.phone).startsWith("'") ? workerObj.phone : `'${String(workerObj.phone).trim()}`) 
+      : '-';
+
+    const techDetails = workerObj ? `${workerObj.teamName} (${String(workerPhoneFormatted).replace(/^'/, '')})` : newSelectedTeam;
     const originalReceivedNo = getDisplayReceivedNo(editingTeamJob);
     const currentDateTime = getThaiTimestamp();
 
@@ -200,7 +227,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       technician: techDetails,
       Technician: techDetails,
       techName: workerObj?.teamName || newSelectedTeam,
-      techPhone: workerObj?.phone || '-',
+      techPhone: workerPhoneFormatted,
       status: 'DISPATCHED',
       Status: 'DISPATCHED',
       dispatchedAt: currentDateTime
@@ -221,7 +248,10 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       console.error("Error changing team in Google Sheets:", err);
     }
 
-    onStatusChange(editingTeamJob.id || editingTeamJob.JobID, editingTeamJob.status, changeTeamPayload);
+    onStatusChange(editingTeamJob.id || editingTeamJob.JobID, editingTeamJob.status, {
+      ...changeTeamPayload,
+      techPhone: String(workerPhoneFormatted).replace(/^'/, '')
+    });
 
     setEditingTeamJob(null);
     setNewSelectedTeam('');
@@ -390,15 +420,23 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     const currentUrgency = job.Notes || job.notes || job.urgency || job.Urgency || job.urgencyLevel || 'ปกติ';
                     const displayPhone = job.phone || job.Phone ? String(job.phone || job.Phone).replace(/^'/, '') : '-';
 
-                    // จัดรูปแบบวันที่และเวลาให้เป็นแบบประเทศไทย
                     const rawReceivedAt = job.receivedAt || job.Timestamp || job.createdAt;
                     const formattedReceivedAt = rawReceivedAt ? formatThaiDateTimeString(rawReceivedAt) : '-';
 
                     const rawDispatchedAt = job.dispatchedAt;
                     const formattedDispatchedAt = rawDispatchedAt ? formatThaiDateTimeString(rawDispatchedAt) : '';
 
-                    const rawCompletedAt = job.completedAt;
+                    const isCompletedJob = normalizeStatus(job.status || job.Status) === 'COMPLETED';
+                    const rawCompletedAt = isCompletedJob ? (job.completedAt || job.CompletedAt) : '';
                     const formattedCompletedAt = rawCompletedAt ? formatThaiDateTimeString(rawCompletedAt) : '';
+
+                    const rawTechPhone = job.techPhone || job.TechPhone;
+                    const displayTechPhone = rawTechPhone && rawTechPhone !== '-' ? String(rawTechPhone).replace(/^'/, '') : '';
+
+                    // ตรวจสอบรูปภาพและพิกัดที่ประชาชนแนบมา
+                    const jobImg = job.beforeImg || job.BeforeImg;
+                    const jobLat = job.latitude || job.Latitude;
+                    const jobLng = job.longitude || job.Longitude;
 
                     return (
                       <div key={uniqueJobKey} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition space-y-2.5 relative">
@@ -453,6 +491,32 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                           </p>
                         </div>
 
+                        {/* 📸 ปุ่มกดดูรูปและพิกัดที่ประชาชนแนบมา */}
+                        {(jobImg || (jobLat && jobLng)) && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {jobImg && (
+                              <a
+                                href={jobImg}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1 transition shadow-xs"
+                              >
+                                <ImageIcon className="w-3 h-3 text-blue-600" /> ดูรูปถ่ายแจ้งซ่อม
+                              </a>
+                            )}
+                            {jobLat && jobLng && (
+                              <a
+                                href={`https://maps.google.com/?q=${jobLat},${jobLng}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-2.5 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1 transition shadow-xs border border-blue-200"
+                              >
+                                <MapPin className="w-3 h-3 text-rose-500" /> เปิดแผนที่จุดรั่ว <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                            )}
+                          </div>
+                        )}
+
                         {normalizeStatus(job.status || job.Status) !== 'PENDING' && (
                           <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] space-y-1 relative">
                             <div className="flex justify-between items-center">
@@ -474,9 +538,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                               )}
                             </div>
                             
-                            {job.techPhone && job.techPhone !== '-' && (
+                            {displayTechPhone && (
                               <p className="text-slate-600 flex items-center gap-1 font-mono">
-                                <Phone className="w-3 h-3 text-emerald-600" /> โทร: {job.techPhone}
+                                <Phone className="w-3 h-3 text-emerald-600" /> โทร: {displayTechPhone}
                               </p>
                             )}
                           </div>
@@ -491,6 +555,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                                   setSelectedJobForDispatch(job);
                                   setSelectedTeam(workerAccounts[0]?.teamName || '');
                                   setUrgencyLevel('ปกติ');
+                                  setDispatchLat(job.latitude || job.Latitude || '');
+                                  setDispatchLng(job.longitude || job.Longitude || '');
                                 }}
                                 className="bg-cyan-600 hover:bg-cyan-700 text-white px-2.5 py-1 rounded-lg font-bold transition shadow-sm cursor-pointer"
                               >
@@ -519,7 +585,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         })}
       </div>
 
-      {/* Modal จ่ายงานซ่อม */}
+      {/* Modal จ่ายงานซ่อม (เพิ่มส่วนเลือก/ระบุแผนที่พิกัดจุดท่อรั่ว) */}
       {selectedJobForDispatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
@@ -570,6 +636,45 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     ))
                   )}
                 </select>
+              </div>
+
+              {/* 🗺️ เพิ่มส่วนระบุหรือตรวจสอบพิกัดจุดท่อรั่วตอนจ่ายงาน */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
+                <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-rose-500" /> พิกัดจุดท่อแตกรั่ว (ส่งให้ช่างภาคสนาม)
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-medium">Latitude (ละติจูด)</span>
+                    <input
+                      type="text"
+                      value={dispatchLat}
+                      onChange={(e) => setDispatchLat(e.target.value)}
+                      placeholder="เช่น 17.380340"
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-mono font-bold text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-medium">Longitude (ลองจิจูด)</span>
+                    <input
+                      type="text"
+                      value={dispatchLng}
+                      onChange={(e) => setDispatchLng(e.target.value)}
+                      placeholder="เช่น 104.786512"
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-mono font-bold text-slate-800"
+                    />
+                  </div>
+                </div>
+                {dispatchLat && dispatchLng && (
+                  <a
+                    href={`https://maps.google.com/?q=${dispatchLat},${dispatchLng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-blue-600 font-bold flex items-center gap-1 pt-1 hover:underline"
+                  >
+                    <ExternalLink className="w-3 h-3" /> ตรวจสอบตำแหน่งพิกัดนี้บน Google Maps
+                  </a>
+                )}
               </div>
             </div>
 
