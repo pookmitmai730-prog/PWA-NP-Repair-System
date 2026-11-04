@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash, Trash2, ExternalLink, Image as ImageIcon, Globe, Layers } from 'lucide-react';
 
 // 🌐 URL ของ Google Apps Script Web App ล่าสุด
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
 
 // 🔔 [สวิตช์ควบคุม Telegram] เปิดใช้งานการแจ้งเตือนอัตโนมัติ
 const ENABLE_TELEGRAM_NOTIFY = true; 
@@ -34,7 +34,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const [editingTeamJob, setEditingTeamJob] = useState(null);
   const [newSelectedTeam, setNewSelectedTeam] = useState('');
 
-  // 🔴 State สำหรับ Modal แก้ไขข้อมูลของแอดมิน
+  // 🔴 State สำหรับ Modal แก้ไขข้อมูลของแอดมิน (รองรับทั้ง 4 สถานะ)
   const [editingAdminJob, setEditingAdminJob] = useState(null);
   const [adminEditForm, setAdminEditForm] = useState({
     receivedNo: '',
@@ -52,7 +52,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     { id: 'COMPLETED', title: 'ซ่อมเสร็จสิ้น (ปิดงาน)', color: 'bg-emerald-600', bgLight: 'bg-emerald-50/50', border: 'border-emerald-200' },
   ];
 
-  // 🖼️ ฟังก์ชันแปลง URL รูปภาพ Google Drive เพื่อแสดง Thumbnail (คงไว้จากโค้ดเดิมที่ทำงานได้)
+  // 🖼️ ฟังก์ชันแปลง URL รูปภาพ Google Drive เพื่อแสดง Thumbnail
   const getDisplayImageUrl = (url) => {
     if (!url || typeof url !== 'string' || !url.trim()) return null;
     const cleanUrl = url.trim();
@@ -65,7 +65,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     return cleanUrl;
   };
 
-  // 📱 ฟังก์ชันสำหรับฟอร์แมตเบอร์โทรศัพท์ให้มี Single Quote (') นำหน้าเสมอเพื่อป้องกัน Google Sheets ตัดเลข 0
+  // 📱 ฟังก์ชันสำหรับฟอร์แมตเบอร์โทรศัพท์
   const formatPhoneForSheet = (phoneStr) => {
     if (!phoneStr || phoneStr === '-') return '-';
     const cleanPhone = String(phoneStr).trim().replace(/^'/, '');
@@ -102,11 +102,12 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
   const normalizeStatus = (status) => {
     if (!status) return 'PENDING';
-    if (status === 'รอดำเนินการ' || status === 'PENDING') return 'PENDING';
-    if (status === 'มอบหมายช่างแล้ว' || status === 'DISPATCHED') return 'DISPATCHED';
-    if (status === 'กำลังดำเนินการซ่อม' || status === 'IN_PROGRESS') return 'IN_PROGRESS';
-    if (status === 'ซ่อมเสร็จสิ้น (ปิดงาน)' || status === 'COMPLETED') return 'COMPLETED';
-    return status;
+    const s = String(status).trim().toUpperCase();
+    if (s === 'รอดำเนินการ' || s === 'PENDING') return 'PENDING';
+    if (s === 'มอบหมายช่างแล้ว' || s === 'DISPATCHED') return 'DISPATCHED';
+    if (s === 'กำลังดำเนินการซ่อม' || s === 'IN_PROGRESS') return 'IN_PROGRESS';
+    if (s === 'ซ่อมเสร็จสิ้น (ปิดงาน)' || s === 'COMPLETED') return 'COMPLETED';
+    return s;
   };
 
   const getDisplayReceivedNo = (job) => {
@@ -160,7 +161,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         const marker = window.L.marker([initialLat, initialLng], { draggable: true }).addTo(map);
         markerRef.current = marker;
 
-        // เมื่อคลิกบนแผนที่ -> ย้ายหมุด + อัปเดตพิกัดเข้าเท็กซ์ทันที + ปิด Modal อัตโนมัติ
         map.on('click', (e) => {
           const { lat, lng } = e.latlng;
           const formattedLat = lat.toFixed(6);
@@ -175,7 +175,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
           setIsMapModalOpen(false);
         });
 
-        // เมื่อลากหมุด
         marker.on('dragend', () => {
           const position = marker.getLatLng();
           const formattedLat = position.lat.toFixed(6);
@@ -203,7 +202,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     }
   }, [isMapModalOpen]);
 
-  // 🗺️ ฟังก์ชันเปลี่ยน Layer แผนที่ (ถนน vs ภาพถ่ายดาวเทียม)
   const handleChangeMapType = (type) => {
     setMapTileType(type);
     if (mapInstanceRef.current && tileLayerRef.current && window.L) {
@@ -222,7 +220,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     }
   };
 
-  // 📲 ฟังก์ชันส่งแจ้งเตือนเข้า Telegram สอดคล้องกับ Apps Script
   const sendTelegramNotification = async (jobPayload) => {
     if (!ENABLE_TELEGRAM_NOTIFY) return; 
     if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return;
@@ -250,7 +247,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     }
   };
 
-  // 🚀 ยืนยันจ่ายงานช่าง พร้อมบันทึกพิกัดและส่งแจ้งเตือน Telegram
   const handleConfirmDispatch = async () => {
     if (!selectedTeam) {
       alert("กรุณาเลือกทีมช่างก่อนทำการจ่ายงาน");
@@ -337,7 +333,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     alert("จ่ายงานช่างและบันทึกลง Google Sheets สำเร็จ!");
   };
 
-  // 🚀 เปลี่ยนทีมช่าง
   const handleConfirmChangeTeam = async () => {
     if (!newSelectedTeam || !editingTeamJob) return;
 
@@ -418,8 +413,11 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     if (!editingAdminJob) return;
 
     const formattedPhone = formatPhoneForSheet(adminEditForm.phone);
-
     const targetId = editingAdminJob.id || editingAdminJob.JobID || adminEditForm.receivedNo;
+    
+    // คงสถานะเดิมของใบงานเอาไว้ ไม่ว่าจะอยู่สถานะใด (PENDING, DISPATCHED, IN_PROGRESS, COMPLETED)
+    const currentJobStatus = editingAdminJob.status || editingAdminJob.Status || 'PENDING';
+
     const updatedData = {
       action: "create_job",
       id: targetId,
@@ -440,8 +438,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       Description: adminEditForm.complaintTopic,
       urgency: adminEditForm.urgency,
       Notes: adminEditForm.urgency, 
-      status: editingAdminJob.status || editingAdminJob.Status || 'PENDING',
-      Status: editingAdminJob.status || editingAdminJob.Status || 'PENDING',
+      status: currentJobStatus,
+      Status: currentJobStatus,
       technician: editingAdminJob.technician || editingAdminJob.Technician || '-'
     };
 
@@ -458,7 +456,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       console.error("Error updating job in Google Sheets:", err);
     }
 
-    onStatusChange(targetId, updatedData.status, updatedData);
+    onStatusChange(targetId, currentJobStatus, updatedData);
     setEditingAdminJob(null);
     alert("อัปเดตข้อมูลเรียบร้อยแล้ว");
   };
@@ -578,7 +576,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     const rawTechPhone = job.techPhone || job.TechPhone;
                     const displayTechPhone = rawTechPhone && rawTechPhone !== '-' ? String(rawTechPhone).replace(/^'/, '') : '';
 
-                    // 📸 ตรวจสอบรูปภาพและพิกัดที่ประชาชนแนบมา (สอดคล้องกับ jobPipeline_3.txt)
                     const rawImg = job.beforeImg || job.BeforeImg;
                     const displayImgUrl = getDisplayImageUrl(rawImg);
                     const jobLat = job.latitude || job.Latitude;
@@ -587,6 +584,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     return (
                       <div key={uniqueJobKey} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition space-y-2.5 relative">
                         
+                        {/* ปุ่มเปิด Modal แก้ไขข้อมูล (แสดงผลทุกสถานะทั้ง 4 คอลัมน์) */}
                         <button
                           onClick={() => handleOpenAdminEdit(job)}
                           className="absolute top-3 right-3 p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
@@ -637,7 +635,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                           </p>
                         </div>
 
-                        {/* 📸 ส่วนแสดงปุ่มรูปภาพและปุ่มเปิดแผนที่จากข้อมูลที่ประชาชนส่งมา */}
                         {(rawImg || (jobLat && jobLng)) && (
                           <div className="flex flex-wrap gap-1.5 pt-1">
                             {rawImg && (
@@ -719,6 +716,11 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                                 รอช่างปิดงาน
                               </span>
                             )}
+                            {col.id === 'COMPLETED' && (
+                              <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg font-bold flex items-center gap-1">
+                                ✓ ปิดงานแล้ว
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -731,7 +733,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         })}
       </div>
 
-      {/* Modal จ่ายงานซ่อม (พร้อมปุ่มเปิดแผนที่คลิกเลือกพิกัด) */}
+      {/* Modal จ่ายงานซ่อม */}
       {selectedJobForDispatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
@@ -784,7 +786,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                 </select>
               </div>
 
-              {/* 🗺️ ส่วนระบุพิกัดพร้อมปุ่มเปิดแผนที่ Interactive */}
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
                 <div className="flex justify-between items-center">
                   <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
@@ -854,7 +855,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         </div>
       )}
 
-      {/* 🗺️ Modal แผนที่ขนาดใหญ่ (90vh / max-w-5xl) + สลับ Layer ถนน/ภาพถ่ายดาวเทียม */}
+      {/* Modal แผนที่ขนาดใหญ่ */}
       {isMapModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-md p-2 sm:p-4 animate-fadeIn">
           <div className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[90vh]">
@@ -992,7 +993,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         </div>
       )}
 
-      {/* Modal สำหรับแอดมินแก้ไขข้อมูล */}
+      {/* 🔴 Modal สำหรับแอดมินแก้ไขข้อมูล (รองรับทั้ง 4 สถานะ และซ่อนปุ่มลบเฉพาะสถานะซ่อมเสร็จ) */}
       {editingAdminJob && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 animate-fadeIn">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-100 overflow-hidden transform transition-all">
@@ -1004,7 +1005,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                 </div>
                 <div>
                   <h4 className="font-bold text-sm tracking-wide">แก้ไขข้อมูลใบงาน</h4>
-                  <p className="text-[11px] text-blue-100 opacity-90">จัดการข้อมูล (ล็อกเลขที่รับแจ้งเพื่อใช้ติดตามสถานะ)</p>
+                  <p className="text-[11px] text-blue-100 opacity-90">แก้ไขข้อมูลรับแจ้งทั่วไป (รองรับทุกสถานะ)</p>
                 </div>
               </div>
               <button 
@@ -1114,6 +1115,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
               </div>
 
               <div className="flex items-center gap-2 pt-4 border-t border-slate-100">
+                {/* แสดงปุ่มลบเฉพาะเมื่อสถานะไม่ใช่ COMPLETED */}
                 {normalizeStatus(editingAdminJob.status || editingAdminJob.Status) !== 'COMPLETED' && (
                   <button
                     type="button"
