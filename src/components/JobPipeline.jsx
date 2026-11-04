@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash, Trash2, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash, Trash2, ExternalLink, Image as ImageIcon, Globe, Layers } from 'lucide-react';
 
 // 🌐 URL ของ Google Apps Script Web App ล่าสุด
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
 
 // 🔔 [สวิตช์ควบคุม Telegram] เปิดใช้งานการแจ้งเตือนอัตโนมัติ
 const ENABLE_TELEGRAM_NOTIFY = true; 
@@ -17,6 +17,17 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   // 📍 State สำหรับระบุ/แก้ไขพิกัดจุดรั่วตอนจ่ายงาน
   const [dispatchLat, setDispatchLat] = useState('');
   const [dispatchLng, setDispatchLng] = useState('');
+
+  // 🗺️ State สำหรับเปิด Modal แผนที่เลือกพิกัด
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+  const [tempLat, setTempLat] = useState('');
+  const [tempLng, setTempLng] = useState('');
+  const [mapTileType, setMapTileType] = useState('streets'); // 'streets' | 'satellite'
+  
+  const mapContainerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const tileLayerRef = useRef(null);
+  const markerRef = useRef(null);
 
   const [pipelineSearch, setPipelineSearch] = useState('');
 
@@ -40,6 +51,27 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     { id: 'IN_PROGRESS', title: 'กำลังดำเนินการซ่อม', color: 'bg-blue-600', bgLight: 'bg-blue-50/50', border: 'border-blue-200' },
     { id: 'COMPLETED', title: 'ซ่อมเสร็จสิ้น (ปิดงาน)', color: 'bg-emerald-600', bgLight: 'bg-emerald-50/50', border: 'border-emerald-200' },
   ];
+
+  // 🖼️ ฟังก์ชันแปลง URL รูปภาพ Google Drive เพื่อแสดง Thumbnail (คงไว้จากโค้ดเดิมที่ทำงานได้)
+  const getDisplayImageUrl = (url) => {
+    if (!url || typeof url !== 'string' || !url.trim()) return null;
+    const cleanUrl = url.trim();
+    if (cleanUrl.includes('drive.google.com')) {
+      const match = cleanUrl.match(/\/d\/([a-zA-Z0-9_-]+)/) || cleanUrl.match(/id=([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        return `https://drive.google.com/thumbnail?id=${match[1]}&sz=w800`;
+      }
+    }
+    return cleanUrl;
+  };
+
+  // 📱 ฟังก์ชันสำหรับฟอร์แมตเบอร์โทรศัพท์ให้มี Single Quote (') นำหน้าเสมอเพื่อป้องกัน Google Sheets ตัดเลข 0
+  const formatPhoneForSheet = (phoneStr) => {
+    if (!phoneStr || phoneStr === '-') return '-';
+    const cleanPhone = String(phoneStr).trim().replace(/^'/, '');
+    if (!cleanPhone || cleanPhone === '-') return '-';
+    return `'${cleanPhone}`;
+  };
 
   const formatThaiDateTimeString = (dateInput) => {
     if (!dateInput) return '-';
@@ -81,6 +113,115 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     return job.receivedNo || job.JobID || job.id || '-';
   };
 
+  // 🗺️ โหลด Leaflet CSS และ JS สำหรับ Interactive Map
+  useEffect(() => {
+    if (!document.getElementById('leaflet-css')) {
+      const link = document.createElement('link');
+      link.id = 'leaflet-css';
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(link);
+    }
+    if (!document.getElementById('leaflet-js')) {
+      const script = document.createElement('script');
+      script.id = 'leaflet-js';
+      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      document.head.appendChild(script);
+    }
+  }, []);
+
+  // 🗺️ ฟังก์ชันสร้างแผนที่ Leaflet เมื่อเปิด Modal
+  useEffect(() => {
+    if (isMapModalOpen && mapContainerRef.current) {
+      const initMap = () => {
+        if (!window.L) return;
+
+        const initialLat = parseFloat(tempLat) || 17.4135;
+        const initialLng = parseFloat(tempLng) || 104.7912;
+
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.remove();
+        }
+
+        const map = window.L.map(mapContainerRef.current).setView([initialLat, initialLng], 15);
+        mapInstanceRef.current = map;
+
+        const tileUrl = mapTileType === 'satellite'
+          ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+          : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+        const tileAttrib = mapTileType === 'satellite'
+          ? 'Tiles © Esri & DigitalGlobe'
+          : '© OpenStreetMap';
+
+        const tileLayer = window.L.tileLayer(tileUrl, { maxZoom: 19, attribution: tileAttrib }).addTo(map);
+        tileLayerRef.current = tileLayer;
+
+        const marker = window.L.marker([initialLat, initialLng], { draggable: true }).addTo(map);
+        markerRef.current = marker;
+
+        // เมื่อคลิกบนแผนที่ -> ย้ายหมุด + อัปเดตพิกัดเข้าเท็กซ์ทันที + ปิด Modal อัตโนมัติ
+        map.on('click', (e) => {
+          const { lat, lng } = e.latlng;
+          const formattedLat = lat.toFixed(6);
+          const formattedLng = lng.toFixed(6);
+
+          marker.setLatLng([lat, lng]);
+          setTempLat(formattedLat);
+          setTempLng(formattedLng);
+
+          setDispatchLat(formattedLat);
+          setDispatchLng(formattedLng);
+          setIsMapModalOpen(false);
+        });
+
+        // เมื่อลากหมุด
+        marker.on('dragend', () => {
+          const position = marker.getLatLng();
+          const formattedLat = position.lat.toFixed(6);
+          const formattedLng = position.lng.toFixed(6);
+
+          setTempLat(formattedLat);
+          setTempLng(formattedLng);
+
+          setDispatchLat(formattedLat);
+          setDispatchLng(formattedLng);
+          setIsMapModalOpen(false);
+        });
+      };
+
+      if (window.L) {
+        initMap();
+      } else {
+        const timer = setInterval(() => {
+          if (window.L) {
+            clearInterval(timer);
+            initMap();
+          }
+        }, 100);
+      }
+    }
+  }, [isMapModalOpen]);
+
+  // 🗺️ ฟังก์ชันเปลี่ยน Layer แผนที่ (ถนน vs ภาพถ่ายดาวเทียม)
+  const handleChangeMapType = (type) => {
+    setMapTileType(type);
+    if (mapInstanceRef.current && tileLayerRef.current && window.L) {
+      mapInstanceRef.current.removeLayer(tileLayerRef.current);
+
+      const tileUrl = type === 'satellite'
+        ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+      const tileAttrib = type === 'satellite'
+        ? 'Tiles © Esri & DigitalGlobe'
+        : '© OpenStreetMap';
+
+      const newTileLayer = window.L.tileLayer(tileUrl, { maxZoom: 19, attribution: tileAttrib }).addTo(mapInstanceRef.current);
+      tileLayerRef.current = newTileLayer;
+    }
+  };
+
   // 📲 ฟังก์ชันส่งแจ้งเตือนเข้า Telegram สอดคล้องกับ Apps Script
   const sendTelegramNotification = async (jobPayload) => {
     if (!ENABLE_TELEGRAM_NOTIFY) return; 
@@ -117,7 +258,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     }
     const workerObj = workerAccounts.find(w => w.teamName === selectedTeam);
     const workerPhoneFormatted = workerObj && workerObj.phone && workerObj.phone !== '-' 
-      ? (String(workerObj.phone).startsWith("'") ? workerObj.phone : `'${String(workerObj.phone).trim()}`) 
+      ? formatPhoneForSheet(workerObj.phone)
       : '-';
     
     const techDetails = workerObj ? `${workerObj.teamName} (${String(workerPhoneFormatted).replace(/^'/, '')})` : selectedTeam;
@@ -126,9 +267,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     const originalReceivedNo = getDisplayReceivedNo(selectedJobForDispatch);
 
     const rawPhone = selectedJobForDispatch.phone || selectedJobForDispatch.Phone || '-';
-    const formattedPhone = rawPhone !== '-' ? (String(rawPhone).startsWith("'") ? rawPhone : `'${String(rawPhone).trim()}`) : '-';
+    const formattedPhone = formatPhoneForSheet(rawPhone);
 
-    // ใช้พิกัดที่ระบุใหม่ หรือพิกัดเดิมที่มีอยู่
     const finalLat = dispatchLat || selectedJobForDispatch.latitude || selectedJobForDispatch.Latitude || '';
     const finalLng = dispatchLng || selectedJobForDispatch.longitude || selectedJobForDispatch.Longitude || '';
 
@@ -203,7 +343,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
     const workerObj = workerAccounts.find(w => w.teamName === newSelectedTeam);
     const workerPhoneFormatted = workerObj && workerObj.phone && workerObj.phone !== '-' 
-      ? (String(workerObj.phone).startsWith("'") ? workerObj.phone : `'${String(workerObj.phone).trim()}`) 
+      ? formatPhoneForSheet(workerObj.phone)
       : '-';
 
     const techDetails = workerObj ? `${workerObj.teamName} (${String(workerPhoneFormatted).replace(/^'/, '')})` : newSelectedTeam;
@@ -211,7 +351,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     const currentDateTime = getThaiTimestamp();
 
     const rawPhone = editingTeamJob.phone || editingTeamJob.Phone || '-';
-    const formattedPhone = rawPhone !== '-' ? (String(rawPhone).startsWith("'") ? rawPhone : `'${String(rawPhone).trim()}`) : '-';
+    const formattedPhone = formatPhoneForSheet(rawPhone);
 
     const changeTeamPayload = {
       action: "dispatch_job",
@@ -277,8 +417,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     e.preventDefault();
     if (!editingAdminJob) return;
 
-    const trimmedPhone = adminEditForm.phone.trim();
-    const formattedPhone = trimmedPhone ? (trimmedPhone.startsWith("'") ? trimmedPhone : `'${trimmedPhone}`) : '-';
+    const formattedPhone = formatPhoneForSheet(adminEditForm.phone);
 
     const targetId = editingAdminJob.id || editingAdminJob.JobID || adminEditForm.receivedNo;
     const updatedData = {
@@ -345,6 +484,12 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       console.error("Error deleting job:", err);
       alert("เกิดข้อผิดพลาดในการลบใบงาน");
     }
+  };
+
+  const handleOpenMapPicker = () => {
+    setTempLat(dispatchLat || '17.4135');
+    setTempLng(dispatchLng || '104.7912');
+    setIsMapModalOpen(true);
   };
 
   return (
@@ -433,8 +578,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     const rawTechPhone = job.techPhone || job.TechPhone;
                     const displayTechPhone = rawTechPhone && rawTechPhone !== '-' ? String(rawTechPhone).replace(/^'/, '') : '';
 
-                    // ตรวจสอบรูปภาพและพิกัดที่ประชาชนแนบมา
-                    const jobImg = job.beforeImg || job.BeforeImg;
+                    // 📸 ตรวจสอบรูปภาพและพิกัดที่ประชาชนแนบมา (สอดคล้องกับ jobPipeline_3.txt)
+                    const rawImg = job.beforeImg || job.BeforeImg;
+                    const displayImgUrl = getDisplayImageUrl(rawImg);
                     const jobLat = job.latitude || job.Latitude;
                     const jobLng = job.longitude || job.Longitude;
 
@@ -491,12 +637,12 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                           </p>
                         </div>
 
-                        {/* 📸 ปุ่มกดดูรูปและพิกัดที่ประชาชนแนบมา */}
-                        {(jobImg || (jobLat && jobLng)) && (
+                        {/* 📸 ส่วนแสดงปุ่มรูปภาพและปุ่มเปิดแผนที่จากข้อมูลที่ประชาชนส่งมา */}
+                        {(rawImg || (jobLat && jobLng)) && (
                           <div className="flex flex-wrap gap-1.5 pt-1">
-                            {jobImg && (
+                            {rawImg && (
                               <a
-                                href={jobImg}
+                                href={rawImg}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1 transition shadow-xs"
@@ -585,7 +731,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         })}
       </div>
 
-      {/* Modal จ่ายงานซ่อม (เพิ่มส่วนเลือก/ระบุแผนที่พิกัดจุดท่อรั่ว) */}
+      {/* Modal จ่ายงานซ่อม (พร้อมปุ่มเปิดแผนที่คลิกเลือกพิกัด) */}
       {selectedJobForDispatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
@@ -638,11 +784,21 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                 </select>
               </div>
 
-              {/* 🗺️ เพิ่มส่วนระบุหรือตรวจสอบพิกัดจุดท่อรั่วตอนจ่ายงาน */}
-              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
-                <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-rose-500" /> พิกัดจุดท่อแตกรั่ว (ส่งให้ช่างภาคสนาม)
-                </label>
+              {/* 🗺️ ส่วนระบุพิกัดพร้อมปุ่มเปิดแผนที่ Interactive */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-rose-500" /> พิกัดจุดท่อแตกรั่ว
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleOpenMapPicker}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs cursor-pointer"
+                  >
+                    <Globe className="w-3.5 h-3.5" /> คลิกเลือกพิกัดจากแผนที่
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <span className="text-[10px] text-slate-500 font-medium">Latitude (ละติจูด)</span>
@@ -651,7 +807,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                       value={dispatchLat}
                       onChange={(e) => setDispatchLat(e.target.value)}
                       placeholder="เช่น 17.380340"
-                      className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-mono font-bold text-slate-800"
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
@@ -661,16 +817,17 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                       value={dispatchLng}
                       onChange={(e) => setDispatchLng(e.target.value)}
                       placeholder="เช่น 104.786512"
-                      className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-mono font-bold text-slate-800"
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
+
                 {dispatchLat && dispatchLng && (
                   <a
                     href={`https://maps.google.com/?q=${dispatchLat},${dispatchLng}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[11px] text-blue-600 font-bold flex items-center gap-1 pt-1 hover:underline"
+                    className="text-[11px] text-blue-600 font-bold flex items-center gap-1 pt-0.5 hover:underline"
                   >
                     <ExternalLink className="w-3 h-3" /> ตรวจสอบตำแหน่งพิกัดนี้บน Google Maps
                   </a>
@@ -692,6 +849,96 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
               >
                 ยืนยันการจ่ายงาน
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🗺️ Modal แผนที่ขนาดใหญ่ (90vh / max-w-5xl) + สลับ Layer ถนน/ภาพถ่ายดาวเทียม */}
+      {isMapModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-md p-2 sm:p-4 animate-fadeIn">
+          <div className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[90vh]">
+            
+            <div className="bg-slate-900 px-5 py-3.5 flex flex-wrap justify-between items-center text-white gap-2">
+              <div className="flex items-center gap-2">
+                <Globe className="w-5 h-5 text-blue-400" />
+                <h4 className="font-bold text-sm sm:text-base">เลือกพิกัดจุดเกิดเหตุบนแผนที่</h4>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="bg-slate-800 p-1 rounded-xl flex items-center gap-1 border border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => handleChangeMapType('streets')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                      mapTileType === 'streets' 
+                        ? 'bg-blue-600 text-white shadow-sm' 
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" /> ถนน
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleChangeMapType('satellite')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                      mapTileType === 'satellite' 
+                        ? 'bg-blue-600 text-white shadow-sm' 
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Globe className="w-3.5 h-3.5" /> ภาพถ่ายดาวเทียม
+                  </button>
+                </div>
+
+                <button 
+                  onClick={() => setIsMapModalOpen(false)} 
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5 text-white" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-2.5 bg-blue-50 border-b border-blue-100 text-xs text-blue-800 flex justify-between items-center font-medium">
+              <span>👉 คลิกที่จุดใดก็ได้บนแผนที่ หรือคลิกลากหมุดเพื่อเลือกพิกัด ระบบจะบันทึกพิกัดและปิดหน้าต่างให้อัตโนมัติ</span>
+            </div>
+
+            <div ref={mapContainerRef} className="flex-1 w-full h-full bg-slate-100 z-10"></div>
+
+            <div className="p-3 bg-white border-t border-slate-200 space-y-2">
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-slate-500 font-bold block mb-1">ละติจูด (Latitude)</span>
+                  <input
+                    type="text"
+                    readOnly
+                    value={tempLat}
+                    placeholder="17.4135"
+                    className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2 font-mono font-bold text-slate-800 outline-none"
+                  />
+                </div>
+                <div>
+                  <span className="text-slate-500 font-bold block mb-1">ลองจิจูด (Longitude)</span>
+                  <input
+                    type="text"
+                    readOnly
+                    value={tempLng}
+                    placeholder="104.7912"
+                    className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2 font-mono font-bold text-slate-800 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsMapModalOpen(false)}
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-2xl text-xs font-bold transition cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+              </div>
             </div>
           </div>
         </div>
