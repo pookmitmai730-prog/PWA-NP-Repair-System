@@ -584,6 +584,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     const currentJobStatus = String(job.status || job.Status || '').trim().toUpperCase();
                     const isUnrepairable = currentJobStatus === 'UNREPAIRABLE' || currentJobStatus.includes('CANNOT_FIX') || currentJobStatus.includes('ซ่อมไม่ได้');
 
+                    // ดึงข้อมูลเหตุผลที่ไม่สามารถซ่อมได้จากฟิลด์ equipment หรือ detailNotRepair[cite: 7]
+                    const repairReason = job.equipment || job.Equipment || job.detailNotRepair || job.DetailNotRepair || '';
+
                     return (
                       <div key={uniqueJobKey} className={`bg-white p-4 rounded-2xl shadow-sm border transition space-y-2.5 relative ${isUnrepairable ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-100 hover:shadow-md'}`}>
                         
@@ -614,11 +617,11 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                           </div>
                         </div>
 
-                        {/* แจ้งเตือนสั้นๆ เฉพาะใบงานที่ซ่อมไม่ได้ */}
+                        {/* แจ้งเตือนสั้นๆ เฉพาะใบงานที่ซ่อมไม่ได้ พร้อมแสดงเหตุผลต่อท้าย[cite: 7] */}
                         {isUnrepairable && (
-                          <div className="bg-amber-50 border border-amber-200 text-amber-800 p-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5">
-                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span>ซ่อมไม่ได้</span>
+                          <div className="bg-amber-50 border border-amber-200 text-amber-800 p-2 rounded-xl text-[11px] font-bold flex items-start gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <span>ซ่อมไม่ได้{repairReason ? `: ${repairReason}` : ''}</span>
                           </div>
                         )}
 
