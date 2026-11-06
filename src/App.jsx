@@ -8,7 +8,8 @@ import FieldWorkerPortal from './components/FieldWorkerPortal';
 import ReportsView from './components/ReportsView';
 import RolePortal from './components/RolePortal';
 import AdminManagementModal from './components/AdminManagementModal';
-import { LayoutDashboard, Smartphone, BarChart3, LogOut, Shield, UserCheck, RefreshCw } from 'lucide-react';
+import RepairCostForm from './components/RepairCostForm';
+import { LayoutDashboard, Smartphone, BarChart3, LogOut, Shield, UserCheck, RefreshCw, Calculator, X } from 'lucide-react';
 
 // 🌐 URL ของ Google Apps Script Web App
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
@@ -22,6 +23,9 @@ export default function App() {
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAdminManageOpen, setIsAdminManageOpen] = useState(false);
+  
+  // 💰 State สำหรับควบคุมการเปิด-ปิด Modal ฟอร์มจ้างเหมาซ่อมท่อ
+  const [isCostModalOpen, setIsCostModalOpen] = useState(false);
 
   // ☁️ บัญชีผู้ใช้งานและข้อมูลใบงานดึงตรงจาก Google Sheets 100%
   const [adminUsers, setAdminUsers] = useState([]);
@@ -311,7 +315,7 @@ export default function App() {
           <span className="font-bold text-slate-200">สิทธิ์ผู้ดูแลระบบ (Google Sheets Database)</span>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
           <button 
             onClick={fetchJobsFromSheet}
             className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
@@ -327,6 +331,15 @@ export default function App() {
             }`}
           >
             <LayoutDashboard className="w-3.5 h-3.5" /> <span>ศูนย์ควบคุม</span>
+          </button>
+
+          {/* 💰 ปุ่มเปิดฟอร์มจ้างเหมาซ่อมท่อ / คำนวณค่าใช้จ่าย */}
+          <button 
+            onClick={() => setIsCostModalOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg cursor-pointer flex items-center gap-1 shadow-sm transition"
+            title="คำนวณและเบิกค่าใช้จ่ายงานซ่อม"
+          >
+            <Calculator className="w-3.5 h-3.5" /> <span>ฟอร์มจ้างซ่อม</span>
           </button>
 
           <button 
@@ -407,7 +420,31 @@ export default function App() {
         onAddWorkerAccount={handleAddWorkerAccount}
         onEditWorkerAccount={handleEditWorkerAccount}
         onDeleteWorkerAccount={(id, username, teamName) => handleDeleteWorkerAccount(id, username, teamName)}
+        webAppUrl={WEB_APP_URL} // 👈 เพิ่มบรรทัดนี้เข้าไปเพื่อให้ส่ง URL ไปบันทึกใน Google Sheets ได้
       />
+
+      {/* 💰 Modal สำหรับแสดงฟอร์มจ้างเหมาซ่อมท่อ (RepairCostForm) */}
+      {isCostModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 overflow-y-auto font-sans animate-fadeIn">
+          <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden my-6 border border-slate-100">
+            <button 
+              onClick={() => setIsCostModalOpen(false)}
+              className="absolute top-4 right-4 z-10 p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full transition cursor-pointer"
+              title="ปิดหน้าต่าง"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="max-h-[85vh] overflow-y-auto p-2">
+              <RepairCostForm 
+                onSubmitCost={async (costPayload) => {
+                  alert(`บันทึกข้อมูลจ้างเหมาซ่อมท่อสำเร็จ!\nยอดรวมสุทธิ: ฿${costPayload.grandTotal.toLocaleString()} บาท`);
+                  setIsCostModalOpen(false);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
