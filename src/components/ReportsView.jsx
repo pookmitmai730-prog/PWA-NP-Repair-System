@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2, Filter, CalendarDays, MapPin } from 'lucide-react';
+import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2, Filter, CalendarDays, MapPin, BarChart3 } from 'lucide-react';
 
 // 🌐 URL ของ Google Apps Script Web App หลัก[cite: 7]
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
@@ -190,15 +190,34 @@ export default function ReportsView({ jobs, currentUser }) {
       return acc;
     }, {});
 
-  const pipeSummary = filteredJobs
+  // 📊 คำนวณสรุปชนิดและขนาดท่อ พร้อมจัดเรียงจากใหญ่ไปหาเล็ก และยไว้ล่างสุดถ้าไม่ใช่ท่อแตก/ไม่ระบุ
+  const pipeSummaryMap = filteredJobs
     .filter(j => j.Status === 'COMPLETED' || j.status === 'COMPLETED')
     .reduce((acc, job) => {
       const type = job.PipeType || job.pipeType || 'ไม่ระบุชนิด';
-      const size = (job.PipeSize || job.pipeSize) ? `${job.PipeSize || job.pipeSize} มม.` : 'ไม่ระบุขนาด';
+      const rawSize = job.PipeSize || job.pipeSize || '';
+      const sizeNum = parseFloat(rawSize) || 0;
+      const size = rawSize ? `${rawSize} มม.` : 'ไม่ระบุขนาด';
       const key = `${type} (ขนาด ${size})`;
-      acc[key] = (acc[key] || 0) + 1;
+
+      if (!acc[key]) {
+        acc[key] = { count: 0, sizeNum: sizeNum, isUnknown: !rawSize || type === 'ไม่ระบุชนิด' || type === '-' };
+      }
+      acc[key].count += 1;
       return acc;
     }, {});
+
+  const pipeSummaryEntries = Object.entries(pipeSummaryMap).sort((a, b) => {
+    const itemA = a[1];
+    const itemB = b[1];
+    // ถ้าอันใดอันหนึ่งไม่รู้ขนาดหรือไม่ได้ระบุ ให้เอาไว้ล่างสุด
+    if (itemA.isUnknown && !itemB.isUnknown) return 1;
+    if (!itemA.isUnknown && itemB.isUnknown) return -1;
+    // เรียงจากใหญ่ไปหาเล็ก (Descending)
+    return itemB.sizeNum - itemA.sizeNum;
+  });
+
+  const maxPipeCount = Math.max(...pipeSummaryEntries.map(([_, data]) => data.count), 1);
 
   const parseImages = (imgData) => {
     if (!imgData) return [];
@@ -568,26 +587,50 @@ export default function ReportsView({ jobs, currentUser }) {
           )}
         </div>
 
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
-          <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-            <Layers className="w-4 h-4 text-orange-600" />
-            สรุปชนิดและขนาดท่อที่ใช้ซ่อม
-          </h3>
-          {Object.keys(pipeSummary).length === 0 ? (
-            <p className="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลชนิดและขนาดท่อ</p>
+        {/* 📊 ส่วนสรุปชนิดและขนาดท่อ พร้อมกราฟแท่ง (เรียงจากใหญ่ไปหาเล็ก และย้ายท่อที่ไม่ระบุไว้ล่างสุด) */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3 lg:col-span-2">
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-orange-600" />
+              สรุปชนิดและขนาดท่อที่ใช้ซ่อม (เรียงจากท่อใหญ่ไปเล็ก) พร้อมกราฟแท่งแสดงผล
+            </h3>
+            <span className="text-[10px] text-slate-400 bg-slate-100 px-2.5 py-1 rounded-xl font-bold">ตามเงื่อนไขที่เลือก</span>
+          </div>
+
+          {pipeSummaryEntries.length === 0 ? (
+            <p className="text-xs text-slate-400 py-4 text-center">ยังไม่มีข้อมูลชนิดและขนาดท่อในช่วงเวลานี้</p>
           ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {Object.entries(pipeSummary).map(([pipeInfo, count]) => (
-                <div key={pipeInfo} className="bg-orange-50/50 border border-orange-200/80 p-3 rounded-2xl flex justify-between items-center shadow-2xs">
-                  <span className="text-xs font-bold text-slate-700 truncate">{pipeInfo}</span>
-                  <span className="bg-orange-600 text-white text-xs font-bold px-2.5 py-1 rounded-xl shadow-2xs">{count} จุด</span>
-                </div>
-              ))}
+            <div className="space-y-3 max-h-56 overflow-y-auto pr-2">
+              {pipeSummaryEntries.map(([pipeInfo, data], idx) => {
+                const percentage = Math.round((data.count / maxPipeCount) * 100);
+                return (
+                  <div key={pipeInfo} className="bg-slate-50/80 border border-slate-200/80 p-3 rounded-2xl space-y-1.5 shadow-2xs">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                        <span className="font-mono text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded text-[10px]">#{idx + 1}</span>
+                        {pipeInfo}
+                      </span>
+                      <span className="bg-orange-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-lg shadow-2xs">
+                        {data.count} จุด
+                      </span>
+                    </div>
+                    {/* 📊 กราฟแท่งแสดงสัดส่วน */}
+                    <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden flex">
+                      <div 
+                        className="bg-gradient-to-r from-orange-500 to-amber-500 h-full rounded-full transition-all duration-500" 
+                        style={{ width: `${Math.max(percentage, 5)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
+      </div>
 
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3 lg:col-span-3">
           <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-rose-600" />
             งานที่ไม่สามารถดำเนินการได้
@@ -776,7 +819,7 @@ export default function ReportsView({ jobs, currentUser }) {
         )}
       </div>
 
-      {/* ⚠️ MODAL แสดงงานซ่อมไม่ได้[cite: 7] */}
+      {/* ⚠️ MODAL แสดงงานซ่อมไม่ได้[cite: 8] */}
       {isUnrepairableModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 font-sans">
           <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
@@ -788,14 +831,17 @@ export default function ReportsView({ jobs, currentUser }) {
               <button onClick={() => setIsUnrepairableModalOpen(false)} className="p-1.5 rounded-xl bg-rose-800 text-white cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-5 overflow-y-auto space-y-3 flex-1 bg-slate-50">
-              {unrepairableJobsList.map((job) => (
-                <div key={job.JobID} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-2xs space-y-2">
-                  <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">{job.JobID}</span>
-                  <p className="text-xs text-slate-600"><strong>สถานที่:</strong> {job.Location}</p>
-                  <p className="text-xs text-slate-500"><strong>วันที่ซ่อมเสร็จ/บันทึก:</strong> {formatThaiDate(job.ClosedAt)}</p>
-                  <p className="text-xs text-rose-900"><strong>สาเหตุ:</strong> {job.Description || '-'}</p>
-                </div>
-              ))}
+              {unrepairableJobsList.map((job) => {
+                const repairReason = job.Equipment || job.equipment || job.Description || '-';
+                return (
+                  <div key={job.JobID} className="bg-white p-4 rounded-2xl border border-rose-200 shadow-2xs space-y-2">
+                    <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">{job.JobID}</span>
+                    <p className="text-xs text-slate-600"><strong>สถานที่:</strong> {job.Location}</p>
+                    <p className="text-xs text-slate-500"><strong>วันที่ซ่อมเสร็จ/บันทึก:</strong> {formatThaiDate(job.ClosedAt)}</p>
+                    <p className="text-xs text-rose-900"><strong>สาเหตุ :</strong> {repairReason}</p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
