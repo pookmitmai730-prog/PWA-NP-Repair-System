@@ -1337,7 +1337,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
                 {/* ข้อ 1) เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม */}
                 <div className="border border-black p-2.5 space-y-1.5 bg-white shrink-0">
-                  <p className="font-bold text-[10.5px]">1.0 เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม</p>
+                  <p className="font-bold text-[10.5px]">(1) เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม</p>
                   <div className="grid grid-cols-3 gap-2 pl-3">
                     <p><b>วันที่แจ้ง:</b> {formatThaiDate(selectedJob.Timestamp)}</p>
                     <p><b>ผู้แจ้ง:</b> {reporterName}</p>
@@ -1417,7 +1417,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                     {/* ข้อ 8 (แก้ไขข้อความและลงชื่อโดยหัวหน้างานบริการฯ ตามที่คุณต้องการ) */}
                     <div className="border border-black p-2.5 flex flex-col justify-between flex-1">
                       <div>
-                        <p className="font-bold">8.0 เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม</p>
+                        <p className="font-bold">(8) เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม</p>
                         <p className="pl-2 leading-snug">งานบริการและควบคุมน้ำสูญเสีย ได้ทำการปิดคำสั่งงาน เลขที่ <span className="font-bold text-blue-900">{rNumber || 'R202608036111'}</span> ลงวันที่ <span className="font-bold">{formatThaiDate(jobClosedDate)}</span> เรียบร้อยแล้ว</p>
                       </div>
                       <div className="text-center pt-2">
@@ -1593,7 +1593,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                     {/* ข้อ 9 (แก้ไขข้อความและลงชื่อโดยผู้จัดการ ตามที่คุณต้องการ) */}
                     <div className="border border-black p-2.5 flex flex-col justify-between flex-1">
                       <div>
-                        <p className="font-bold">9.0 เรียน หน.งานบริการและควบคุมน้ำสูญเสีย</p>
+                        <p className="font-bold">(9) เรียน หน.งานบริการและควบคุมน้ำสูญเสีย</p>
                         <p className="pl-2">ทราบ / เก็บหลักฐานไว้สำหรับตรวจสอบต่อไป</p>
                       </div>
                       <div className="text-center pt-2">
