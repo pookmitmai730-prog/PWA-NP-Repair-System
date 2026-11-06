@@ -105,7 +105,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     const s = String(status).trim().toUpperCase();
     if (s === 'รอดำเนินการ' || s === 'PENDING') return 'PENDING';
     if (s === 'มอบหมายช่างแล้ว' || s === 'DISPATCHED') return 'DISPATCHED';
-    if (s === 'กำลังดำเนินการซ่อม' || s === 'IN_PROGRESS') return 'IN_PROGRESS';
+    // 🛠️ รองรับค่า UNREPAIRABLE จาก Google Sheets ให้จัดกลุ่มมาแสดงในแท็บ "กำลังดำเนินการซ่อม" (IN_PROGRESS)
+    if (s === 'กำลังดำเนินการซ่อม' || s === 'IN_PROGRESS' || s === 'UNREPAIRABLE' || s.includes('CANNOT_FIX') || s.includes('ซ่อมไม่ได้')) return 'IN_PROGRESS';
     if (s === 'ซ่อมเสร็จสิ้น (ปิดงาน)' || s === 'COMPLETED') return 'COMPLETED';
     return s;
   };
@@ -363,8 +364,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       Technician: techDetails,
       techName: workerObj?.teamName || newSelectedTeam,
       techPhone: workerPhoneFormatted,
-      status: 'DISPATCHED',
-      Status: 'DISPATCHED',
+      status: 'IN_PROGRESS', // อัปเดตเปลี่ยนสถานะกลับมาเป็น IN_PROGRESS (กำลังดำเนินการซ่อม) เมื่อเปลี่ยนทีมช่างใหม่เรียบร้อย
+      Status: 'IN_PROGRESS',
       dispatchedAt: currentDateTime
     };
 
@@ -383,14 +384,14 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       console.error("Error changing team in Google Sheets:", err);
     }
 
-    onStatusChange(editingTeamJob.id || editingTeamJob.JobID, editingTeamJob.status, {
+    onStatusChange(editingTeamJob.id || editingTeamJob.JobID, 'IN_PROGRESS', {
       ...changeTeamPayload,
       techPhone: String(workerPhoneFormatted).replace(/^'/, '')
     });
 
     setEditingTeamJob(null);
     setNewSelectedTeam('');
-    alert("เปลี่ยนทีมช่างและบันทึกลง Google Sheets เรียบร้อยแล้ว");
+    alert("เปลี่ยนทีมช่างและย้ายกลับสถานะกำลังดำเนินการซ่อมเรียบร้อยแล้ว");
   };
 
   const handleOpenAdminEdit = (job) => {
@@ -415,7 +416,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     const formattedPhone = formatPhoneForSheet(adminEditForm.phone);
     const targetId = editingAdminJob.id || editingAdminJob.JobID || adminEditForm.receivedNo;
     
-    // คงสถานะเดิมของใบงานเอาไว้ ไม่ว่าจะอยู่สถานะใด (PENDING, DISPATCHED, IN_PROGRESS, COMPLETED)
     const currentJobStatus = editingAdminJob.status || editingAdminJob.Status || 'PENDING';
 
     const updatedData = {
@@ -581,8 +581,11 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     const jobLat = job.latitude || job.Latitude;
                     const jobLng = job.longitude || job.Longitude;
 
+                    const currentJobStatus = String(job.status || job.Status || '').trim().toUpperCase();
+                    const isUnrepairable = currentJobStatus === 'UNREPAIRABLE' || currentJobStatus.includes('CANNOT_FIX') || currentJobStatus.includes('ซ่อมไม่ได้');
+
                     return (
-                      <div key={uniqueJobKey} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition space-y-2.5 relative">
+                      <div key={uniqueJobKey} className={`bg-white p-4 rounded-2xl shadow-sm border transition space-y-2.5 relative ${isUnrepairable ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-100 hover:shadow-md'}`}>
                         
                         {/* ปุ่มเปิด Modal แก้ไขข้อมูล (แสดงผลทุกสถานะทั้ง 4 คอลัมน์) */}
                         <button
@@ -610,6 +613,14 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                             )}
                           </div>
                         </div>
+
+                        {/* แจ้งเตือนสั้นๆ เฉพาะใบงานที่ซ่อมไม่ได้ */}
+                        {isUnrepairable && (
+                          <div className="bg-amber-50 border border-amber-200 text-amber-800 p-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>ซ่อมไม่ได้</span>
+                          </div>
+                        )}
 
                         <div className="text-[10px] text-slate-400 space-y-0.5">
                           <span className="block"><Clock className="w-3 h-3 inline mr-0.5" /> แจ้ง: {formattedReceivedAt}</span>
@@ -712,12 +723,24 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                               </span>
                             )}
                             {col.id === 'IN_PROGRESS' && (
-                              <span className="text-[10px] text-slate-400 italic bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
-                                รอช่างปิดงาน
-                              </span>
+                              isUnrepairable ? (
+                                <button
+                                  onClick={() => {
+                                    setEditingTeamJob(job);
+                                    setNewSelectedTeam(job.techName || job.technician || workerAccounts[0]?.teamName || '');
+                                  }}
+                                  className="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded-lg font-bold transition shadow-sm cursor-pointer flex items-center gap-1 animate-pulse"
+                                >
+                                  <Edit3 className="w-3 h-3" /> เปลี่ยนทีมซ่อมใหม่
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+                                  รอช่างปิดงาน
+                                </span>
+                              )
                             )}
                             {col.id === 'COMPLETED' && (
-                              <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg font-bold flex items-center gap-1">
+                              <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
                                 ✓ ปิดงานแล้ว
                               </span>
                             )}
@@ -950,13 +973,13 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h4 className="font-bold text-slate-800 text-sm">เปลี่ยนทีมช่าง: {getDisplayReceivedNo(editingTeamJob)}</h4>
+              <h4 className="font-bold text-slate-800 text-sm">เปลี่ยนทีมช่างใหม่: {getDisplayReceivedNo(editingTeamJob)}</h4>
               <button onClick={() => setEditingTeamJob(null)} className="cursor-pointer"><X className="w-5 h-5 text-slate-400" /></button>
             </div>
 
             <div className="space-y-3">
               <p className="text-xs text-slate-600">
-                ทีมช่างปัจจุบัน: <span className="font-bold text-slate-800">{editingTeamJob.techName || editingTeamJob.technician}</span>
+                ทีมช่างเดิม: <span className="font-bold text-slate-800">{editingTeamJob.techName || editingTeamJob.technician}</span>
               </p>
 
               <div>
@@ -986,7 +1009,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                 onClick={handleConfirmChangeTeam}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer"
               >
-                บันทึกการเปลี่ยนทีม
+                บันทึกการเปลี่ยนทีม (ย้ายเข้ากำลังซ่อม)
               </button>
             </div>
           </div>
