@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Wrench, Plus, Trash2, Calculator, DollarSign, FileText, CheckCircle2, Loader2, Printer, Eye, X, Search, Check, Layers, Clock, MapPin } from 'lucide-react';
+import { Wrench, Plus, Trash2, Calculator, DollarSign, FileText, CheckCircle2, Loader2, Printer, Eye, X, Search, Check, Layers, Clock, MapPin, History, Edit3 } from 'lucide-react';
 
 // 🌐 URL ของ Google Apps Script Web App
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
@@ -83,6 +83,11 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const [selectedJob, setSelectedJob] = useState(null);
   const [searchJobKeyword, setSearchJobKeyword] = useState('');
   const [rNumber, setRNumber] = useState('');
+
+  // 📜 State เก็บประวัติการเบิกซ่อม (สำหรับเช็คเบิกซ้ำ และดูย้อนหลัง/แก้ไข)
+  const [savedRepairCosts, setSavedRepairCosts] = useState([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [isEditingExisting, setIsEditingExisting] = useState(false);
 
   // 🏗️ State รายละเอียดหน้างานและระยะเวลาซ่อม
   const [workDetails, setWorkDetails] = useState({
@@ -194,7 +199,24 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
     printWindow.document.close();
   };
 
-  // 📥 1. ดึงข้อมูลรายชื่อผู้ลงนามจาก Google Sheets
+  // 📥 1. ดึงข้อมูลประวัติการเบิกซ่อมทั้งหมด (RepairCosts)
+  const fetchRepairCostsHistory = async () => {
+    try {
+      const response = await fetch(`${WEB_APP_URL}?action=getRepairCosts`);
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        setSavedRepairCosts(data);
+      }
+    } catch (err) {
+      console.error("Error fetching repair costs history:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchRepairCostsHistory();
+  }, []);
+
+  // 📥 2. ดึงข้อมูลรายชื่อผู้ลงนามจาก Google Sheets
   useEffect(() => {
     const fetchSignersFromSheet = async () => {
       try {
@@ -222,7 +244,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
     fetchSignersFromSheet();
   }, []);
 
-  // 📥 2. ดึงข้อมูลใบงานที่ปิดงานแล้วจาก Google Sheets
+  // 📥 3. ดึงข้อมูลใบงานที่ปิดงานแล้วจาก Google Sheets
   useEffect(() => {
     const fetchCompletedJobsFromSheet = async () => {
       try {
@@ -241,7 +263,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
     fetchCompletedJobsFromSheet();
   }, [jobs]);
 
-  // 📥 3. ดึงข้อมูลรายการ Master Data
+  // 📥 4. ดึงข้อมูลรายการ Master Data
   useEffect(() => {
     const fetchAllMasterData = async () => {
       try {
@@ -308,14 +330,85 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const completedJobs = completedJobsList.filter(j => normalizeStatus(j.Status || j.status || j.JobStatus || j[10] || j[11]) === 'COMPLETED');
   const displayJobs = completedJobs.length > 0 ? completedJobs : completedJobsList;
 
+  // 🛡️ รายการ Job ID ที่เคยเบิกซ่อมแล้ว เพื่อป้องกันการเลือกเบิกซ้ำ
+  const billedJobIds = new Set(savedRepairCosts.map(item => String(item.Job_ID || item.jobId || '').trim()));
+
+  // 🔍 ตัวกรองใบงานในขั้นตอนเลือก (ซ่อนใบงานที่เบิกแล้วเพื่อป้องกันเบิกซ้ำ)
   const filteredJobsForSelect = displayJobs.filter(j => {
+    const jobId = String(j.JobID || j.id || j.receivedNo || j[0] || '').trim();
+    
+    // ถ้าเบิกซ่อมไปแล้ว ให้ยกเว้น (ไม่แสดงในตัวเลือกใบงานใหม่)
+    if (billedJobIds.has(jobId)) return false;
+
     const term = searchJobKeyword.toLowerCase().trim();
     if (!term) return true;
-    const jobId = String(j.JobID || j.id || j.receivedNo || j[0] || '').toLowerCase();
     const location = String(j.Location || j.location || j[4] || '').toLowerCase();
     const reporter = String(j.ReporterName || j.reporterName || j[2] || '').toLowerCase();
     return jobId.includes(term) || location.includes(term) || reporter.includes(term);
   });
+
+  // ✏️ ฟังก์ชันดึงข้อมูลประวัติเก่ากลับมากรอกฟอร์มเพื่อแก้ไข
+  const handleEditHistoryItem = (historyItem) => {
+    const targetId = String(historyItem.Job_ID || historyItem.jobId || '').trim();
+    const matchedJob = displayJobs.find(j => String(j.JobID || j.id || j.receivedNo || j[0] || '').trim() === targetId) || {
+      JobID: targetId,
+      Location: historyItem.Location || '-',
+      ClosedAt: historyItem.Repair_Closed_At || new Date()
+    };
+
+    setSelectedJob(matchedJob);
+    setRNumber(historyItem.R_Number || '');
+    setIsEditingExisting(true);
+
+    // ถอดรหัส JSON รายการวัสดุและอุปกรณ์คืน
+    try {
+      if (historyItem.Selected_Items_JSON) {
+        setSelectedItems(typeof historyItem.Selected_Items_JSON === 'string' ? JSON.parse(historyItem.Selected_Items_JSON) : historyItem.Selected_Items_JSON);
+      }
+    } catch (e) { console.error(e); }
+
+    try {
+      if (historyItem.Return_Equipment_JSON) {
+        const ret = typeof historyItem.Return_Equipment_JSON === 'string' ? JSON.parse(historyItem.Return_Equipment_JSON) : historyItem.Return_Equipment_JSON;
+        setReturnEquipmentList(ret);
+        setReturnStatusType(ret && ret.length > 0 ? 'มีอุปกรณ์คืน' : 'ไม่มี');
+      }
+    } catch (e) { console.error(e); }
+
+    // ถอดขนาดหน้างาน
+    if (historyItem.Work_Dimension) {
+      const parts = String(historyItem.Work_Dimension).replace(/ม\./g, '').trim().split('x');
+      if (parts.length === 3) {
+        setWorkDetails(prev => ({
+          ...prev,
+          width: parts[0].trim(),
+          length: parts[1].trim(),
+          depth: parts[2].trim(),
+          surfaceType: historyItem.Surface_Type || prev.surfaceType
+        }));
+      }
+    }
+
+    // ถอดระยะเวลา
+    if (historyItem.Repair_Duration) {
+      const durStr = String(historyItem.Repair_Duration);
+      const hMatch = durStr.match(/(\d+)\s*ชม/);
+      const mMatch = durStr.match(/(\d+)\s*นาที/);
+      setWorkDetails(prev => ({
+        ...prev,
+        repairHours: hMatch ? hMatch[1] : prev.repairHours,
+        repairMinutes: mMatch ? mMatch[1] : prev.repairMinutes
+      }));
+    }
+
+    if (historyItem.Factor_F) {
+      const fVal = Number(historyItem.Factor_F);
+      setApplyFactorF(fVal > 1.0);
+      setFactorFValue(fVal > 1.0 ? fVal : 1.4018);
+    }
+
+    setShowHistoryModal(false);
+  };
 
   const handleSearchChange = (e) => {
     const val = e.target.value;
@@ -424,6 +517,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const roundedGrandTotalVal = Math.floor(grandTotalWithVat);
   const formattedGrandTotalFormatted = `${roundedGrandTotalVal.toLocaleString()}.00`;
 
+  // 🚀 ฟังก์ชันบันทึกข้อมูล ส่งไปยัง Google Apps Script ชีท RepairCosts (รองรับแก้ไขแถวเดิม)
   const handleSubmitForm = async (e) => {
     e.preventDefault();
     if (!selectedJob) {
@@ -452,14 +546,30 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
     };
 
     try {
-      if (onSubmitCost) {
-        await onSubmitCost(costPayload);
+      const response = await fetch(WEB_APP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({
+          action: "saveRepairCost",
+          payload: costPayload
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.status === "success") {
+        alert(`${isEditingExisting ? 'อัปเดตข้อมูลแก้ไข' : 'บันทึกข้อมูล'}ลงชีท RepairCosts สำเร็จ!\nยอดรวมดำเนินการซ่อมท่อทั้งสิ้น: ฿${formattedGrandTotalFormatted} บาท`);
+        await fetchRepairCostsHistory(); // อัปเดตประวัติล่าสุด
+        setIsEditingExisting(false);
+        if (onSubmitCost) {
+          await onSubmitCost(costPayload);
+        }
       } else {
-        alert(`บันทึกข้อมูลสำเร็จ!\nยอดรวมดำเนินการซ่อมท่อทั้งสิ้น: ฿${formattedGrandTotalFormatted} บาท`);
+        alert("เกิดข้อผิดพลาดในการบันทึก: " + result.message);
       }
     } catch (err) {
       console.error("Error saving cost:", err);
-      alert("เกิดข้อผิดพลาดในการบันทึก");
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์");
     } finally {
       setIsSubmitting(false);
     }
@@ -507,6 +617,16 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* ปุ่มดูประวัติการเบิกซ่อม */}
+          <button
+            type="button"
+            onClick={() => setShowHistoryModal(true)}
+            className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3.5 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+          >
+            <History className="w-4 h-4 text-amber-600" />
+            <span>ประวัติเบิกซ่อม ({savedRepairCosts.length})</span>
+          </button>
+
           {selectedJob && (
             <button
               type="button"
@@ -527,14 +647,18 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
             <Search className="w-4 h-4 text-blue-600" />
             ขั้นตอนที่ 1: ค้นหาและเลือกใบงาน (สถานะ: ซ่อมเสร็จแล้ว / COMPLETED)
           </span>
-          <span className="text-[10px] text-slate-500 font-normal">(พบ {displayJobs.length} รายการใบงาน)</span>
+          <span className="text-[10px] text-slate-500 font-normal">
+            (พร้อมเบิก: {filteredJobsForSelect.length} / เคยเบิกแล้ว: {billedJobIds.size} รายการ)
+          </span>
         </h3>
 
         {selectedJob ? (
           <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex justify-between items-center text-xs">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="bg-emerald-600 text-white px-2 py-0.5 rounded font-bold text-[10px]">เลือกแล้ว</span>
+                <span className="bg-emerald-600 text-white px-2 py-0.5 rounded font-bold text-[10px]">
+                  {isEditingExisting ? 'กำลังแก้ไขข้อมูลเดิม' : 'เลือกแล้ว'}
+                </span>
                 <span className="font-bold text-slate-800">เลขที่รับแจ้ง: {selectedJob.JobID || selectedJob.id || selectedJob.receivedNo || selectedJob[0]}</span>
                 {rNumber && <span className="bg-blue-600 text-white px-2 py-0.5 rounded font-bold text-[10px]">คำสั่งงานเลขที่: {rNumber}</span>}
               </div>
@@ -543,7 +667,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
             </div>
             <button
               type="button"
-              onClick={() => setSelectedJob(null)}
+              onClick={() => { setSelectedJob(null); setIsEditingExisting(false); }}
               className="bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 px-3 py-1.5 rounded-lg font-bold transition cursor-pointer shadow-xs"
             >
               เปลี่ยนใบงาน
@@ -555,7 +679,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
               type="text"
               value={searchJobKeyword}
               onChange={(e) => setSearchJobKeyword(e.target.value)}
-              placeholder="ค้นหาด้วยเลขที่งาน, สถานที่ หรือชื่อผู้แจ้ง..."
+              placeholder="ค้นหาใบงานที่ยังไม่ได้เบิก ด้วยเลขที่งาน, สถานที่ หรือชื่อผู้แจ้ง..."
               className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 shadow-xs"
             />
             <div className="flex gap-2">
@@ -569,7 +693,10 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
             </div>
             <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-200 rounded-xl p-2 bg-white">
               {filteredJobsForSelect.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-4">ไม่พบใบงานที่ค้นหา</p>
+                <div className="text-center py-4 space-y-1">
+                  <p className="text-xs text-slate-400">ไม่พบใบงานที่พร้อมทำการเบิกซ่อม</p>
+                  <p className="text-[10px] text-slate-500">(ใบงานที่เคยเบิกแล้วถูกซ่อนไว้เพื่อป้องกันการเบิกซ้ำ หากต้องการแก้ไข สามารถกดดูที่ปุ่ม "ประวัติเบิกซ่อม")</p>
+                </div>
               ) : (
                 filteredJobsForSelect.map((j, jIdx) => (
                   <div 
@@ -1057,10 +1184,58 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
             className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-2xl font-bold text-xs shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
           >
             {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-            {isSubmitting ? 'กำลังบันทึกข้อมูล...' : 'บันทึกข้อมูลแบบฟอร์มเบิกซ่อมท่อ'}
+            {isSubmitting ? 'กำลังบันทึกข้อมูล...' : (isEditingExisting ? 'บันทึกการแก้ไขแบบฟอร์มเบิกซ่อมท่อ' : 'บันทึกข้อมูลแบบฟอร์มเบิกซ่อมท่อ')}
           </button>
 
         </form>
+      )}
+
+      {/* 📜 Modal ประวัติการเบิกซ่อมย้อนหลัง */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 font-sans">
+          <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <History className="w-5 h-5 text-amber-400" />
+                <span>ประวัติการเบิกซ่อมท่อทั้งหมด ({savedRepairCosts.length} รายการ)</span>
+              </div>
+              <button onClick={() => setShowHistoryModal(false)} className="text-slate-400 hover:text-white transition cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-3 flex-1 bg-slate-50">
+              {savedRepairCosts.length === 0 ? (
+                <p className="text-center text-slate-400 py-8 text-xs">ยังไม่มีประวัติการบันทึกเบิกซ่อม</p>
+              ) : (
+                savedRepairCosts.map((item, idx) => (
+                  <div key={`hist-${idx}`} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap justify-between items-center gap-3">
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-blue-600 font-mono">Job ID: {item.Job_ID || item.jobId || '-'}</span>
+                        {item.R_Number && <span className="bg-slate-100 text-slate-700 font-mono px-2 py-0.5 rounded text-[10px]">R: {item.R_Number}</span>}
+                      </div>
+                      <p className="text-slate-700 font-medium truncate max-w-md">📍 {item.Location || '-'}</p>
+                      <p className="text-slate-500 text-[11px]">
+                        ยอดรวมเบิกซ่อม: <span className="font-bold font-mono text-emerald-600">฿{Number(item.Grand_Total || 0).toLocaleString()}.00</span> | วันเวลาซ่อมเสร็จ: {formatThaiDateTime(item.Repair_Closed_At)}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleEditHistoryItem(item)}
+                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" /> แก้ไขข้อมูล
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 📄 Modal พรีวิวและสั่งพิมพ์ */}
@@ -1105,9 +1280,9 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                         src="/pwa.webp" 
                         alt="PWA Logo" 
                         className="w-8 h-8 object-contain" 
-                        onError={(e)=>{e.target.onerror=null; e.target.src='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>';}} 
+                        onError={(e)=>{e.target.onerror=null; e.target.src='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>';}} 
                       />
-                      <div className="text-[9px] leading-tight font-bold text-slate-800">การประปาส่วนภูมิภาค</div>
+                      <div className="text-[9px] leading-tight font-bold text-slate-800"></div>
                     </div>
                     <div className="text-center w-2/4">
                       <h1 className="text-[13px] font-bold">การประปาส่วนภูมิภาคสาขานครพนม</h1>
@@ -1387,7 +1562,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                       src="/pwa.webp" 
                       alt="PWA Logo" 
                       className="w-8 h-8 object-contain" 
-                      onError={(e)=>{e.target.onerror=null; e.target.src='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>';}} 
+                      onError={(e)=>{e.target.onerror=null; e.target.src='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>';}} 
                     />
                   </div>
                   <div className="text-center w-2/4">
