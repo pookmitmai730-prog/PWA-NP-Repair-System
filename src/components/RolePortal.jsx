@@ -283,18 +283,27 @@ export default function RolePortal({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-slate-100 flex flex-col justify-center items-center p-4 sm:p-6 font-sans">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-slate-100 flex flex-col justify-center items-center p-4 sm:p-6 font-sans relative">
       
+      {/* 🏢 โลโก้การประปาส่วนภูมิภาค (PWA Logo) ขนาดเท่ากับไอคอนประแจ (w-16 h-16) อยู่มุมซ้ายบน */}
+      <div className="absolute top-4 left-4 sm:top-6 sm:left-6 flex flex-col items-center sm:items-start gap-1 z-20">
+        <img src="/pwa.webp" alt="PWA Logo" className="w-16 h-16 object-contain shrink-0" />
+        <div className="hidden sm:block text-center sm:text-left">
+          <p className="text-[10px] leading-tight font-bold text-slate-300">การประปาส่วนภูมิภาค</p>
+          <p className="text-[9px] text-slate-400">สาขานครพนม</p>
+        </div>
+      </div>
+
       {/* Header Logo & Title */}
-      <div className="text-center space-y-2 mb-6">
+      <div className="text-center space-y-2 mb-6 mt-16 sm:mt-0">
         <div className="w-16 h-16 bg-blue-600/20 border border-blue-500/40 rounded-3xl flex items-center justify-center mx-auto shadow-xl shadow-blue-500/10 backdrop-blur-md">
           <Wrench className="w-8 h-8 text-cyan-400" />
         </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-          PWA Nakhon Phanom Repair System
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-400">
+        <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">
           ระบบจัดการและติดตามงานซ่อมท่อประปา การประปาส่วนภูมิภาคสาขานครพนม
+        </h1>
+        <p className="text-xs sm:text-sm text-slate-400 font-medium">
+          PWA Nakhon Phanom Repair System
         </p>
       </div>
 
