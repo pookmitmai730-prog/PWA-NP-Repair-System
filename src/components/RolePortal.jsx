@@ -283,21 +283,43 @@ export default function RolePortal({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-slate-100 flex flex-col justify-center items-center p-4 sm:p-6 font-sans relative">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-slate-100 flex flex-col justify-center items-center p-4 sm:p-6 font-sans relative overflow-x-hidden">
       
-      {/* 🏢 โลโก้การประปาส่วนภูมิภาค (PWA Logo) ขนาดเท่ากับไอคอนประแจ (w-16 h-16) อยู่มุมซ้ายบน */}
-      <div className="absolute top-4 left-4 sm:top-6 sm:left-6 flex flex-col items-center sm:items-start gap-1 z-20">
-        <img src="/pwa.webp" alt="PWA Logo" className="w-16 h-16 object-contain shrink-0" />
-        <div className="hidden sm:block text-center sm:text-left">
-          <p className="text-[10px] leading-tight font-bold text-slate-300">การประปาส่วนภูมิภาค</p>
-          <p className="text-[9px] text-slate-400">สาขานครพนม</p>
-        </div>
-      </div>
+      {/* 🌟 CSS Keyframes สำหรับแสงสีขาววิ่งตามขอบโลโก้ */}
+      <style>{`
+        @keyframes borderLightSpin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        .logo-glow-container {
+          position: relative;
+          border-radius: 9999px;
+          overflow: hidden;
+          padding: 2px; /* ขนาดความหนาของเส้นแสงวิ่ง */
+        }
+        .logo-glow-container::before {
+          content: '';
+          position: absolute;
+          inset: -50%;
+          background: conic-gradient(from 0deg, transparent 0deg, transparent 270deg, rgba(255, 255, 255, 0.9) 360deg);
+          animation: borderLightSpin 3s linear infinite;
+        }
+        .logo-inner {
+          position: relative;
+          z-index: 10;
+          background: #020617; /* สีพื้นหลังตัดกับแสงวิ่ง */
+          border-radius: 9999px;
+        }
+      `}</style>
 
       {/* Header Logo & Title */}
-      <div className="text-center space-y-2 mb-6 mt-16 sm:mt-0">
-        <div className="w-16 h-16 bg-blue-600/20 border border-blue-500/40 rounded-3xl flex items-center justify-center mx-auto shadow-xl shadow-blue-500/10 backdrop-blur-md">
-          <Wrench className="w-8 h-8 text-cyan-400" />
+      <div className="text-center space-y-2 mb-6">
+        <div className="w-16 h-16 mx-auto flex items-center justify-center">
+          <div className="logo-glow-container shadow-xl shadow-cyan-500/20">
+            <div className="logo-inner p-1.5">
+              <img src="/pwa.webp" alt="PWA Logo" className="w-12 h-12 object-contain shrink-0" />
+            </div>
+          </div>
         </div>
         <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">
           ระบบจัดการและติดตามงานซ่อมท่อประปา การประปาส่วนภูมิภาคสาขานครพนม
