@@ -63,6 +63,20 @@ const formatThaiDate = (dateInput) => {
   return `${day} ${month} ${year}`;
 };
 
+// 🕒 ฟังก์ชันแปลงวันเวลาแบบเต็ม
+const formatThaiDateTime = (dateInput) => {
+  if (!dateInput) return '-';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return String(dateInput);
+  const day = d.getDate();
+  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const month = months[d.getMonth()];
+  const year = d.getFullYear() + 543;
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${day} ${month} ${year} เวลา ${hours}:${minutes} น.`;
+};
+
 export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   // 🔍 State เลือกใบงาน
   const [completedJobsList, setCompletedJobsList] = useState(jobs);
@@ -132,6 +146,54 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
 
+  // 🖨️ ฟังก์ชันเปิดหน้าต่างพิมพ์เฉพาะ element ที่ระบุ พร้อมแนบ Font TH Sarabun PSK
+  const handlePrintSpecificElement = (elementId) => {
+    const printContent = document.getElementById(elementId);
+    if (!printContent) return;
+
+    const printWindow = window.open('', '_blank', 'width=900,height=1200');
+    if (!printWindow) {
+      alert("กรุณาอนุญาตให้เว็บไซต์เปิดหน้าต่างป๊อปอัป (Popup) เพื่อใช้งานฟังก์ชันพิมพ์");
+      return;
+    }
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>พิมพ์เอกสาร - กปภ.สาขานครพนม</title>
+          <meta charset="utf-8" />
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
+            @page { size: A4 portrait; margin: 0mm; }
+            body { 
+              background: white !important; 
+              margin: 0 !important; 
+              padding: 0 !important; 
+              font-family: 'Sarabun', 'TH Sarabun PSK', sans-serif !important;
+              -webkit-print-color-adjust: exact; 
+            }
+            .no-print { display: none !important; }
+            .print-container { width: 210mm; min-height: 297mm; margin: 0 auto; background: white; box-sizing: border-box; }
+          </style>
+          <script src="https://cdn.tailwindcss.com"></script>
+        </head>
+        <body class="bg-white text-black">
+          <div class="print-container">${printContent.innerHTML}</div>
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+                window.close();
+              }, 400);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   // 📥 1. ดึงข้อมูลรายชื่อผู้ลงนามจาก Google Sheets
   useEffect(() => {
     const fetchSignersFromSheet = async () => {
@@ -179,7 +241,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
     fetchCompletedJobsFromSheet();
   }, [jobs]);
 
-  // 📥 3. ดึงข้อมูลรายการ Master Data (Cat1-Cat7 & Equipment)
+  // 📥 3. ดึงข้อมูลรายการ Master Data
   useEffect(() => {
     const fetchAllMasterData = async () => {
       try {
@@ -202,13 +264,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
             const labor = Number(item.laborPrice !== undefined ? item.laborPrice : (item[`${prefix}_laber`] || item[`${prefix}_labor`] || item.labor || item.laber || 0));
             const unit = String(item.unit || item[`${prefix}_unit`] || defaultUnit).trim();
 
-            return {
-              id,
-              name,
-              unit,
-              materialPrice: price,
-              laborPrice: labor
-            };
+            return { id, name, unit, materialPrice: price, laborPrice: labor };
           }).filter(i => i && i.name && !i.name.toLowerCase().includes('_name') && !i.name.toLowerCase().includes('name'));
         };
 
@@ -239,14 +295,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
         const cat7List = parsedCat7.length > 0 ? parsedCat7 : DEFAULT_ITEMS_BY_CATEGORY.cat7;
         setOtherExpenses(cat7List.map((p, idx) => {
           const val = p.laborPrice > 0 ? p.laborPrice : p.materialPrice;
-          return {
-            id: p.id || idx + 1,
-            name: p.name,
-            unit: p.unit,
-            qty: 1,
-            unitPrice: val,
-            amount: val
-          };
+          return { id: p.id || idx + 1, name: p.name, unit: p.unit, qty: 1, unitPrice: val, amount: val };
         }));
 
       } catch (err) {
@@ -276,18 +325,14 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
     } else {
       const q = val.trim().toLowerCase();
       const pool = itemMaster[activeCategory] || [];
-      const filtered = pool.filter(m => {
-        const itemName = String(m?.name || '').toLowerCase();
-        return itemName.includes(q);
-      });
+      const filtered = pool.filter(m => String(m?.name || '').toLowerCase().includes(q));
       setSuggestions(filtered);
     }
   };
 
   const handleSelectItemSuggestion = (item) => {
     setCurrentSelectedItem(item);
-    const itemName = String(item?.name || '').trim();
-    setSearchTerm(itemName);
+    setSearchTerm(String(item?.name || '').trim());
     setCustomMaterialPrice(item.materialPrice !== undefined ? item.materialPrice : '');
     setCustomLaborPrice(item.laborPrice !== undefined ? item.laborPrice : '');
     setSuggestions([]);
@@ -376,7 +421,6 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const totalOtherWithVat = sumOtherExpenses + vatAmount;
   
   const grandTotalWithVat = totalCostWithFactorF + totalOtherWithVat;
-
   const roundedGrandTotalVal = Math.floor(grandTotalWithVat);
   const formattedGrandTotalFormatted = `${roundedGrandTotalVal.toLocaleString()}.00`;
 
@@ -427,7 +471,8 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const jobLng = selectedJob ? (selectedJob.Longitude || selectedJob.longitude || selectedJob[18] || '104.7944') : '104.7944';
   const jobIssueType = selectedJob ? (selectedJob.Description || selectedJob.issueType || selectedJob[5] || 'ท่อแตก/ท่อรั่ว') : 'ท่อแตก/ท่อรั่ว';
   const jobTime = selectedJob ? (selectedJob.Time || selectedJob.time || '09:00') : '09:00';
-  const jobClosedDate = selectedJob ? (selectedJob.ClosedAt || selectedJob.closedAt || new Date()) : new Date();
+  
+  const jobClosedAtVal = selectedJob ? (selectedJob.ClosedAt || selectedJob.closedAt || selectedJob[15] || new Date()) : new Date();
 
   const supervisorName = signers.managers[1]?.name || 'นายราเมศร์ สันวิลาศ';
   const supervisorPos = signers.managers[1]?.position || 'หัวหน้างานบริการและควบคุมน้ำสูญเสีย';
@@ -435,11 +480,22 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const managerName = signers.managers[2]?.name || 'นายเกรียงศักดิ์ วรสุทธิ์';
   const managerPos = signers.managers[2]?.position || 'ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม';
 
+  // 🛠️ ข้อความไดนามิกสำหรับข้อ 4.3
+  const factorFText = applyFactorF ? 'คิด Factor F' : 'ไม่คิด Factor F';
+  const otherExpensesNamesText = otherExpenses.length > 0 
+    ? otherExpenses.map(o => o.name).join(' / ') 
+    : 'รถขุด PC35 / ซ่อมผิว';
+
+  // 🛠️ การจัดการรายการพัสดุส่งคืนสำหรับข้อ 7
+  const validReturnedEquipment = (returnStatusType === 'มีอุปกรณ์คืน' && returnEquipmentList.length > 0)
+    ? returnEquipmentList.filter(eq => eq.name && eq.name.trim() !== '')
+    : [];
+
   return (
     <div className="max-w-4xl mx-auto bg-white p-6 rounded-3xl shadow-xl border border-slate-200 font-sans space-y-6">
       
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl">
             <Calculator className="w-6 h-6" />
@@ -450,19 +506,21 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
           </div>
         </div>
 
-        {selectedJob && (
-          <button
-            type="button"
-            onClick={() => setShowPrintPreview(true)}
-            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-          >
-            <Eye className="w-4 h-4 text-indigo-600" />
-            <span>พรีวิวแบบฟอร์มเบิกซ่อม (PDF)</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {selectedJob && (
+            <button
+              type="button"
+              onClick={() => setShowPrintPreview(true)}
+              className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3.5 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              <Eye className="w-4 h-4 text-indigo-600" />
+              <span>พรีวิวแบบฟอร์มเบิกซ่อม (PDF)</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* 🔍 เลือกใบงานที่ซ่อมเสร็จแล้ว */}
+      {/* 🔍 เลือกใบงาน */}
       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
         <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
           <span className="flex items-center gap-1.5">
@@ -481,6 +539,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                 {rNumber && <span className="bg-blue-600 text-white px-2 py-0.5 rounded font-bold text-[10px]">คำสั่งงานเลขที่: {rNumber}</span>}
               </div>
               <p className="text-slate-600"><b>สถานที่:</b> {selectedJob.Location || selectedJob.location || selectedJob[4] || '-'}</p>
+              <p className="text-slate-500"><b>วันเวลาซ่อมเสร็จ:</b> {formatThaiDateTime(jobClosedAtVal)}</p>
             </div>
             <button
               type="button"
@@ -533,7 +592,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
         )}
       </div>
 
-      {/* 🏗️ 1. กรอบรายละเอียดหน้างาน */}
+      {/* 🏗️ 1. รายละเอียดหน้างาน */}
       {selectedJob && (
         <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-4 animate-fadeIn">
           <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -592,7 +651,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
         </div>
       )}
 
-      {/* ⏱️ 2. กรอบระยะเวลาซ่อม (นาที 1-60) */}
+      {/* ⏱️ 2. ระยะเวลาซ่อม */}
       {selectedJob && (
         <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-4 animate-fadeIn">
           <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -974,19 +1033,21 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex justify-between items-center">
+            <div className="pt-3 border-t border-slate-800 flex flex-wrap justify-between items-center gap-3">
               <div>
                 <span className="text-xs text-slate-400 block">ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น ({applyFactorF ? 'รวมภาษีฯ' : 'ไม่รวมภาษีฯ'}):</span>
                 <span className="text-lg font-mono font-extrabold text-cyan-400">฿{formattedGrandTotalFormatted} บาท</span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowPrintPreview(true)}
-                className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 px-4 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-md"
-              >
-                <Printer className="w-4 h-4" /> พรีวิวและสั่งพิมพ์
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPrintPreview(true)}
+                  className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-md"
+                >
+                  <Printer className="w-4 h-4" /> พรีวิวและสั่งพิมพ์
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1002,277 +1063,277 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
         </form>
       )}
 
-      {/* 📄 Modal พรีวิวแบบฟอร์มเบิกซ่อมท่อ (เต็มหน้าจอ) */}
+      {/* 📄 Modal พรีวิวและสั่งพิมพ์ */}
       {showPrintPreview && selectedJob && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-2 sm:p-6 font-sans overflow-y-auto">
           <div className="bg-white w-full max-w-[98vw] h-[98vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col">
             
-            {/* Nav Preview */}
-            <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shrink-0 border-b border-slate-800">
+            <div className="no-print bg-slate-900 text-white px-6 py-4 flex flex-wrap justify-between items-center gap-3 shrink-0 border-b border-slate-800">
               <div className="flex items-center gap-3">
                 <Printer className="w-6 h-6 text-cyan-400" />
-                <span className="font-bold text-base text-white">พรีวิวแบบฟอร์มควบคุมการซ่อมท่อ แผนที่ และใบรับแจ้งท่อแตก-รั่ว (กปภ.สาขานครพนม)</span>
+                <span className="font-bold text-base text-white">พรีวิวแบบฟอร์มควบคุมการซ่อมท่อ แผนที่ และใบรับแจ้งท่อแตก-รั่ว</span>
               </div>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => window.print()}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-md"
-                >
-                  <Printer className="w-4 h-4" /> สั่งพิมพ์ / บันทึก PDF
-                </button>
-                <button
                   onClick={() => setShowPrintPreview(false)}
-                  className="text-slate-400 hover:text-white p-1.5 rounded-lg cursor-pointer"
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
                 >
-                  <X className="w-7 h-7" />
+                  <X className="w-4 h-4" /> ปิดหน้าต่าง
                 </button>
               </div>
             </div>
 
-            {/* Print Preview Canvas Container */}
-            <div className="p-6 overflow-y-auto bg-slate-200 flex flex-col items-center gap-8">
+            {/* 🌟 ส่วนแสดงผลหน้าพรีวิว: ฟอนต์กระชับ ปรับขนาดไม่ให้ล้น A4 */}
+            <div id="print-preview-modal-content" className="p-6 overflow-y-auto bg-slate-200 flex flex-col items-center gap-8 flex-1" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
               
-              {/* หน้าที่ 1: ตารางประมาณการค่าใช้จ่าย */}
-              <div className="bg-white w-[210mm] min-h-[297mm] p-[10mm] shadow-2xl text-black font-sans text-[11px] leading-snug space-y-3">
-                
-                {/* 🏛️ ส่วนหัวแบบฟอร์ม */}
-                <div className="flex justify-between items-center border border-black p-3">
-                  <div className="flex items-center gap-3 w-1/4">
-                    <img src="/pwa.webp" alt="PWA Logo" className="w-10 h-10 object-contain shrink-0" />
-                    <div className="text-[8px] leading-tight font-bold text-slate-800">
-                      การประปาส่วนภูมิภาค
+              {/* 📄 หน้าที่ 1: ตารางประมาณการค่าใช้จ่าย */}
+              <div id="print-sheet-estimate" className="bg-white w-[210mm] min-h-[297mm] p-[8mm] shadow-2xl text-black text-[11px] leading-tight flex flex-col justify-between relative group" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
+                <div className="no-print absolute top-3 right-3 z-30">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintSpecificElement('print-sheet-estimate')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg flex items-center gap-1.5 cursor-pointer transition"
+                  >
+                    <Printer className="w-4 h-4" /> พิมพ์หน้าประมาณการ (แท็บใหม่)
+                  </button>
+                </div>
+
+                <div className="space-y-2 flex-1">
+                  <div className="flex justify-between items-center border border-black p-2">
+                    <div className="flex items-center gap-2 w-1/4">
+                      <img 
+                        src="/pwa.webp" 
+                        alt="PWA Logo" 
+                        className="w-8 h-8 object-contain" 
+                        onError={(e)=>{e.target.onerror=null; e.target.src='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>';}} 
+                      />
+                      <div className="text-[9px] leading-tight font-bold text-slate-800">การประปาส่วนภูมิภาค</div>
+                    </div>
+                    <div className="text-center w-2/4">
+                      <h1 className="text-[13px] font-bold">การประปาส่วนภูมิภาคสาขานครพนม</h1>
+                      <h2 className="text-[14px] font-extrabold underline mt-0.5">แบบฟอร์มควบคุมการซ่อมท่อ</h2>
+                    </div>
+                    <div className="text-right text-[11px] w-1/4 leading-tight">
+                      <p><b>คำสั่งงานเลขที่ :</b> {rNumber || 'R202608036111'}</p>
+                      <p><b>วันที่ :</b> {formatThaiDate(selectedJob.ClosedAt || selectedJob.closedAt || new Date())}</p>
                     </div>
                   </div>
 
-                  <div className="text-center w-2/4">
-                    <h1 className="text-[14px] font-bold">การประปาส่วนภูมิภาคสาขานครพนม</h1>
-                    <h2 className="text-[15px] font-extrabold underline mt-0.5">แบบฟอร์มควบคุมการซ่อมท่อ</h2>
-                  </div>
+                  <table className="w-full border-collapse border border-black text-[11px]">
+                    <tbody>
+                      <tr>
+                        <td className="border border-black p-1 font-bold bg-slate-100" width="12%">วันที่แจ้ง</td>
+                        <td className="border border-black p-1" width="21%">{formatThaiDate(selectedJob.Timestamp)}</td>
+                        <td className="border border-black p-1 font-bold bg-slate-100" width="14%">วันที่ซ่อมเสร็จ</td>
+                        <td className="border border-black p-1 font-bold text-blue-900" width="23%">{formatThaiDateTime(jobClosedAtVal)}</td>
+                        <td className="border border-black p-1 font-bold bg-slate-100" width="12%">ขนาด (กxยxล)</td>
+                        <td className="border border-black p-1">{workDetails.width || 0} x {workDetails.length || 0} x {workDetails.depth || 0} ม.</td>
+                      </tr>
+                      <tr>
+                        <td className="border border-black p-1 font-bold bg-slate-100">สถานที่</td>
+                        <td className="border border-black p-1" colSpan="3">{selectedJob.Location || selectedJob.location || '-'}</td>
+                        <td className="border border-black p-1 font-bold bg-slate-100">สภาพพื้นที่</td>
+                        <td className="border border-black p-1 font-bold text-blue-900">{workDetails.surfaceType}</td>
+                      </tr>
+                      <tr>
+                        <td className="border border-black p-1 font-bold bg-slate-100">ชนิดท่อ</td>
+                        <td className="border border-black p-1">{selectedJob.PipeType || '-'}</td>
+                        <td className="border border-black p-1 font-bold bg-slate-100">ขนาดท่อ</td>
+                        <td className="border border-black p-1">{selectedJob.PipeSize || '-'} มม.</td>
+                        <td className="border border-black p-1 font-bold bg-slate-100">ระยะเวลาซ่อม</td>
+                        <td className="border border-black p-1 font-bold">{workDetails.repairHours} ชม. {workDetails.repairMinutes} นาที</td>
+                      </tr>
+                    </tbody>
+                  </table>
 
-                  <div className="text-right text-[11px] w-1/4 leading-tight">
-                    <p><b>คำสั่งงานเลขที่ :</b> {rNumber || 'R202608036111'}</p>
-                    <p><b>วันที่ :</b> {formatThaiDate(selectedJob.ClosedAt || selectedJob.closedAt || new Date())}</p>
-                  </div>
-                </div>
-
-                {/* ข้อมูลการรับแจ้ง / สถานที่ / รายละเอียดหน้างาน / ระยะเวลาซ่อม */}
-                <table className="w-full border-collapse border border-black text-[11px]">
-                  <tbody>
-                    <tr>
-                      <td className="border border-black p-1.5 font-bold bg-slate-100" width="12%">วันที่แจ้ง</td>
-                      <td className="border border-black p-1.5" width="21%">{formatThaiDate(selectedJob.Timestamp)}</td>
-                      <td className="border border-black p-1.5 font-bold bg-slate-100" width="10%">วันที่ซ่อม</td>
-                      <td className="border border-black p-1.5" width="21%">{formatThaiDate(selectedJob.ClosedAt)}</td>
-                      <td className="border border-black p-1.5 font-bold bg-slate-100" width="14%">ขนาด (กxยxล)</td>
-                      <td className="border border-black p-1.5">{workDetails.width || 0} x {workDetails.length || 0} x {workDetails.depth || 0} ม.</td>
-                    </tr>
-                    <tr>
-                      <td className="border border-black p-1.5 font-bold bg-slate-100">สถานที่</td>
-                      <td className="border border-black p-1.5" colSpan="3">{selectedJob.Location || selectedJob.location || '-'}</td>
-                      <td className="border border-black p-1.5 font-bold bg-slate-100">สภาพพื้นที่</td>
-                      <td className="border border-black p-1.5 font-bold text-blue-900">{workDetails.surfaceType}</td>
-                    </tr>
-                    <tr>
-                      <td className="border border-black p-1.5 font-bold bg-slate-100">ชนิดท่อ</td>
-                      <td className="border border-black p-1.5">{selectedJob.PipeType || '-'}</td>
-                      <td className="border border-black p-1.5 font-bold bg-slate-100">ขนาดท่อ</td>
-                      <td className="border border-black p-1.5">{selectedJob.PipeSize || '-'} มม.</td>
-                      <td className="border border-black p-1.5 font-bold bg-slate-100">ระยะเวลาซ่อม</td>
-                      <td className="border border-black p-1.5 font-bold">{workDetails.repairHours} ชม. {workDetails.repairMinutes} นาที</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                {/* 📊 Main Layout */}
-                <div className="flex gap-2 items-stretch">
-                  
-                  {/* ตารางคำนวณด้านซ้าย */}
-                  <div className="w-[66.666%]">
-                    <table className="w-full h-full border-collapse border border-black text-[10px]">
-                      <thead>
-                        <tr className="bg-slate-100 font-bold text-center">
-                          <th className="border border-black p-1.5" width="5%">ลำดับ</th>
-                          <th className="border border-black p-1.5" width="37%">รายการ</th>
-                          <th className="border border-black p-1.5" width="7%">จำนวน</th>
-                          <th className="border border-black p-1.5" width="8%">หน่วย</th>
-                          <th className="border border-black p-1.5" width="14%">ค่าวัสดุ (บ.)</th>
-                          <th className="border border-black p-1.5" width="14%">ค่าแรง (บ.)</th>
-                          <th className="border border-black p-1.5" width="15%">รวม (บ.)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[
-                          { key: 'cat1', num: '1', title: 'หมวดที่ 1: งานสกัดพื้น' },
-                          { key: 'cat2', num: '2', title: 'หมวดที่ 2: งานวางท่อ' },
-                          { key: 'cat3', num: '3', title: 'หมวดที่ 3: อุปกรณ์ประกอบท่อ' },
-                          { key: 'cat4', num: '4', title: 'หมวดที่ 4: งานคืนสภาพผิวเดิม' },
-                          { key: 'cat5', num: '5', title: 'หมวดที่ 5: ค่าแรงจ้างซ่อมท่อ (ต่อจุด)' },
-                          { key: 'cat6', num: '6', title: 'หมวดที่ 6: อื่นๆ' },
-                        ].map((catHead) => {
-                          const catItems = getCategoryItems(catHead.key);
-                          return (
-                            <React.Fragment key={`pdf-cat-${catHead.key}`}>
-                              <tr className="bg-slate-50 font-bold">
-                                <td className="border border-black p-1 text-center">{catHead.num}</td>
-                                <td className="border border-black p-1" colSpan="6">{catHead.title}</td>
-                              </tr>
-                              {catItems.length === 0 ? (
-                                <tr>
-                                  <td className="border border-black p-1 text-center">-</td>
-                                  <td className="border border-black p-1 text-slate-400 italic" colSpan="6">ไม่มีรายการ</td>
-                                </tr>
-                              ) : (
-                                catItems.map((item, itemIdx) => (
-                                  <tr key={`pdf-item-${item.cartId}`}>
-                                    <td className="border border-black p-1 text-center">{catHead.num}.{itemIdx + 1}</td>
-                                    <td className="border border-black p-1">{item.name}</td>
-                                    <td className="border border-black p-1 text-center">{item.quantity}</td>
-                                    <td className="border border-black p-1 text-center">{item.unit}</td>
-                                    <td className="border border-black p-1 text-right">{item.totalMaterialPrice.toLocaleString()}</td>
-                                    <td className="border border-black p-1 text-right">{item.totalLaborPrice.toLocaleString()}</td>
-                                    <td className="border border-black p-1 text-right font-bold">{(item.totalMaterialPrice + item.totalLaborPrice).toLocaleString()}</td>
-                                  </tr>
-                                ))
-                              )}
-                            </React.Fragment>
-                          );
-                        })}
-
-                        {/* สรุปตามข้อ a ถึง h */}
-                        <tr className="font-bold bg-slate-50">
-                          <td className="border border-black p-1.5 text-center">a</td>
-                          <td className="border border-black p-1.5" colSpan="5">รวมราคาค่าวัสดุและค่าแรงงาน (ไม่รวมภาษีฯ)</td>
-                          <td className="border border-black p-1.5 text-right font-mono">{totalDirectCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        </tr>
-                        <tr className="font-bold bg-slate-50">
-                          <td className="border border-black p-1.5 text-center">b</td>
-                          <td className="border border-black p-1.5" colSpan="5">Factor F : งานก่อสร้างทาง (รวมภาษีฯ)</td>
-                          <td className="border border-black p-1.5 text-right font-mono">{activeFactorF}</td>
-                        </tr>
-                        <tr className="font-bold bg-slate-100">
-                          <td className="border border-black p-1.5 text-center">c</td>
-                          <td className="border border-black p-1.5" colSpan="5">รวมราคาค่าวัสดุและค่าแรงงาน x Factor F (ข้อ a x ข้อ b)</td>
-                          <td className="border border-black p-1.5 text-right font-mono">{totalCostWithFactorF.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        </tr>
-
-                        <tr>
-                          <td className="border border-black p-1.5 text-center">d</td>
-                          <td className="border border-black p-1.5 font-bold" colSpan="6">ค่าใช้จ่ายอื่นๆ : (ไม่คิด Factor F)</td>
-                        </tr>
-                        {otherExpenses.map((oth, oIdx) => (
-                          <tr key={`pdf-oth-${oIdx}`}>
-                            <td className="border border-black p-1 text-center">d.{oIdx+1}</td>
-                            <td className="border border-black p-1" colSpan="5">{oth.name}</td>
-                            <td className="border border-black p-1 text-right font-mono">{oth.amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                  <div className="flex gap-2 items-stretch">
+                    <div className="w-[66.666%]">
+                      <table className="w-full h-full border-collapse border border-black text-[10px]">
+                        <thead>
+                          <tr className="bg-slate-100 font-bold text-center">
+                            <th className="border border-black p-1" width="5%">ลำดับ</th>
+                            <th className="border border-black p-1" width="37%">รายการ</th>
+                            <th className="border border-black p-1" width="7%">จำนวน</th>
+                            <th className="border border-black p-1" width="8%">หน่วย</th>
+                            <th className="border border-black p-1" width="14%">ค่าวัสดุ (บ.)</th>
+                            <th className="border border-black p-1" width="14%">ค่าแรง (บ.)</th>
+                            <th className="border border-black p-1" width="15%">รวม (บ.)</th>
                           </tr>
-                        ))}
+                        </thead>
+                        <tbody>
+                          {[
+                            { key: 'cat1', num: '1', title: 'หมวดที่ 1: งานสกัดพื้น' },
+                            { key: 'cat2', num: '2', title: 'หมวดที่ 2: งานวางท่อ' },
+                            { key: 'cat3', num: '3', title: 'หมวดที่ 3: อุปกรณ์ประกอบท่อ' },
+                            { key: 'cat4', num: '4', title: 'หมวดที่ 4: งานคืนสภาพผิวเดิม' },
+                            { key: 'cat5', num: '5', title: 'หมวดที่ 5: ค่าแรงจ้างซ่อมท่อ (ต่อจุด)' },
+                            { key: 'cat6', num: '6', title: 'หมวดที่ 6: อื่นๆ' },
+                          ].map((catHead) => {
+                            const catItems = getCategoryItems(catHead.key);
+                            return (
+                              <React.Fragment key={`pdf-cat-${catHead.key}`}>
+                                <tr className="bg-slate-50 font-bold">
+                                  <td className="border border-black p-0.5 text-center">{catHead.num}</td>
+                                  <td className="border border-black p-0.5" colSpan="6">{catHead.title}</td>
+                                </tr>
+                                {catItems.length === 0 ? (
+                                  <tr>
+                                    <td className="border border-black p-0.5 text-center">-</td>
+                                    <td className="border border-black p-0.5 text-slate-400 italic" colSpan="6">ไม่มีรายการ</td>
+                                  </tr>
+                                ) : (
+                                  catItems.map((item, itemIdx) => (
+                                    <tr key={`pdf-item-${item.cartId}`}>
+                                      <td className="border border-black p-0.5 text-center">{catHead.num}.{itemIdx + 1}</td>
+                                      <td className="border border-black p-0.5">{item.name}</td>
+                                      <td className="border border-black p-0.5 text-center">{item.quantity}</td>
+                                      <td className="border border-black p-0.5 text-center">{item.unit}</td>
+                                      <td className="border border-black p-0.5 text-right">{item.totalMaterialPrice.toLocaleString()}</td>
+                                      <td className="border border-black p-0.5 text-right">{item.totalLaborPrice.toLocaleString()}</td>
+                                      <td className="border border-black p-0.5 text-right font-bold">{(item.totalMaterialPrice + item.totalLaborPrice).toLocaleString()}</td>
+                                    </tr>
+                                  ))
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
 
-                        <tr className="font-bold bg-slate-50">
-                          <td className="border border-black p-1.5 text-center">e</td>
-                          <td className="border border-black p-1.5" colSpan="5">รวมราคาค่าใช้จ่ายอื่นๆ (ไม่รวมภาษีฯ) (รวมข้อ d)</td>
-                          <td className="border border-black p-1.5 text-right font-mono">{sumOtherExpenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        </tr>
-                        <tr className="font-bold bg-slate-50">
-                          <td className="border border-black p-1.5 text-center">f</td>
-                          <td className="border border-black p-1.5" colSpan="5">ภาษีมูลค่าเพิ่ม (Vat 7%)</td>
-                          <td className="border border-black p-1.5 text-right font-mono">{vatAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        </tr>
-                        <tr className="font-bold bg-slate-50">
-                          <td className="border border-black p-1.5 text-center">g</td>
-                          <td className="border border-black p-1.5" colSpan="5">รวมราคาค่าใช้จ่ายอื่นๆ (รวมภาษีฯ) (ข้อ e + ข้อ f)</td>
-                          <td className="border border-black p-1.5 text-right font-mono">{totalOtherWithVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        </tr>
-                        <tr className="font-bold bg-cyan-100 text-cyan-950">
-                          <td className="border border-black p-1.5 text-center">h</td>
-                          <td className="border border-black p-1.5" colSpan="5">รวมราคาค่าดำเนินการซ่อมท่อ (รวมภาษีฯ) (ข้อ c + ข้อ g)</td>
-                          <td className="border border-black p-1.5 text-right font-mono text-[11px]">{grandTotalWithVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        </tr>
-                        <tr className="font-bold bg-emerald-100 text-emerald-950">
-                          <td className="border border-black p-1.5 text-center">⭐</td>
-                          <td className="border border-black p-1.5" colSpan="5">ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น ({applyFactorF ? 'รวมภาษีฯ' : 'ไม่รวมภาษีฯ'})</td>
-                          <td className="border border-black p-1.5 text-right font-mono text-[11px] font-bold">{formattedGrandTotalFormatted}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                          <tr className="font-bold bg-slate-50">
+                            <td className="border border-black p-1 text-center">a</td>
+                            <td className="border border-black p-1" colSpan="5">รวมราคาค่าวัสดุและค่าแรงงาน (ไม่รวมภาษีฯ)</td>
+                            <td className="border border-black p-1 text-right font-mono">{totalDirectCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                          </tr>
+                          <tr className="font-bold bg-slate-50">
+                            <td className="border border-black p-1 text-center">b</td>
+                            <td className="border border-black p-1" colSpan="5">Factor F : งานก่อสร้างทาง (รวมภาษีฯ)</td>
+                            <td className="border border-black p-1 text-right font-mono">{activeFactorF}</td>
+                          </tr>
+                          <tr className="font-bold bg-slate-100">
+                            <td className="border border-black p-1 text-center">c</td>
+                            <td className="border border-black p-1" colSpan="5">รวมราคาค่าวัสดุและค่าแรงงาน x Factor F (ข้อ a x ข้อ b)</td>
+                            <td className="border border-black p-1 text-right font-mono">{totalCostWithFactorF.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                          </tr>
 
-                  {/* 🏛️ คอลัมน์ขวาสุด: คณะกรรมการ */}
-                  <div className="w-[33.333%] border border-black p-2.5 flex flex-col justify-between bg-slate-50/30 text-[10px]">
-                    <div className="space-y-2.5">
-                      <div className="border-b border-black pb-2 space-y-1">
-                        <p className="font-bold text-[10px]">รายละเอียดการตรวจสอบท่อ-อุปกรณ์เดิม</p>
-                        {returnStatusType === 'ไม่มี' || returnEquipmentList.length === 0 ? (
-                          <p>-</p>
-                        ) : (
-                          <ul className="list-disc pl-4 space-y-0.5">
-                            {returnEquipmentList.map((eq, i) => (
-                              <li key={i}>{eq.name} : {eq.qty} {eq.unit}</li>
+                          <tr>
+                            <td className="border border-black p-1 text-center">d</td>
+                            <td className="border border-black p-1 font-bold" colSpan="6">ค่าใช้จ่ายอื่นๆ : (ไม่คิด Factor F)</td>
+                          </tr>
+                          {otherExpenses.map((oth, oIdx) => (
+                            <tr key={`pdf-oth-${oIdx}`}>
+                              <td className="border border-black p-0.5 text-center">d.{oIdx+1}</td>
+                              <td className="border border-black p-0.5" colSpan="5">{oth.name}</td>
+                              <td className="border border-black p-0.5 text-right font-mono">{oth.amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            </tr>
+                          ))}
+
+                          <tr className="font-bold bg-slate-50">
+                            <td className="border border-black p-1 text-center">e</td>
+                            <td className="border border-black p-1" colSpan="5">รวมราคาค่าใช้จ่ายอื่นๆ (ไม่รวมภาษีฯ) (รวมข้อ d)</td>
+                            <td className="border border-black p-1 text-right font-mono">{sumOtherExpenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                          </tr>
+                          <tr className="font-bold bg-slate-50">
+                            <td className="border border-black p-1 text-center">f</td>
+                            <td className="border border-black p-1" colSpan="5">ภาษีมูลค่าเพิ่ม (Vat 7%)</td>
+                            <td className="border border-black p-1 text-right font-mono">{vatAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                          </tr>
+                          <tr className="font-bold bg-slate-50">
+                            <td className="border border-black p-1 text-center">g</td>
+                            <td className="border border-black p-1" colSpan="5">รวมราคาค่าใช้จ่ายอื่นๆ (รวมภาษีฯ) (ข้อ e + ข้อ f)</td>
+                            <td className="border border-black p-1 text-right font-mono">{totalOtherWithVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                          </tr>
+                          <tr className="font-bold bg-cyan-100 text-cyan-950">
+                            <td className="border border-black p-1 text-center">h</td>
+                            <td className="border border-black p-1" colSpan="5">รวมราคาค่าดำเนินการซ่อมท่อ (รวมภาษีฯ) (ข้อ c + ข้อ g)</td>
+                            <td className="border border-black p-1 text-right font-mono text-[11px]">{grandTotalWithVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                          </tr>
+                          <tr className="font-bold bg-emerald-100 text-emerald-950">
+                            <td className="border border-black p-1 text-center">⭐</td>
+                            <td className="border border-black p-1" colSpan="5">ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น ({applyFactorF ? 'รวมภาษีฯ' : 'ไม่รวมภาษีฯ'})</td>
+                            <td className="border border-black p-1 text-right font-mono text-[11px] font-bold">{formattedGrandTotalFormatted}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="w-[33.333%] border border-black p-2 flex flex-col justify-between bg-slate-50/30 text-[10px]">
+                      <div className="space-y-2">
+                        <div className="border-b border-black pb-1.5 space-y-0.5">
+                          <p className="font-bold text-[10px]">รายละเอียดการตรวจสอบท่อ-อุปกรณ์เดิม</p>
+                          {returnStatusType === 'ไม่มี' || returnEquipmentList.length === 0 ? (
+                            <p>-</p>
+                          ) : (
+                            <ul className="list-disc pl-4 space-y-0.5">
+                              {returnEquipmentList.map((eq, i) => (
+                                <li key={i}>{eq.name} : {eq.qty} {eq.unit}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
+                        <div className="border-b border-black pb-1.5 space-y-0.5 text-center">
+                          <p className="font-bold text-[10px]">คณะกรรมการตรวจสอบท่อ และอุปกรณ์เดิม</p>
+                          <div className="space-y-0.5 pt-0.5 leading-tight">
+                            {signers.committeeCheck.map((s, i) => (
+                              <p key={i}>ลงชื่อ..................................................{s.position}<br/>({s.name})</p>
                             ))}
-                          </ul>
-                        )}
-                      </div>
+                          </div>
+                        </div>
 
-                      <div className="border-b border-black pb-2 space-y-1 text-center">
-                        <p className="font-bold text-[10px]">คณะกรรมการตรวจสอบท่อ และอุปกรณ์เดิม</p>
-                        <div className="space-y-1 pt-1 leading-tight">
-                          {signers.committeeCheck.map((s, i) => (
-                            <p key={i}>ลงชื่อ..................................................{s.position}<br/>({s.name})</p>
-                          ))}
+                        <div className="border-b border-black pb-1.5 space-y-0.5 text-center">
+                          <p className="font-bold text-[10px]">คณะกรรมการตรวจรับพัสดุ</p>
+                          <div className="space-y-0.5 pt-0.5 leading-tight">
+                            {signers.committeeReceive.map((s, i) => (
+                              <p key={i}>ลงชื่อ..................................................{s.position}<br/>({s.name})</p>
+                            ))}
+                          </div>
                         </div>
                       </div>
 
-                      <div className="border-b border-black pb-2 space-y-1 text-center">
-                        <p className="font-bold text-[10px]">คณะกรรมการตรวจรับพัสดุ</p>
-                        <div className="space-y-1 pt-1 leading-tight">
-                          {signers.committeeReceive.map((s, i) => (
-                            <p key={i}>ลงชื่อ..................................................{s.position}<br/>({s.name})</p>
-                          ))}
-                        </div>
+                      <div className="space-y-0.5 text-center pt-0.5">
+                        <p className="font-bold text-[10px]">ผู้ควบคุมงาน / ผู้ดำเนินการซ่อม</p>
+                        <p>ลงชื่อ..................................................<br/>(..................................................)<br/><b>ผู้ควบคุมงาน / ทีมช่าง</b></p>
                       </div>
                     </div>
 
-                    <div className="space-y-1 text-center pt-1">
-                      <p className="font-bold text-[10px]">ผู้ควบคุมงาน / ผู้ดำเนินการซ่อม</p>
-                      <p>ลงชื่อ..................................................<br/>(..................................................)<br/><b>ผู้ควบคุมงาน / ทีมช่าง</b></p>
-                    </div>
                   </div>
-
                 </div>
 
-                {/* ✍️ ส่วนลงชื่อ 3 ตำแหน่งด้านล่างสุด */}
-                <div className="border border-black p-3 mt-2 bg-slate-50/50 text-[11px]">
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    
-                    <div className="space-y-1">
+                <div className="border border-black p-2 mt-2 bg-slate-50/50 text-[11px] shrink-0">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="space-y-0.5">
                       <p>ลงชื่อ..................................................</p>
                       <p className="font-bold">(..................................................)</p>
                       <p><b>ตำแหน่ง:</b> ..................................................<br/>(ผู้ประมาณการ)</p>
                     </div>
-
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                       <p>ลงชื่อ..................................................</p>
                       <p className="font-bold">({supervisorName})</p>
                       <p><b>ตำแหน่ง:</b> {supervisorPos}<br/>(ผู้ตรวจ)</p>
                     </div>
-
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                       <p>ลงชื่อ..................................................</p>
                       <p className="font-bold">({managerName})</p>
                       <p><b>ตำแหน่ง:</b> {managerPos}<br/>(ผู้จัดการ)</p>
                     </div>
-
                   </div>
                 </div>
-
               </div>
 
-              {/* หน้าที่ 2: แผนที่ Google Maps / Street View และกรอบ แบบรายการซ่อมท่อ */}
-              <div className="bg-white w-[210mm] min-h-[297mm] p-[10mm] shadow-2xl text-black font-sans text-[11px] leading-snug flex flex-col justify-between page-break-before">
-                
-                {/* ครึ่งหน้ากระดาษส่วนบน: แผนที่ Google Maps ตำแหน่งจุดท่อรั่ว */}
+              {/* 📄 หน้าที่ 2: แผนที่ Google Maps และกรอบ แบบรายการซ่อมท่อ (ว่างเปล่า) */}
+              <div id="print-sheet-map" className="bg-white w-[210mm] min-h-[297mm] p-[10mm] shadow-2xl text-black text-[11px] leading-normal flex flex-col justify-between relative group" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
+                <div className="no-print absolute top-3 right-3 z-30">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintSpecificElement('print-sheet-map')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg flex items-center gap-1.5 cursor-pointer transition"
+                  >
+                    <Printer className="w-4 h-4" /> พิมพ์หน้าแผนที่ (แท็บใหม่)
+                  </button>
+                </div>
+
                 <div className="h-[48%] flex flex-col space-y-2 border border-black p-3 bg-slate-50">
                   <div className="flex justify-between items-center border-b border-black pb-1.5">
-                    <h3 className="font-bold text-xs flex items-center gap-1.5 text-blue-900">
+                    <h3 className="font-bold text-[12px] flex items-center gap-1.5 text-blue-900">
                       <MapPin className="w-4 h-4 text-rose-600" /> แผนที่แสดงตำแหน่งพิกัดจุดท่อรั่ว และ Street View
                     </h3>
                     <span className="text-[10px] font-mono text-slate-600">พิกัด: {jobLat}, {jobLng}</span>
@@ -1292,52 +1353,57 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                   <p className="text-[10px] text-slate-600 truncate"><b>สถานที่ซ่อม:</b> {selectedJob.Location || selectedJob.location || '-'}</p>
                 </div>
 
-                {/* ครึ่งหน้ากระดาษส่วนล่าง: กรอบสี่เหลี่ยม หัวข้อ แบบรายการซ่อมท่อ (ถ้ามี) */}
                 <div className="h-[48%] flex flex-col space-y-2 border border-black p-3 bg-white">
                   <div className="border-b border-black pb-1.5">
-                    <h3 className="font-bold text-xs text-slate-900 uppercase">แบบรายการซ่อมท่อ (ถ้ามี)</h3>
+                    <h3 className="font-bold text-[12px] text-slate-900 uppercase">แบบรายการซ่อมท่อ (ถ้ามี)</h3>
                   </div>
 
-                  <div className="flex-1 border border-dashed border-slate-400 rounded p-3 flex flex-col justify-between bg-slate-50/50">
-                    <div className="space-y-1 text-slate-500 text-[10px]">
-                      <p>• รายละเอียดเพิ่มเติม / แผนผังการเดินท่อ / บันทึกหน้างานเพิ่มเติม:</p>
-                      <p>- ขนาดท่อจริง: {selectedJob.PipeSize || '-'} มม. ชนิด: {selectedJob.PipeType || '-'}</p>
-                      <p>- อาการชำรุด: {jobIssueType}</p>
-                    </div>
-
+                  <div className="flex-1 border border-black rounded p-3 bg-white flex flex-col justify-between">
+                    <div className="h-full"></div>
                     <div className="border-t border-slate-300 pt-2 flex justify-between text-[10px] text-slate-600">
                       <span>ผู้บันทึกข้อมูล: ..................................................</span>
-                      <span>วันที่: {formatThaiDate(selectedJob.ClosedAt || new Date())}</span>
+                      <span>วันที่: ..................................................</span>
                     </div>
                   </div>
                 </div>
-
               </div>
 
-              {/* 📑 หน้าที่ 3: แบบฟอร์มใบรับแจ้งท่อแตก-ท่อรั่ว (ปรับปรุงข้อ 7, 8, 9 ตามที่คุณต้องการ) */}
-              <div className="bg-white w-[210mm] min-h-[297mm] p-[8mm] shadow-2xl text-black font-sans text-[10px] leading-tight flex flex-col justify-between space-y-2 page-break-before">
-                
+              {/* 📑 หน้าที่ 3: แบบฟอร์มใบรับแจ้งท่อแตก-ท่อรั่ว */}
+              <div id="print-sheet-report" className="bg-white w-[210mm] min-h-[297mm] p-[8mm] shadow-2xl text-black text-[11px] leading-tight flex flex-col justify-between space-y-1.5 relative group" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
+                <div className="no-print absolute top-3 right-3 z-30">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintSpecificElement('print-sheet-report')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg flex items-center gap-1.5 cursor-pointer transition"
+                  >
+                    <Printer className="w-4 h-4" /> พิมพ์หน้าใบรับแจ้ง (แท็บใหม่)
+                  </button>
+                </div>
+
                 {/* Header หน้า 3 */}
                 <div className="flex justify-between items-center border border-black p-2 bg-slate-50 shrink-0">
                   <div className="flex items-center gap-2 w-1/4">
-                    <img src="/pwa.webp" alt="PWA Logo" className="w-9 h-9 object-contain shrink-0" />
+                    <img 
+                      src="/pwa.webp" 
+                      alt="PWA Logo" 
+                      className="w-8 h-8 object-contain" 
+                      onError={(e)=>{e.target.onerror=null; e.target.src='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>';}} 
+                    />
                   </div>
-
                   <div className="text-center w-2/4">
-                    <h1 className="text-[12px] font-bold">การประปาส่วนภูมิภาคสาขานครพนม</h1>
-                    <h2 className="text-[13px] font-extrabold underline mt-0.5">แบบฟอร์มใบรับแจ้งท่อแตก-ท่อรั่ว</h2>
+                    <h1 className="text-[13px] font-bold">การประปาส่วนภูมิภาคสาขานครพนม</h1>
+                    <h2 className="text-[14px] font-extrabold underline mt-0.5">แบบฟอร์มใบรับแจ้งท่อแตก-ท่อรั่ว</h2>
                   </div>
-
-                  <div className="text-right text-[10px] w-1/4 leading-tight">
+                  <div className="text-right text-[11px] w-1/4 leading-tight">
                     <p><b>เลขที่รับแจ้ง :</b> {selectedJob.JobID || selectedJob.id || selectedJob[0] || '1/2569'}</p>
                     <p><b>วันที่ :</b> {formatThaiDate(selectedJob.Timestamp || new Date())}</p>
                     <p><b>คำสั่งงานเลขที่ :</b> {rNumber || 'R202608036111'}</p>
                   </div>
                 </div>
 
-                {/* ข้อ 1) เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม */}
-                <div className="border border-black p-2.5 space-y-1.5 bg-white shrink-0">
-                  <p className="font-bold text-[10.5px]">(1) เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม</p>
+                {/* ข้อ 1 */}
+                <div className="border border-black p-1.5 space-y-0.5 bg-white shrink-0 text-[11px]">
+                  <p className="font-bold text-[11.5px]">(1) เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม</p>
                   <div className="grid grid-cols-3 gap-2 pl-3">
                     <p><b>วันที่แจ้ง:</b> {formatThaiDate(selectedJob.Timestamp)}</p>
                     <p><b>ผู้แจ้ง:</b> {reporterName}</p>
@@ -1349,114 +1415,82 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                     <p><b>ขนาดท่อ:</b> {selectedJob.PipeSize || '-'} มม.</p>
                     <p><b>ชนิดท่อ:</b> {selectedJob.PipeType || '-'}</p>
                   </div>
-                  <div className="pl-3">
+                  <div className="pl-3 flex flex-wrap gap-4">
                     <p><b>พบสาเหตุ:</b> <span className="text-blue-900 font-bold">{jobIssueType}</span></p>
-                  </div>
-                  <div className="pl-3">
                     <p><b>สถานที่เกิดเหตุ / จุดซ่อมท่อ:</b> {selectedJob.Location || selectedJob.location || '-'}</p>
                   </div>
-                  <div className="pl-3 pt-0.5">
-                    <p className="italic">จึงเรียนมาเพื่อโปรดแจ้งผู้เกี่ยวข้องดำเนินการต่อไป จะขอบคุณยิ่ง</p>
+                  <div className="pl-3">
+                    <p>จึงเรียนมาเพื่อโปรดแจ้งผู้เกี่ยวข้องดำเนินการต่อไป จะขอบคุณยิ่ง</p>
                   </div>
-
-                  <div className="border-t border-slate-300 pt-1 mt-1 text-right pr-4 font-bold">
+                  <div className="pt-0.5 text-right pr-4 font-bold">
                     ลงชื่อ.............................................................. (ผู้รับแจ้ง)
                   </div>
                 </div>
 
-                {/* ข้อ 2 - ข้อ 9 Layout สองคอลัมน์ */}
-                <div className="grid grid-cols-2 gap-2 flex-1 items-stretch">
+                {/* 🌟 2 คอลัมน์หลัก: ซ้าย (ข้อ 2,3,4) และ ขวา (ข้อ 5,6,7,8,9) */}
+                <div className="grid grid-cols-2 gap-2 flex-1 items-stretch text-[10.5px]">
                   
-                  {/* 🟢 ฝั่งซ้าย: ข้อ (2), ข้อ (3), ข้อ 6, ข้อ 8 (ลงนามโดยหัวหน้างานบริการฯ) */}
-                  <div className="space-y-2 flex flex-col justify-between h-full">
+                  {/* ฝั่งซ้าย: ข้อ 2, 3, 4 */}
+                  <div className="space-y-1.5 flex flex-col justify-between h-full">
                     
                     {/* ข้อ (2) */}
-                    <div className="border border-black p-2.5 space-y-1 flex flex-col justify-between flex-1">
+                    <div className="border border-black p-1.5 space-y-0.5 flex flex-col justify-between flex-[1]">
                       <div>
-                        <p className="font-bold">(2) เรียน หน.งานบริการและควบคุมน้ำสูญเสีย</p>
-                        <p className="pl-2">ดำเนินการในส่วนที่เกี่ยวข้อง และรายงานผลการดำเนินงานต่อไป</p>
+                        <p className="font-bold text-[10.5px]">(2) เรียน หน.งานบริการและควบคุมน้ำสูญเสีย</p>
+                        <p className="pl-2 text-[10.5px] leading-normal">ดำเนินการในส่วนที่เกี่ยวข้อง และรายงานผลการดำเนินงานต่อไป</p>
                       </div>
-                      <div className="text-center pt-2">
-                        <p>ลงชื่อ..............................................................</p>
-                        <p className="font-bold">({managerName})</p>
-                        <p className="text-[8.5px] font-medium">{managerPos}</p>
+                      <div className="text-center pt-0.5">
+                        <p className="text-[10.5px]">ลงชื่อ..............................................................</p>
+                        <p className="font-bold text-[10.5px]">({managerName})</p>
+                        <p className="text-[9.5px] font-medium">{managerPos}</p>
                       </div>
                     </div>
 
                     {/* ข้อ (3) */}
-                    <div className="border border-black p-2.5 space-y-1 flex flex-col justify-between flex-1">
-                      <div className="space-y-0.5">
-                        <p className="font-bold">(3) เรียน หัวหน้าชุดควบคุมงานซ่อมท่อ/พนักงานบริการ</p>
-                        <p className="pl-2 leading-snug">ตรวจสอบรายละเอียดงานซ่อมท่อแตกรั่ว ทำการประมาณการค่าใช้จ่าย และแจ้งระยะเวลาการปฏิบัติงาน เพื่อนำเรียนผู้จัดการ กปภ.สาขา ในการพิจารณาอนุมัติ และดำเนินการตามระเบียบของ กปภ.ต่อไป</p>
-                      </div>
-
-                      <div className="text-center pt-2 border-t border-slate-300 mt-1">
-                        <p>ลงชื่อ..............................................................</p>
-                        <p className="font-bold">({supervisorName})</p>
-                        <p className="text-[8.5px] font-medium">{supervisorPos}</p>
-                      </div>
-                    </div>
-
-                    {/* ข้อ 6 */}
-                    <div className="border border-black p-2.5 space-y-1.5 flex flex-col justify-between flex-[1.4]">
+                    <div className="border border-black p-1.5 space-y-0.5 flex flex-col justify-between flex-[1.4]">
                       <div>
-                        <p className="font-bold">(6) ข้อพิจารณา และความเห็นของผู้จัดการ</p>
-                        <div className="pl-2 space-y-1 my-1">
-                          <label className="flex items-center gap-1 font-bold"><input type="checkbox" defaultChecked readOnly /> เห็นชอบอนุมัติให้ดำเนินการซ่อมตามประมาณการค่าใช้จ่ายที่เสนอ</label>
-                          <label className="flex items-center gap-1"><input type="checkbox" defaultChecked readOnly /> อนุมัติจัดจ้างเหมาซ่อมท่อ และแต่งตั้งผู้ควบคุมงาน คณะกรรมการตรวจรับพัสดุและตรวจสอบพัสดุคืนตามเสนอ</label>
-                        </div>
-                        <p className="text-[8.5px] text-slate-600 pl-2 leading-tight">คณะกรรมการฯ ที่แต่งตั้งขึ้น ให้ดำเนินการไปตามคำสั่งแต่งตั้งของ กปภ. สาขานครพนม และปฏิบัติตามขั้นตอนตามระเบียบต่อไป</p>
+                        <p className="font-bold text-[10.5px]">(3) เรียน หัวหน้าชุดควบคุมงานซ่อมท่อ/พนักงานบริการ</p>
+                        <p className="pl-2 text-[10.5px] leading-normal">ตรวจสอบรายละเอียดงานซ่อมท่อแตกรั่ว ทำการประมาณการค่าใช้จ่าย และแจ้งระยะเวลาการปฏิบัติงาน เพื่อนำเรียนผู้จัดการ กปภ.สาขา ในการพิจารณาอนุมัติ และดำเนินการตามระเบียบของ กปภ.ต่อไป</p>
                       </div>
-                      <div className="text-center pt-2">
-                        <p>ลงชื่อ..............................................................</p>
-                        <p className="font-bold">({managerName})</p>
-                        <p className="text-[8.5px] font-medium">{managerPos}</p>
+                      <div className="text-center pt-0.5 border-t border-slate-300 mt-0.5">
+                        <p className="text-[10.5px]">ลงชื่อ..............................................................</p>
+                        <p className="font-bold text-[10.5px]">({supervisorName})</p>
+                        <p className="text-[9.5px] font-medium">{supervisorPos}</p>
                       </div>
                     </div>
 
-                    {/* ข้อ 8 (แก้ไขข้อความและลงชื่อโดยหัวหน้างานบริการฯ ตามที่คุณต้องการ) */}
-                    <div className="border border-black p-2.5 flex flex-col justify-between flex-1">
-                      <div>
-                        <p className="font-bold">(8) เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม</p>
-                        <p className="pl-2 leading-snug">งานบริการและควบคุมน้ำสูญเสีย ได้ทำการปิดคำสั่งงาน เลขที่ <span className="font-bold text-blue-900">{rNumber || 'R202608036111'}</span> ลงวันที่ <span className="font-bold">{formatThaiDate(jobClosedDate)}</span> เรียบร้อยแล้ว</p>
-                      </div>
-                      <div className="text-center pt-2">
-                        <p>ลงชื่อ..............................................................</p>
-                        <p className="font-bold">({supervisorName})</p>
-                        <p className="text-[8.5px] font-medium">{supervisorPos}</p>
-                      </div>
-                    </div>
-
-                  </div>
-
-                  {/* 🟢 ฝั่งขวา: ข้อ (4), ข้อ 5, ข้อ 7 (ดึงอุปกรณ์ส่งคืน), ข้อ 9 (ลงนามโดยผู้จัดการ) */}
-                  <div className="space-y-2 flex flex-col justify-between h-full">
-                    
                     {/* ข้อ (4) */}
-                    <div className="border border-black p-2.5 space-y-1 flex flex-col justify-between flex-[1.3]">
+                    <div className="border border-black p-1.5 space-y-0.5 text-[10px] flex flex-col justify-between flex-[2.2]">
                       <div>
-                        <p className="font-bold">(4) เรียน หน.บริการและควบคุมน้ำสูญเสีย</p>
+                        <p className="font-bold text-[10.5px]">(4) เรียน หน.บริการและควบคุมน้ำสูญเสีย</p>
                         <p className="pl-2 font-bold">ทำการตรวจสอบแล้ว สรุปรายละเอียดดังนี้:-</p>
                         
-                        <div className="pl-2 space-y-0.5 pt-1 my-0.5">
+                        <div className="pl-2 space-y-0.5 pt-0.5">
                           <p className="font-bold">4.1 ประเภทการแก้ไขปัญหา</p>
-                          <div className="flex gap-4 pl-2">
+                          <div className="flex gap-3 pl-2">
                             <label className="flex items-center gap-1"><input type="checkbox" defaultChecked readOnly /> ท่อแตก-รั่ว</label>
-                            <span>ขนาดท่อ: {selectedJob.PipeSize || '-'} มม.</span>
-                            <span>ชนิด: {selectedJob.PipeType || 'PE'}</span>
+                            <span>ขนาด: {selectedJob.PipeSize || '-'} มม.</span>
                           </div>
 
                           <p className="font-bold">4.2 สภาพพื้นที่และการใช้เครื่องมือช่าง</p>
-                          <div className="flex flex-col gap-0.5 pl-2">
+                          <div className="flex flex-col gap-0.2 pl-2">
                             <label className="flex items-center gap-1"><input type="checkbox" defaultChecked={workDetails.surfaceType === 'พื้นดิน'} readOnly /> พื้นดิน</label>
-                            <label className="flex items-center gap-1"><input type="checkbox" defaultChecked={workDetails.surfaceType !== 'พื้นดิน'} readOnly /> พื้นคอนกรีต/ลาดยาง (ใช้เครื่องตัดคอนกรีต)</label>
+                            <label className="flex items-center gap-1"><input type="checkbox" defaultChecked={workDetails.surfaceType !== 'พื้นดิน'} readOnly /> พื้นคอนกรีต/ลาดยาง (ใช้เครื่องตัด)</label>
                           </div>
 
-                          <p className="font-bold">4.3 รูปแบบการดำเนินงานซ่อม และการใช้เครื่องจักรรถขุด</p>
-                          <div className="flex flex-col gap-0.5 pl-2">
+                          <p className="font-bold">4.3 รูปแบบการดำเนินงานซ่อม และการใช้เครื่องจักร</p>
+                          <div className="flex flex-col gap-0.2 pl-2">
                             <label className="flex items-center gap-1"><input type="checkbox" defaultChecked readOnly /> ดำเนินการซ่อมเองโดย กปภ.</label>
-                            <label className="flex items-center gap-1"><input type="checkbox" defaultChecked={applyFactorF} readOnly /> จ้างเหมาซ่อมท่อ (คิด Factor F)</label>
-                            <label className="flex items-center gap-1"><input type="checkbox" defaultChecked={otherExpenses.length > 0} readOnly /> ค่าใช้จ่ายอื่นๆ (รถขุด PC35 / ซ่อมผิวจราจร)</label>
+                            
+                            <label className="flex items-center gap-1">
+                              <input type="checkbox" defaultChecked={applyFactorF} readOnly /> 
+                              จ้างเหมาซ่อมท่อ ({factorFText})
+                            </label>
+                            
+                            <label className="flex items-center gap-1">
+                              <input type="checkbox" defaultChecked={otherExpenses.length > 0} readOnly /> 
+                              ค่าใช้จ่ายอื่นๆ ({otherExpensesNamesText})
+                            </label>
                           </div>
 
                           <p className="font-bold">4.4 ระยะเวลาการปฏิบัติงาน</p>
@@ -1464,81 +1498,71 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                         </div>
                       </div>
 
-                      <div className="text-center pt-2">
+                      <div className="text-center pt-0.5">
                         <p>ลงชื่อ..............................................................</p>
                         <p className="font-bold">(..................................................)</p>
-                        <p className="text-[8.5px] font-medium">ช่างผู้ปฏิบัติงาน / หัวหน้าชุด</p>
+                        <p className="text-[9px] font-medium">ช่างผู้ปฏิบัติงาน / หัวหน้าชุด</p>
                       </div>
                     </div>
 
-                    {/* ข้อ 5 */}
-                    <div className="border border-black p-2.5 space-y-1 text-[9.5px] flex flex-col justify-between flex-[1.5]">
-                      <div className="space-y-1">
-                        <p className="font-bold">( 5 ) เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม</p>
-                        <p className="pl-2 leading-snug">งานบริการและลดน้ำสูญเสีย ตรวจสอบเหตุขัดข้องการใช้น้ำ/การรับแจ้งท่อแตก-รั่ว ตามคำสั่งงาน <b>{rNumber || 'R202608036111'}</b></p>
-                        <p className="pl-2 leading-snug">ดังนั้น เพื่อให้การดำเนินงานเป็นไปด้วยความเรียบร้อย โดยมิให้เกิดผลกระทบต่อระบบจำหน่ายและการให้บริการผู้ใช้น้ำ จึงขออนุมัติและให้ความเห็นชอบเพื่อดำเนินการดังนี้</p>
-                        
-                        <p className="pl-3"><b>( 5.1 )</b> อนุมัติทำการซ่อมท่อประปากรณีเร่งด่วนโดยจ้างเหมาเอกชน/บุคคลภายนอกดำเนินการด้วยวิธีเฉพาะเจาะจง วงเงินไม่เกิน <b>{formattedGrandTotalFormatted}</b> บาท</p>
-                        
-                        <p className="pl-3"><b>( 5.2 )</b> เห็นชอบแต่งตั้งคณะกรรมการตรวจรับพัสดุ ผู้ควบคุมงาน และคณะกรรมการตรวจสอบท่อและอุปกรณ์เดิม ดังนี้</p>
-                        
-                        <div className="grid grid-cols-2 gap-2 pl-4 pt-0.5">
-                          <div>
-                            <p className="font-bold underline">คณะกรรมการตรวจรับพัสดุ</p>
-                            {signers.committeeReceive.slice(0, 3).map((sr, i) => (
-                              <p key={`sr-db-${i}`}>{i+1}. {sr.name} ({sr.position})</p>
-                            ))}
-                          </div>
-                          <div>
-                            <p className="font-bold underline">คณะกรรมการตรวจสอบท่อและอุปกรณ์เดิม</p>
-                            {signers.committeeCheck.slice(0, 3).map((sc, i) => (
-                              <p key={`sc-db-${i}`}>{i+1}. {sc.name} ({sc.position})</p>
-                            ))}
-                          </div>
-                        </div>
+                  </div>
 
-                        <div className="pl-3 pt-0.5">
-                          <p className="font-bold underline">ผู้ควบคุมงาน</p>
-                          <p>1. .................................................... (ผู้ควบคุมงาน / ทีมช่าง)</p>
-                        </div>
-                      </div>
-
-                      <div className="text-center pt-2">
-                        <p>ลงชื่อ..............................................................</p>
-                        <p className="font-bold">({supervisorName})</p>
-                        <p className="text-[8.5px] font-medium">{supervisorPos}</p>
-                      </div>
-                    </div>
-
-                    {/* ข้อ 7 (ปรับหัวข้อฝั่งซ้ายเป็น "อุปกรณ์ที่ส่งคืน" ดึงข้อมูลจากฟอร์ม และฝั่งขวาเป็นช่องติ๊ก "ใช้งานได้" / "ใช้งานไม่ได้") */}
-                    <div className="border border-black p-2.5 space-y-1 flex flex-col justify-between flex-[1.4]">
+                  {/* ฝั่งขวา: ข้อ 5, 6, 7, 8, 9 */}
+                  <div className="space-y-1.5 flex flex-col justify-between h-full">
+                    
+                    {/* ข้อ (5) */}
+                    <div className="border border-black p-1.5 space-y-0.5 text-[10.5px] flex flex-col justify-between flex-[1.6]">
                       <div>
-                        <p className="font-bold text-[9.5px]">({'\u00A0'}7{'\u00A0'}) เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม</p>
-                        <p className="pl-2 text-[9px] leading-tight">คณะกรรมการตรวจสอบท่อ และอุปกรณ์เดิม ได้ดำเนินการตามคำสั่งฯ และได้ตรวจสอบรายละเอียดท่อ-อุปกรณ์แล้ว มีความเห็นดังนี้</p>
+                        <p className="font-bold text-[10.5px]">( 5 ) เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม</p>
+                        <p className="pl-2 leading-normal">งานบริการและลดน้ำสูญเสีย ตรวจสอบเหตุขัดข้องตามคำสั่งงาน <b>{rNumber || 'R202608036111'}</b> ขออนุมัติและให้ความเห็นชอบเพื่อดำเนินการดังนี้</p>
+                        <p className="pl-3 leading-normal">
+                          <b>( 5.1 )</b> อนุมัติทำการซ่อมท่อประปากรณีเร่งด่วนโดยจ้างเหมาด้วยวิธีเฉพาะเจาะจง วงเงินไม่เกิน <span className="text-[11.5px] font-extrabold text-red-600 font-mono">{formattedGrandTotalFormatted}</span> บาท
+                        </p>
+                        <p className="pl-3 leading-normal"><b>( 5.2 )</b> เห็นชอบแต่งตั้งคณะกรรมการตรวจรับพัสดุ ผู้ควบคุมงาน และคณะกรรมการตรวจสอบท่อและอุปกรณ์เดิมตามเสนอ</p>
+                      </div>
+                      <div className="text-center pt-0.5">
+                        <p className="text-[10.5px]">ลงชื่อ..............................................................</p>
+                        <p className="font-bold text-[10.5px]">({supervisorName})</p>
+                        <p className="text-[9.5px] font-medium">{supervisorPos}</p>
+                      </div>
+                    </div>
+
+                    {/* ข้อ (6) */}
+                    <div className="border border-black p-1.5 space-y-0.5 text-[10.5px] flex flex-col justify-between flex-[1]">
+                      <div>
+                        <p className="font-bold text-[10.5px]">(6) ข้อพิจารณา และความเห็นของผู้จัดการ</p>
+                        <div className="pl-2 space-y-0.5 my-0.2 text-[10.5px]">
+                          <label className="flex items-center gap-1 font-bold"><input type="checkbox" defaultChecked readOnly /> เห็นชอบอนุมัติให้ดำเนินการซ่อมตามประมาณการค่าใช้จ่ายที่เสนอ</label>
+                          <label className="flex items-center gap-1 font-bold"><input type="checkbox" defaultChecked readOnly /> อนุมัติจัดจ้างเหมาซ่อมท่อ และแต่งตั้งคณะกรรมการฯ ตามเสนอ</label>
+                        </div>
+                      </div>
+                      <div className="text-center pt-0.5">
+                        <p className="text-[10.5px]">ลงชื่อ..............................................................</p>
+                        <p className="font-bold text-[10.5px]">({managerName})</p>
+                        <p className="text-[9.5px] font-medium">{managerPos}</p>
+                      </div>
+                    </div>
+
+                    {/* ข้อ (7) */}
+                    <div className="border border-black p-1.5 space-y-0.5 flex flex-col justify-between flex-[1.8]">
+                      <div>
+                        <p className="font-bold text-[10px]">({'\u00A0'}7{'\u00A0'}) เรียน ผู้จัดการ กปภ.สาขานครพนม</p>
+                        <p className="pl-2 text-[9.5px] leading-tight">คณะกรรมการตรวจสอบท่อ และอุปกรณ์เดิม ได้ดำเนินการตามคำสั่งฯ และได้ตรวจสอบรายละเอียดท่อ-อุปกรณ์แล้ว มีความเห็นดังนี้</p>
                         
-                        <div className="pl-3 space-y-1 pt-1 text-[9px]">
-                          <div className="flex items-center gap-1.5">
-                            <input type="checkbox" checked={returnStatusType === 'ไม่มี' || returnEquipmentList.length === 0} readOnly className="w-3 h-3" />
-                            <span>ไม่มีท่อ/อุปกรณ์เดิมที่ส่งคืน</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <input type="checkbox" checked={returnStatusType === 'มีอุปกรณ์คืน' && returnEquipmentList.length > 0} readOnly className="w-3 h-3" />
-                            <span>รายละเอียดท่อ/อุปกรณ์เดิมที่ส่งคืนพัสดุ</span>
-                          </div>
+                        <div className="pl-2 space-y-0.5 pt-0.2 text-[9.5px]">
+                          <label className="flex items-center gap-1"><input type="checkbox" checked={validReturnedEquipment.length === 0} readOnly /> ไม่มีท่อ/อุปกรณ์เดิมที่ส่งคืน</label>
+                          <label className="flex items-center gap-1"><input type="checkbox" checked={validReturnedEquipment.length > 0} readOnly /> มีรายละเอียดท่อ/อุปกรณ์เดิมที่ส่งคืนพัสดุ</label>
 
-                          {/* ตารางหัวข้อ อุปกรณ์ที่ส่งคืน (ดึงจากฟอร์ม) / สภาพ (ช่องว่างให้ติก ใช้งานได้ / ใช้งานไม่ได้) */}
-                          <div className="grid grid-cols-2 gap-2 px-2 pt-0.5 font-bold text-center underline text-[8.5px]">
+                          <div className="grid grid-cols-2 gap-1 px-1 pt-0.2 font-bold text-center underline">
                             <span>อุปกรณ์ที่ส่งคืน</span>
-                            <span>สภาพ (ใช้งานได้ / ไม่ได้)</span>
+                            <span>สภาพ (ใช้งานได้/ไม่ได้)</span>
                           </div>
-
-                          <div className="grid grid-cols-2 gap-2 px-1 text-[8.5px]">
-                            <div className="space-y-1">
-                              {returnStatusType === 'มีอุปกรณ์คืน' && returnEquipmentList.length > 0 ? (
-                                returnEquipmentList.map((eq, eqIdx) => (
-                                  <p key={`ret-item-${eqIdx}`} className="truncate">
-                                    {eqIdx + 1}. {eq.name || '........................'} ({eq.qty} {eq.unit})
-                                  </p>
+                          
+                          <div className="grid grid-cols-2 gap-1 px-1 text-[9px]">
+                            <div className="space-y-0.2">
+                              {validReturnedEquipment.length > 0 ? (
+                                validReturnedEquipment.map((eq, i) => (
+                                  <p key={i} className="truncate">{i + 1}. {eq.name} ({eq.qty} {eq.unit})</p>
                                 ))
                               ) : (
                                 <>
@@ -1548,58 +1572,59 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                                 </>
                               )}
                             </div>
-                            <div className="space-y-1 flex flex-col justify-around">
-                              <div className="flex items-center justify-around text-[8px]">
-                                <label className="flex items-center gap-0.5"><input type="checkbox" /> ใช้งานได้</label>
-                                <label className="flex items-center gap-0.5"><input type="checkbox" /> ไม่ได้</label>
-                              </div>
-                              <div className="flex items-center justify-around text-[8px]">
-                                <label className="flex items-center gap-0.5"><input type="checkbox" /> ใช้งานได้</label>
-                                <label className="flex items-center gap-0.5"><input type="checkbox" /> ไม่ได้</label>
-                              </div>
-                              <div className="flex items-center justify-around text-[8px]">
-                                <label className="flex items-center gap-0.5"><input type="checkbox" /> ใช้งานได้</label>
-                                <label className="flex items-center gap-0.5"><input type="checkbox" /> ไม่ได้</label>
-                              </div>
+                            <div className="space-y-0.2 flex flex-col justify-around text-[9px]">
+                              {validReturnedEquipment.length > 0 ? (
+                                validReturnedEquipment.map((_, i) => (
+                                  <div key={i} className="flex justify-around">
+                                    <label><input type="checkbox" /> ใช้งานได้</label>
+                                    <label><input type="checkbox" /> ไม่ได้</label>
+                                  </div>
+                                ))
+                              ) : (
+                                <>
+                                  <div className="flex justify-around"><label><input type="checkbox" /> ใช้งานได้</label><label><input type="checkbox" /> ไม่ได้</label></div>
+                                  <div className="flex justify-around"><label><input type="checkbox" /> ใช้งานได้</label><label><input type="checkbox" /> ไม่ได้</label></div>
+                                  <div className="flex justify-around"><label><input type="checkbox" /> ใช้งานได้</label><label><input type="checkbox" /> ไม่ได้</label></div>
+                                </>
+                              )}
                             </div>
                           </div>
-
-                          <div className="flex items-center gap-1.5 pt-1">
-                            <input type="checkbox" className="w-3 h-3" />
-                            <span>ท่อ/อุปกรณ์ที่ไม่สามารถนำส่งคืนได้เนื่องจากไม่มีท่อ/อุปกรณ์ที่อยู่ใต้ดิน</span>
-                          </div>
                         </div>
-
-                        <p className="pl-2 pt-1 text-[9px] italic">จึงเรียนมาเพื่อโปรดทราบ และพิจารณาดำเนินการต่อไป จะขอบคุณยิ่ง</p>
                       </div>
 
-                      {/* ส่วนลงชื่อคณะกรรมการตรวจสอบท่อและอุปกรณ์เดิม */}
-                      <div className="space-y-0.5 text-[8.5px] pt-1">
-                        <div className="flex justify-between items-center px-2">
-                          <span>(ลงชื่อ).....................................................................</span>
-                          <span className="font-bold">{signers.committeeCheck[0]?.position || 'ประธานกรรมการฯ'}</span>
-                        </div>
-                        <div className="flex justify-between items-center px-2">
-                          <span>(ลงชื่อ).....................................................................</span>
-                          <span className="font-bold">{signers.committeeCheck[1]?.position || 'กรรมการฯ'}</span>
-                        </div>
-                        <div className="flex justify-between items-center px-2">
-                          <span>(ลงชื่อ).....................................................................</span>
-                          <span className="font-bold">{signers.committeeCheck[2]?.position || 'กรรมการฯ'}</span>
-                        </div>
+                      <div className="space-y-0.2 text-[9px] pt-0.5 border-t border-slate-200 mt-0.2">
+                        {signers.committeeCheck.map((cm, idx) => (
+                          <div key={idx} className="flex justify-between items-center px-1">
+                            <span>(ลงชื่อ)........................................................ ({cm.name})</span>
+                            <span className="font-bold">{cm.position}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
-                    {/* ข้อ 9 (แก้ไขข้อความและลงชื่อโดยผู้จัดการ ตามที่คุณต้องการ) */}
-                    <div className="border border-black p-2.5 flex flex-col justify-between flex-1">
+                    {/* ข้อ (8) */}
+                    <div className="border border-black p-1.5 flex flex-col justify-between flex-[0.9]">
                       <div>
-                        <p className="font-bold">(9) เรียน หน.งานบริการและควบคุมน้ำสูญเสีย</p>
-                        <p className="pl-2">ทราบ / เก็บหลักฐานไว้สำหรับตรวจสอบต่อไป</p>
+                        <p className="font-bold text-[10.5px]">(8) เรียน ผู้จัดการ กปภ.สาขานครพนม</p>
+                        <p className="pl-2 text-[10.5px] leading-normal">งานบริการฯ ได้ทำการปิดคำสั่งงาน เลขที่ <span className="font-bold text-blue-900">{rNumber || '-'}</span> เรียบร้อยแล้ว</p>
                       </div>
-                      <div className="text-center pt-2">
-                        <p>ลงชื่อ..............................................................</p>
-                        <p className="font-bold">({managerName})</p>
-                        <p className="text-[8.5px] font-medium">{managerPos}</p>
+                      <div className="text-center pt-0.5">
+                        <p className="text-[10.5px]">ลงชื่อ..............................................................</p>
+                        <p className="font-bold text-[10.5px]">({supervisorName})</p>
+                        <p className="text-[9.5px] font-medium">{supervisorPos}</p>
+                      </div>
+                    </div>
+
+                    {/* ข้อ (9) */}
+                    <div className="border border-black p-1.5 flex flex-col justify-between flex-[0.9]">
+                      <div>
+                        <p className="font-bold text-[10.5px]">(9) เรียน หน.งานบริการและควบคุมน้ำสูญเสีย</p>
+                        <p className="pl-2 text-[10.5px] leading-normal">ทราบ / เก็บหลักฐานไว้สำหรับตรวจสอบต่อไป</p>
+                      </div>
+                      <div className="text-center pt-0.5">
+                        <p className="text-[10.5px]">ลงชื่อ..............................................................</p>
+                        <p className="font-bold text-[10.5px]">({managerName})</p>
+                        <p className="text-[9.5px] font-medium">{managerPos}</p>
                       </div>
                     </div>
 
