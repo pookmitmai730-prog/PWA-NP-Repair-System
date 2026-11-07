@@ -9,7 +9,7 @@ import ReportsView from './components/ReportsView';
 import RolePortal from './components/RolePortal';
 import AdminManagementModal from './components/AdminManagementModal';
 import RepairCostForm from './components/RepairCostForm';
-import { LayoutDashboard, Smartphone, BarChart3, LogOut, Shield, UserCheck, RefreshCw, Calculator, X } from 'lucide-react';
+import { LayoutDashboard, Smartphone, BarChart3, LogOut, Shield, UserCheck, RefreshCw, Calculator } from 'lucide-react';
 
 // 🌐 URL ของ Google Apps Script Web App
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
@@ -18,14 +18,12 @@ export default function App() {
   const [userRole, setUserRole] = useState(localStorage.getItem('pwa_user_role') || 'portal');
   const [activeWorkerTeam, setActiveWorkerTeam] = useState(localStorage.getItem('pwa_worker_team') || '');
 
+  // เปลี่ยน currentView ให้รองรับค่า 'repair_cost' สำหรับการแสดงผลเต็มหน้าจอ
   const [currentView, setCurrentView] = useState('dashboard');
   const [jobs, setJobs] = useState([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAdminManageOpen, setIsAdminManageOpen] = useState(false);
-  
-  // 💰 State สำหรับควบคุมการเปิด-ปิด Modal ฟอร์มจ้างเหมาซ่อมท่อ
-  const [isCostModalOpen, setIsCostModalOpen] = useState(false);
 
   // ☁️ บัญชีผู้ใช้งานและข้อมูลใบงานดึงตรงจาก Google Sheets 100%
   const [adminUsers, setAdminUsers] = useState([]);
@@ -49,20 +47,16 @@ export default function App() {
     }
   };
 
-  // ดึงข้อมูล Admins, Workers และ Jobs จาก Google Sheets เมื่อเปิดแอป
   const fetchDataFromSheet = async () => {
     try {
-      // ดึงข้อมูลแอดมิน
       const adminRes = await fetch(`${WEB_APP_URL}?action=admins`);
       const adminData = await adminRes.json();
       if (Array.isArray(adminData)) setAdminUsers(adminData);
 
-      // ดึงข้อมูลช่างภาคสนาม
       const workerRes = await fetch(`${WEB_APP_URL}?action=teams`);
       const workerData = await workerRes.json();
       if (Array.isArray(workerData)) setWorkerAccounts(workerData);
 
-      // ดึงข้อมูลใบงาน
       await fetchJobsFromSheet();
     } catch (err) {
       console.error("Error fetching data from Google Sheets:", err);
@@ -132,7 +126,6 @@ export default function App() {
 
   const handleDeleteWorkerAccount = async (id, username, teamName) => {
     const targetName = teamName || username || id;
-    
     if (window.confirm(`คุณต้องการลบบัญชีช่าง "${targetName}" ใช่หรือไม่?`)) {
       try {
         await fetch(WEB_APP_URL, {
@@ -141,10 +134,7 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             action: "delete_worker", 
-            data: { 
-              username: username || targetName, 
-              teamName: teamName || targetName 
-            } 
+            data: { username: username || targetName, teamName: teamName || targetName } 
           })
         });
         alert("ลบบัญชีช่างเรียบร้อยแล้ว!");
@@ -156,7 +146,6 @@ export default function App() {
     }
   };
 
-  // Login & Logout
   const handleAdminLogin = () => {
     setUserRole('admin');
     localStorage.setItem('pwa_user_role', 'admin');
@@ -185,7 +174,6 @@ export default function App() {
     completed: jobs.filter(j => (j.Status || j.status) === 'COMPLETED').length,
   };
 
-  // 📝 สร้างใบงานใหม่ บันทึกลง Google Sheets (Jobs_Archive)
   const handleCreateJob = async (newJobData) => {
     const jobId = newJobData.receivedNo || `S${Date.now()}`;
     const fullJob = {
@@ -222,7 +210,6 @@ export default function App() {
     }
   };
 
-  // 🔄 อัปเดตสถานะงานใน Google Sheets
   const handleStatusChange = async (jobId, newStatus, extraData = {}) => {
     const currentJob = jobs.find(j => j.JobID === jobId || j.id === jobId || j.receivedNo === jobId);
     if (!currentJob) return;
@@ -274,14 +261,8 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950 text-white font-sans">
         <div className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center max-w-7xl mx-auto">
-          <div className="flex items-center space-x-2">
-            <span className="font-bold text-sm tracking-wide text-cyan-400">PWA EXPRESS TRACKING</span>
-            <span className="text-xs text-slate-400 hidden sm:inline">| กปภ.สาขานครพนม</span>
-          </div>
-          <button 
-            onClick={handleLogout}
-            className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1"
-          >
+          <span className="font-bold text-sm tracking-wide text-cyan-400">PWA EXPRESS TRACKING</span>
+          <button onClick={handleLogout} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1">
             <LogOut className="w-3.5 h-3.5" /> กลับหน้าหลัก
           </button>
         </div>
@@ -316,62 +297,36 @@ export default function App() {
         </div>
 
         <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-          <button 
-            onClick={fetchJobsFromSheet}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
-            title="รีเฟรชข้อมูล"
-          >
+          <button onClick={fetchJobsFromSheet} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1">
             <RefreshCw className={`w-3.5 h-3.5 ${loadingJobs ? 'animate-spin' : ''}`} /> <span>รีเฟรช</span>
           </button>
 
-          <button 
-            onClick={() => setCurrentView('dashboard')}
-            className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${
-              currentView === 'dashboard' ? 'bg-blue-600 font-bold text-white' : 'text-slate-400 hover:text-white'
-            }`}
-          >
+          <button onClick={() => setCurrentView('dashboard')} className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${currentView === 'dashboard' ? 'bg-blue-600 font-bold text-white' : 'text-slate-400 hover:text-white'}`}>
             <LayoutDashboard className="w-3.5 h-3.5" /> <span>ศูนย์ควบคุม</span>
           </button>
 
-          {/* 💰 ปุ่มเปิดฟอร์มจ้างเหมาซ่อมท่อ / คำนวณค่าใช้จ่าย */}
+          {/* 🌟 ปุ่ม "ฟอร์มจ้างซ่อม" เปลี่ยนเป็นเปลี่ยน View เป็น 'repair_cost' เพื่อแสดงผลเต็มหน้าจอทันที */}
           <button 
-            onClick={() => setIsCostModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg cursor-pointer flex items-center gap-1 shadow-sm transition"
-            title="คำนวณและเบิกค่าใช้จ่ายงานซ่อม"
+            onClick={() => setCurrentView('repair_cost')}
+            className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${currentView === 'repair_cost' ? 'bg-emerald-600 font-bold text-white' : 'bg-emerald-600/80 hover:bg-emerald-600 text-white'}`}
+            title="เปิดฟอร์มจ้างซ่อมแบบเต็มหน้าจอ"
           >
             <Calculator className="w-3.5 h-3.5" /> <span>ฟอร์มจ้างซ่อม</span>
           </button>
 
-          <button 
-            onClick={() => setCurrentView('reports')}
-            className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${
-              currentView === 'reports' ? 'bg-indigo-600 font-bold text-white' : 'text-slate-400 hover:text-white'
-            }`}
-          >
+          <button onClick={() => setCurrentView('reports')} className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${currentView === 'reports' ? 'bg-indigo-600 font-bold text-white' : 'text-slate-400 hover:text-white'}`}>
             <BarChart3 className="w-3.5 h-3.5" /> <span>รายงาน</span>
           </button>
 
-          <button 
-            onClick={() => setCurrentView('field')}
-            className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${
-              currentView === 'field' ? 'bg-emerald-600 font-bold text-white' : 'text-slate-400 hover:text-white'
-            }`}
-          >
+          <button onClick={() => setCurrentView('field')} className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${currentView === 'field' ? 'bg-emerald-600 font-bold text-white' : 'text-slate-400 hover:text-white'}`}>
             <Smartphone className="w-3.5 h-3.5" /> <span>จำลองหน้าช่าง</span>
           </button>
 
-          <button 
-            onClick={() => setIsAdminManageOpen(true)}
-            className="bg-indigo-950 border border-indigo-700 hover:bg-indigo-900 text-indigo-300 font-bold px-3 py-1.5 rounded-lg cursor-pointer flex items-center gap-1"
-          >
+          <button onClick={() => setIsAdminManageOpen(true)} className="bg-indigo-950 border border-indigo-700 hover:bg-indigo-900 text-indigo-300 font-bold px-3 py-1.5 rounded-lg cursor-pointer flex items-center gap-1">
             <UserCheck className="w-3.5 h-3.5" /> ตั้งค่าแอดมิน/ช่าง
           </button>
 
-          <button 
-            onClick={handleLogout}
-            className="bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white px-2.5 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
-            title="ออกจากระบบ"
-          >
+          <button onClick={handleLogout} className="bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white px-2.5 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1">
             <LogOut className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -390,6 +345,32 @@ export default function App() {
             />
           </main>
         </>
+      )}
+
+      {/* 🌟 หน้าจอแสดงผลแบบเต็มหน้าจอ เมื่อเลือก View เป็น 'repair_cost' */}
+      {currentView === 'repair_cost' && (
+        <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+          <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+            <div>
+              <h1 className="font-bold text-lg text-slate-800">ระบบฟอร์มควบคุมและประมาณการค่าซ่อมท่อ</h1>
+              <p className="text-xs text-slate-500">การประปาส่วนภูมิภาคสาขานครพนม (แสดงผลแบบเต็มหน้าจอ)</p>
+            </div>
+            <button
+              onClick={() => setCurrentView('dashboard')}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+            >
+              ← กลับหน้าศูนย์ควบคุม
+            </button>
+          </div>
+          
+          <RepairCostForm 
+            jobs={jobs}
+            onSubmitCost={async (costPayload) => {
+              alert(`บันทึกข้อมูลจ้างเหมาซ่อมท่อสำเร็จ!\nยอดรวมสุทธิ: ฿${costPayload.grandTotal.toLocaleString()} บาท`);
+              setCurrentView('dashboard');
+            }}
+          />
+        </main>
       )}
 
       {currentView === 'reports' && <ReportsView jobs={jobs} />}
@@ -420,31 +401,7 @@ export default function App() {
         onAddWorkerAccount={handleAddWorkerAccount}
         onEditWorkerAccount={handleEditWorkerAccount}
         onDeleteWorkerAccount={(id, username, teamName) => handleDeleteWorkerAccount(id, username, teamName)}
-        webAppUrl={WEB_APP_URL} // 👈 เพิ่มบรรทัดนี้เข้าไปเพื่อให้ส่ง URL ไปบันทึกใน Google Sheets ได้
       />
-
-      {/* 💰 Modal สำหรับแสดงฟอร์มจ้างเหมาซ่อมท่อ (RepairCostForm) */}
-      {isCostModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 overflow-y-auto font-sans animate-fadeIn">
-          <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden my-6 border border-slate-100">
-            <button 
-              onClick={() => setIsCostModalOpen(false)}
-              className="absolute top-4 right-4 z-10 p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full transition cursor-pointer"
-              title="ปิดหน้าต่าง"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <div className="max-h-[85vh] overflow-y-auto p-2">
-              <RepairCostForm 
-                onSubmitCost={async (costPayload) => {
-                  alert(`บันทึกข้อมูลจ้างเหมาซ่อมท่อสำเร็จ!\nยอดรวมสุทธิ: ฿${costPayload.grandTotal.toLocaleString()} บาท`);
-                  setIsCostModalOpen(false);
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
