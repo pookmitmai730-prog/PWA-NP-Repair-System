@@ -923,8 +923,9 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   const jobLat = job.latitude || job.Latitude;
                   const jobLng = job.longitude || job.Longitude;
 
-                  // รูปภาพที่ประชาชนแนบมา (ถ้ามี)
-                  const citizenImg = job.beforeImg || job.BeforeImg;
+                  // 📸 รูปภาพที่เจ้าหน้าที่สำนักงานอัปโหลดมาตอนจ่ายงาน (หรือประชาชนแจ้งมา)
+                  const rawCitizenImg = job.beforeImg || job.BeforeImg;
+                  const parsedCitizenImages = parseImages(rawCitizenImg);
 
                   return (
                     <div key={uniqueJobKey} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3 relative overflow-hidden">
@@ -979,39 +980,50 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                           <span>{locationText}</span>
                         </p>
 
-                        {/* 📸 ปุ่มดูรูปที่ประชาชนแนบมา และ 🗺️ ปุ่มนำทางพิกัดแผนที่ (แสดงเฉพาะเมื่อมีข้อมูลเท่านั้น) */}
-                        {(citizenImg || (jobLat && jobLng)) && (
-                          <div className="pt-1.5 flex flex-wrap gap-1.5">
-                            {citizenImg && (
-                              <a
-                                href={citizenImg}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs"
-                              >
-                                <ImageIcon className="w-3.5 h-3.5 text-blue-600" /> ดูรูปถ่ายแจ้งซ่อม
-                              </a>
-                            )}
-                            {jobLat && jobLng && (
-                              <>
-                                <a
-                                  href={`https://maps.google.com/?q=${jobLat},${jobLng}`}
-                                  target="_blank"
+                        {/* 📸 แสดงรูปภาพหน้างานที่เจ้าหน้าที่/แอดมินอัปโหลดมาตอนจ่ายงาน */}
+                        {parsedCitizenImages.length > 0 && (
+                          <div className="pt-2">
+                            <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1 mb-1.5">
+                              <ImageIcon className="w-3.5 h-3.5 text-blue-600" /> ภาพถ่ายสภาพหน้างาน (จากเจ้าหน้าที่จ่ายงาน):
+                            </span>
+                            <div className="grid grid-cols-3 gap-2">
+                              {parsedCitizenImages.map((imgUrl, imgIdx) => (
+                                <a 
+                                  key={`dispatch-img-${index}-${imgIdx}`} 
+                                  href={imgUrl} 
+                                  target="_blank" 
                                   rel="noopener noreferrer"
-                                  className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs border border-blue-200"
+                                  className="relative rounded-xl overflow-hidden aspect-square border border-slate-200 hover:opacity-90 transition shadow-xs group"
                                 >
-                                  <MapPin className="w-3.5 h-3.5 text-rose-500" /> ดูแผนที่จุดท่อรั่ว
+                                  <img src={imgUrl} alt="Dispatch Site" className="w-full h-full object-cover" />
+                                  <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                                    <ExternalLink className="w-4 h-4 text-white" />
+                                  </div>
                                 </a>
-                                <a
-                                  href={`https://www.google.com/maps/dir/?api=1&destination=${jobLat},${jobLng}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs border border-emerald-200"
-                                >
-                                  <Navigation className="w-3.5 h-3.5 text-emerald-600" /> นำทางไปยังจุดเกิดเหตุ <ExternalLink className="w-2.5 h-2.5" />
-                                </a>
-                              </>
-                            )}
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 🗺️ ปุ่มนำทางพิกัดแผนที่ (แสดงเฉพาะเมื่อมีข้อมูลพิกัด) */}
+                        {jobLat && jobLng && (
+                          <div className="pt-2 flex flex-wrap gap-1.5">
+                            <a
+                              href={`https://maps.google.com/?q=${jobLat},${jobLng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs border border-blue-200"
+                            >
+                              <MapPin className="w-3.5 h-3.5 text-rose-500" /> ดูแผนที่จุดท่อรั่ว
+                            </a>
+                            <a
+                              href={`https://www.google.com/maps/dir/?api=1&destination=${jobLat},${jobLng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs border border-emerald-200"
+                            >
+                              <Navigation className="w-3.5 h-3.5 text-emerald-600" /> นำทางไปยังจุดเกิดเหตุ <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
                           </div>
                         )}
                       </div>
