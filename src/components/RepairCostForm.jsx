@@ -1561,8 +1561,8 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
             <div id="print-preview-modal-content" className="p-6 overflow-y-auto bg-slate-300 flex flex-col items-center gap-12 flex-1 w-full" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
               
-              {/* หน้าที่ 1: ตารางประมาณการ (ขยับลงมาจากขอบ 1.5 ซม. / pt-[15mm]) */}
-              <div id="print-sheet-estimate" className="bg-white w-[210mm] min-h-[297mm] pt-[15mm] px-[8mm] pb-[8mm] shadow-2xl text-black text-[11px] leading-tight flex flex-col justify-between relative group box-border" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
+              {/* หน้าที่ 1: ตารางประมาณการ (ปรับระยะขอบบนเป็น 5 มิลลิเมตร / pt-[5mm]) */}
+              <div id="print-sheet-estimate" className="bg-white w-[210mm] min-h-[297mm] pt-[5mm] px-[8mm] pb-[8mm] shadow-2xl text-black text-[11px] leading-tight flex flex-col justify-between relative group box-border" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
                 <div className="no-print absolute top-3 right-3 z-30">
                   <button
                     type="button"
@@ -1821,7 +1821,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                 </div>
               </div>
 
-              {/* หน้าที่ 2: แผนที่ Google Maps (ขยับลงมาจากขอบ 1.5 ซม. / pt-[15mm]) */}
+              {/* หน้าที่ 2: แผนที่ Google Maps (ปรับระยะขอบบนเป็น 5 มิลลิเมตร / paddingTop: '5mm') */}
               <div 
                 id="print-sheet-map" 
                 className="bg-white shadow-2xl text-black text-[11px] leading-normal flex flex-col justify-between relative group box-border shrink-0 mx-auto" 
@@ -1885,7 +1885,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                 </div>
               </div>
 
-              {/* หน้าที่ 3: ใบรับแจ้ง (ขยับลงมาจากขอบ 1.5 ซม. / pt-[15mm]) */}
+              {/* หน้าที่ 3: ใบรับแจ้ง (ปรับระยะขอบบนเป็น 5 มิลลิเมตร / pt-[5mm]) */}
               <div id="print-sheet-report" className="bg-white w-[210mm] min-h-[297mm] pt-[5mm] px-[8mm] pb-[8mm] shadow-2xl text-black text-[11px] leading-tight flex flex-col justify-between space-y-1.5 relative group box-border" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
                 <div className="no-print absolute top-3 right-3 z-30">
                   <button
