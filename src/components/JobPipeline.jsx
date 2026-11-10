@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash, Trash2, ExternalLink, Image as ImageIcon, Globe, Layers } from 'lucide-react';
+import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash, Trash2, ExternalLink, Image as ImageIcon, Globe, Layers, Upload, Loader2 } from 'lucide-react';
 
 // 🌐 URL ของ Google Apps Script Web App ล่าสุด
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
@@ -17,6 +17,11 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   // 📍 State สำหรับระบุ/แก้ไขพิกัดจุดรั่วตอนจ่ายงาน
   const [dispatchLat, setDispatchLat] = useState('');
   const [dispatchLng, setDispatchLng] = useState('');
+
+  // 📸 State สำหรับอัปโหลดรูปภาพตอนจ่ายงาน
+  const [dispatchImageFile, setDispatchImageFile] = useState(null);
+  const [dispatchImagePreview, setDispatchImagePreview] = useState('');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   // 🗺️ State สำหรับเปิด Modal แผนที่เลือกพิกัด
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
@@ -105,7 +110,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     const s = String(status).trim().toUpperCase();
     if (s === 'รอดำเนินการ' || s === 'PENDING') return 'PENDING';
     if (s === 'มอบหมายช่างแล้ว' || s === 'DISPATCHED') return 'DISPATCHED';
-    // 🛠️ รองรับค่า UNREPAIRABLE จาก Google Sheets ให้จัดกลุ่มมาแสดงในแท็บ "กำลังดำเนินการซ่อม" (IN_PROGRESS)
     if (s === 'กำลังดำเนินการซ่อม' || s === 'IN_PROGRESS' || s === 'UNREPAIRABLE' || s.includes('CANNOT_FIX') || s.includes('ซ่อมไม่ได้')) return 'IN_PROGRESS';
     if (s === 'ซ่อมเสร็จสิ้น (ปิดงาน)' || s === 'COMPLETED') return 'COMPLETED';
     return s;
@@ -113,6 +117,19 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
   const getDisplayReceivedNo = (job) => {
     return job.receivedNo || job.JobID || job.id || '-';
+  };
+
+  // 📸 ฟังก์ชันจัดการเลือกไฟล์รูปภาพ
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setDispatchImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setDispatchImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   // 🗺️ โหลด Leaflet CSS และ JS สำหรับ Interactive Map
@@ -243,6 +260,19 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message, parse_mode: "Markdown" })
       });
+
+      // ส่งรูปภาพไป Telegram ด้วยถ้ามี
+      if (jobPayload.beforeImg) {
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            chat_id: TELEGRAM_CHAT_ID, 
+            photo: jobPayload.beforeImg, 
+            caption: `📸 ภาพถ่ายหน้างาน (เลขที่รับแจ้ง: ${jobPayload.receivedNo})` 
+          })
+        });
+      }
     } catch (err) {
       console.error("Telegram error:", err);
     }
@@ -253,6 +283,41 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       alert("กรุณาเลือกทีมช่างก่อนทำการจ่ายงาน");
       return;
     }
+
+    setIsUploadingImage(true);
+    let uploadedImageUrl = selectedJobForDispatch.beforeImg || selectedJobForDispatch.BeforeImg || '';
+
+    // ถ้ามีการเลือกรูปใหม่ให้อัปโหลดขึ้น Google Drive ผ่าน Apps Script
+    if (dispatchImageFile) {
+      try {
+        const reader = new FileReader();
+        const base64Data = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = error => reject(error);
+          reader.readAsDataURL(dispatchImageFile);
+        });
+
+        const uploadResponse = await fetch(WEB_APP_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "upload_image",
+            fileData: base64Data,
+            fileName: dispatchImageFile.name,
+            mimeType: dispatchImageFile.type
+          })
+        });
+
+        const uploadResult = await uploadResponse.json();
+        if (uploadResult && uploadResult.url) {
+          uploadedImageUrl = uploadResult.url;
+        }
+      } catch (uploadErr) {
+        console.error("Error uploading image:", uploadErr);
+        alert("อัปโหลดรูปภาพไม่สำเร็จ แต่จะดำเนินการจ่ายงานต่อ");
+      }
+    }
+
     const workerObj = workerAccounts.find(w => w.teamName === selectedTeam);
     const workerPhoneFormatted = workerObj && workerObj.phone && workerObj.phone !== '-' 
       ? formatPhoneForSheet(workerObj.phone)
@@ -295,8 +360,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       Latitude: finalLat,
       longitude: finalLng,
       Longitude: finalLng,
-      beforeImg: selectedJobForDispatch.beforeImg || selectedJobForDispatch.BeforeImg || '',
-      BeforeImg: selectedJobForDispatch.beforeImg || selectedJobForDispatch.BeforeImg || ''
+      beforeImg: uploadedImageUrl,
+      BeforeImg: uploadedImageUrl
     };
 
     try {
@@ -312,6 +377,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       await sendTelegramNotification(dispatchPayload);
     } catch (err) {
       console.error("Error sending dispatch to Google Sheets:", err);
+    } finally {
+      setIsUploadingImage(false);
     }
 
     onStatusChange(selectedJobForDispatch.id || selectedJobForDispatch.JobID, 'DISPATCHED', { 
@@ -323,7 +390,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       urgency: urgencyLevel,
       Notes: urgencyLevel,
       latitude: finalLat,
-      longitude: finalLng
+      longitude: finalLng,
+      beforeImg: uploadedImageUrl
     });
 
     setSelectedJobForDispatch(null);
@@ -331,6 +399,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     setUrgencyLevel('ปกติ');
     setDispatchLat('');
     setDispatchLng('');
+    setDispatchImageFile(null);
+    setDispatchImagePreview('');
     alert("จ่ายงานช่างและบันทึกลง Google Sheets สำเร็จ!");
   };
 
@@ -364,7 +434,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       Technician: techDetails,
       techName: workerObj?.teamName || newSelectedTeam,
       techPhone: workerPhoneFormatted,
-      status: 'IN_PROGRESS', // อัปเดตเปลี่ยนสถานะกลับมาเป็น IN_PROGRESS (กำลังดำเนินการซ่อม) เมื่อเปลี่ยนทีมช่างใหม่เรียบร้อย
+      status: 'IN_PROGRESS', 
       Status: 'IN_PROGRESS',
       dispatchedAt: currentDateTime
     };
@@ -584,13 +654,11 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     const currentJobStatus = String(job.status || job.Status || '').trim().toUpperCase();
                     const isUnrepairable = currentJobStatus === 'UNREPAIRABLE' || currentJobStatus.includes('CANNOT_FIX') || currentJobStatus.includes('ซ่อมไม่ได้');
 
-                    // ดึงข้อมูลเหตุผลที่ไม่สามารถซ่อมได้จากฟิลด์ equipment หรือ detailNotRepair[cite: 7]
                     const repairReason = job.equipment || job.Equipment || job.detailNotRepair || job.DetailNotRepair || '';
 
                     return (
                       <div key={uniqueJobKey} className={`bg-white p-4 rounded-2xl shadow-sm border transition space-y-2.5 relative ${isUnrepairable ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-100 hover:shadow-md'}`}>
                         
-                        {/* ปุ่มเปิด Modal แก้ไขข้อมูล (แสดงผลทุกสถานะทั้ง 4 คอลัมน์) */}
                         <button
                           onClick={() => handleOpenAdminEdit(job)}
                           className="absolute top-3 right-3 p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
@@ -617,7 +685,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                           </div>
                         </div>
 
-                        {/* แจ้งเตือนสั้นๆ เฉพาะใบงานที่ซ่อมไม่ได้ พร้อมแสดงเหตุผลต่อท้าย[cite: 7] */}
                         {isUnrepairable && (
                           <div className="bg-amber-50 border border-amber-200 text-amber-800 p-2 rounded-xl text-[11px] font-bold flex items-start gap-1.5">
                             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -714,6 +781,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                                   setUrgencyLevel('ปกติ');
                                   setDispatchLat(job.latitude || job.Latitude || '');
                                   setDispatchLng(job.longitude || job.Longitude || '');
+                                  setDispatchImageFile(null);
+                                  setDispatchImagePreview(job.beforeImg || job.BeforeImg || '');
                                 }}
                                 className="bg-cyan-600 hover:bg-cyan-700 text-white px-2.5 py-1 rounded-lg font-bold transition shadow-sm cursor-pointer"
                               >
@@ -759,10 +828,10 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         })}
       </div>
 
-      {/* Modal จ่ายงานซ่อม */}
+      {/* Modal จ่ายงานซ่อม (เพิ่มส่วนอัปโหลดรูปภาพสภาพหน้างาน) */}
       {selectedJobForDispatch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h4 className="font-bold text-slate-800 text-sm">จ่ายงานซ่อม: {getDisplayReceivedNo(selectedJobForDispatch)}</h4>
               <button onClick={() => setSelectedJobForDispatch(null)} className="cursor-pointer"><X className="w-5 h-5 text-slate-400" /></button>
@@ -810,6 +879,44 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     ))
                   )}
                 </select>
+              </div>
+
+              {/* 📸 เพิ่มส่วนอัปโหลดรูปถ่ายสภาพหน้างานท่อแตก/ท่อรั่ว */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
+                <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <ImageIcon className="w-3.5 h-3.5 text-blue-600" /> รูปถ่ายสภาพหน้างาน (ท่อแตก/ท่อรั่ว)
+                </label>
+                
+                <div className="flex items-center gap-3">
+                  <label className="flex-1 cursor-pointer bg-white border border-dashed border-blue-300 hover:border-blue-500 rounded-xl p-3 text-center transition flex flex-col items-center justify-center gap-1 group">
+                    <Upload className="w-4 h-4 text-blue-500 group-hover:scale-110 transition" />
+                    <span className="text-[11px] font-bold text-slate-600">คลิกเลือกรูปภาพหน้างาน</span>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleImageChange} 
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
+
+                {dispatchImagePreview && (
+                  <div className="relative mt-2 rounded-xl overflow-hidden border border-slate-200 bg-black/5 h-32 flex items-center justify-center">
+                    <img 
+                      src={getDisplayImageUrl(dispatchImagePreview) || dispatchImagePreview} 
+                      alt="Preview" 
+                      className="h-full object-contain"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { setDispatchImageFile(null); setDispatchImagePreview(''); }}
+                      className="absolute top-2 right-2 bg-rose-600 text-white p-1 rounded-full text-xs shadow-md hover:bg-rose-700 cursor-pointer"
+                      title="ลบรูปภาพ"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
@@ -865,16 +972,18 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
             <div className="flex gap-2 pt-2">
               <button
                 onClick={() => setSelectedJobForDispatch(null)}
+                disabled={isUploadingImage}
                 className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl cursor-pointer"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={handleConfirmDispatch}
-                disabled={workerAccounts.length === 0}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md disabled:opacity-50 cursor-pointer"
+                disabled={workerAccounts.length === 0 || isUploadingImage}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                ยืนยันการจ่ายงาน
+                {isUploadingImage && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isUploadingImage ? 'กำลังอัปโหลดรูปและจ่ายงาน...' : 'ยืนยันการจ่ายงาน'}
               </button>
             </div>
           </div>
@@ -1019,7 +1128,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         </div>
       )}
 
-      {/* 🔴 Modal สำหรับแอดมินแก้ไขข้อมูล (รองรับทั้ง 4 สถานะ และซ่อนปุ่มลบเฉพาะสถานะซ่อมเสร็จ) */}
+      {/* Modal สำหรับแอดมินแก้ไขข้อมูล */}
       {editingAdminJob && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 animate-fadeIn">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-100 overflow-hidden transform transition-all">
@@ -1141,7 +1250,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
               </div>
 
               <div className="flex items-center gap-2 pt-4 border-t border-slate-100">
-                {/* แสดงปุ่มลบเฉพาะเมื่อสถานะไม่ใช่ COMPLETED */}
                 {normalizeStatus(editingAdminJob.status || editingAdminJob.Status) !== 'COMPLETED' && (
                   <button
                     type="button"
