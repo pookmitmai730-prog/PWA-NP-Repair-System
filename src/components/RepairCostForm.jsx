@@ -1830,7 +1830,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                   minHeight: '297mm', 
                   height: '297mm', 
                   maxHeight: '297mm', 
-                  paddingTop: '15mm',
+                  paddingTop: '5mm',
                   paddingLeft: '10mm',
                   paddingRight: '10mm',
                   paddingBottom: '10mm',
@@ -1886,7 +1886,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
               </div>
 
               {/* หน้าที่ 3: ใบรับแจ้ง (ขยับลงมาจากขอบ 1.5 ซม. / pt-[15mm]) */}
-              <div id="print-sheet-report" className="bg-white w-[210mm] min-h-[297mm] pt-[15mm] px-[8mm] pb-[8mm] shadow-2xl text-black text-[11px] leading-tight flex flex-col justify-between space-y-1.5 relative group box-border" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
+              <div id="print-sheet-report" className="bg-white w-[210mm] min-h-[297mm] pt-[5mm] px-[8mm] pb-[8mm] shadow-2xl text-black text-[11px] leading-tight flex flex-col justify-between space-y-1.5 relative group box-border" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
                 <div className="no-print absolute top-3 right-3 z-30">
                   <button
                     type="button"
