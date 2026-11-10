@@ -1561,7 +1561,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
             <div id="print-preview-modal-content" className="p-6 overflow-y-auto bg-slate-300 flex flex-col items-center gap-12 flex-1 w-full" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
               
-              {/* หน้าที่ 1: ตารางประมาณการ (ปรับระยะขอบซ้าย/ขวาเป็น 5 มิลลิเมตร / px-[5mm]) */}
+              {/* หน้าที่ 1: ตารางประมาณการ */}
               <div id="print-sheet-estimate" className="bg-white w-[210mm] min-h-[297mm] pt-[5mm] px-[5mm] pb-[8mm] shadow-2xl text-black text-[11px] leading-tight flex flex-col justify-between relative group box-border" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
                 <div className="no-print absolute top-3 right-3 z-30">
                   <button
@@ -1821,15 +1821,13 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                 </div>
               </div>
 
-              {/* หน้าที่ 2: แผนที่ Google Maps (ปรับระยะขอบซ้าย/ขวาเป็น 5 มิลลิเมตร และขยายความสูงแผนที่แนวตั้งถึง ~ครึ่งหน้า A4 / height: '49%') */}
+              {/* หน้าที่ 2: แผนที่ Google Maps (ปรับปรุงความสูงให้เต็มพื้นที่ A4 และไม่ถูกบีบในหน้าพรีวิว) */}
               <div 
                 id="print-sheet-map" 
                 className="bg-white shadow-2xl text-black text-[11px] leading-normal flex flex-col justify-between relative group box-border shrink-0 mx-auto" 
                 style={{ 
                   width: '210mm', 
                   minHeight: '297mm', 
-                  height: '297mm', 
-                  maxHeight: '297mm', 
                   paddingTop: '5mm',
                   paddingLeft: '5mm',
                   paddingRight: '5mm',
@@ -1848,7 +1846,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                   </button>
                 </div>
 
-                <div className="flex flex-col space-y-2 border border-black p-3 bg-slate-50 box-border" style={{ height: '49%' }}>
+                <div className="flex flex-col space-y-2 border border-black p-3 bg-slate-50 box-border" style={{ minHeight: '430px' }}>
                   <div className="flex justify-between items-center border-b border-black pb-1.5">
                     <h3 className="font-bold text-[12px] flex items-center gap-1.5 text-blue-900">
                       <MapPin className="w-4 h-4 text-rose-600"/> แผนที่แสดงตำแหน่งพิกัดจุดท่อรั่ว และ Street View
@@ -1856,7 +1854,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                     <span className="text-[10px] font-mono text-slate-600">พิกัด: {jobLat}, {jobLng}</span>
                   </div>
 
-                  <div className="flex-1 w-full relative rounded border border-slate-300 overflow-hidden bg-slate-200 flex flex-col items-center justify-center" style={{ height: 'calc(100% - 32px)' }}>
+                  <div className="w-full relative rounded border border-slate-300 overflow-hidden bg-slate-200" style={{ height: '370px' }}>
                     <iframe
                       title="Google Map Location"
                       width="100%"
@@ -1870,12 +1868,12 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                   <p className="text-[10px] text-slate-600 truncate"><b>สถานที่ซ่อม:</b> {selectedJob.Location || selectedJob.location || '-'}</p>
                 </div>
 
-                <div className="flex flex-col space-y-1.5 border border-black p-3 bg-white box-border" style={{ height: '49%' }}>
+                <div className="flex flex-col space-y-1.5 border border-black p-3 bg-white box-border mt-3" style={{ minHeight: '380px' }}>
                   <div className="border-b border-black pb-1">
                     <h3 className="font-bold text-[12px] text-slate-900 uppercase">แบบรายการซ่อมท่อ (ถ้ามี)</h3>
                   </div>
 
-                  <div className="flex-1 border border-black rounded p-3 bg-white flex flex-col justify-between" style={{ height: 'calc(100% - 32px)' }}>
+                  <div className="border border-black rounded p-3 bg-white flex flex-col justify-between" style={{ minHeight: '310px' }}>
                     <div className="h-full"></div>
                     <div className="border-t border-slate-300 pt-2 flex justify-between text-[10px] text-slate-600">
                       <span>ผู้บันทึกข้อมูล: ..................................................</span>
@@ -1885,7 +1883,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                 </div>
               </div>
 
-              {/* หน้าที่ 3: ใบรับแจ้ง (ปรับระยะขอบซ้าย/ขวาเป็น 5 มิลลิเมตร / px-[5mm]) */}
+              {/* หน้าที่ 3: ใบรับแจ้ง */}
               <div id="print-sheet-report" className="bg-white w-[210mm] min-h-[297mm] pt-[5mm] px-[5mm] pb-[8mm] shadow-2xl text-black text-[11px] leading-tight flex flex-col justify-between space-y-1.5 relative group box-border" style={{ fontFamily: "'Sarabun', 'TH Sarabun PSK', sans-serif" }}>
                 <div className="no-print absolute top-3 right-3 z-30">
                   <button
