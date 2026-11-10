@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Download, Printer, Info, Hash, Users, Search, ChevronLeft, ChevronRight, Layers, Image as ImageIcon, ShieldAlert, Trash2, Filter, CalendarDays, MapPin, BarChart3 } from 'lucide-react';
 
-// 🌐 URL ของ Google Apps Script Web App หลัก[cite: 7]
+// 🌐 URL ของ Google Apps Script Web App หลัก
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
 
 export default function ReportsView({ jobs, currentUser }) {
   const [reportType, setReportType] = useState('all');
   
-  // 📅 State สำหรับตัวเลือกช่วงวันที่ค้นหา (Custom Date Range)[cite: 7]
+  // 📅 State สำหรับตัวเลือกช่วงวันที่ค้นหา (Custom Date Range)
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -23,7 +23,7 @@ export default function ReportsView({ jobs, currentUser }) {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // 📅 ฟังก์ชันแปลงวันที่ในรูปแบบ พ.ศ. สำหรับแสดงผลสวยๆ (เช่น 1 ก.ย. 2569)[cite: 7]
+  // 📅 ฟังก์ชันแปลงวันที่ในรูปแบบ พ.ศ. สำหรับแสดงผลสวยๆ (เช่น 1 ก.ย. 2569)
   const formatShortThaiDate = (dateStr) => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
@@ -32,7 +32,7 @@ export default function ReportsView({ jobs, currentUser }) {
     return `${date.getDate()} ${thaiMonthsShort[date.getMonth()]} ${date.getFullYear() + 543}`;
   };
 
-  // 📅 ฟังก์ชันแปลงรูปแบบวันที่และเวลาเป็นภาษาไทยเต็มรูปแบบ[cite: 7]
+  // 📅 ฟังก์ชันแปลงรูปแบบวันที่และเวลาเป็นภาษาไทยเต็มรูปแบบ
   const formatThaiDate = (dateInput) => {
     if (!dateInput || dateInput === '-') return '-';
     let date = new Date(dateInput);
@@ -99,7 +99,6 @@ export default function ReportsView({ jobs, currentUser }) {
       const isCompletedOrClosed = (job.Status === 'COMPLETED' || job.status === 'COMPLETED' || job.Status === 'UNREPAIRABLE' || job.status === 'UNREPAIRABLE');
 
       if (startDate || endDate || reportType !== 'all') {
-        // หากมีการเลือกช่วงเวลาหรือตัวกรองรอบเวลา งานนั้นต้องมีวันที่ซ่อมเสร็จจึงจะนำมาคิดในรายงานตามช่วงเวลา
         if (!isCompletedOrClosed || !rawClosedAt || rawClosedAt === '-') return false;
 
         const closedDate = parseJobDate(rawClosedAt);
@@ -123,16 +122,17 @@ export default function ReportsView({ jobs, currentUser }) {
         }
       }
 
-      // 2. กรองตามคำค้นหาในช่อง Search[cite: 7]
+      // 2. 🛡️ กรองตามคำค้นหาในช่อง Search แบบปลอดภัย ป้องกัน Error
       if (tableSearchTerm.trim()) {
         const term = tableSearchTerm.trim().toLowerCase();
-        const matchNo = (job.JobID || job.receivedNo || '').toLowerCase().includes(term);
-        const matchSmart = (job.smart1662No || '').toLowerCase().includes(term);
-        const matchName = (job.ReporterName || job.reporterName || '').toLowerCase().includes(term);
-        const matchPhone = (job.Phone || job.phone || '').toLowerCase().includes(term);
-        const matchLocation = (job.Location || job.location || '').toLowerCase().includes(term);
-        const matchTech = (job.Technician || job.technician || '').toLowerCase().includes(term);
-        const matchPipe = (job.PipeType || job.pipeType || '').toLowerCase().includes(term);
+        
+        const matchNo = String(job.JobID || job.receivedNo || job.id || '').toLowerCase().includes(term);
+        const matchSmart = String(job.smart1662No || '').toLowerCase().includes(term);
+        const matchName = String(job.ReporterName || job.reporterName || '').toLowerCase().includes(term);
+        const matchPhone = String(job.Phone || job.phone || '').toLowerCase().includes(term);
+        const matchLocation = String(job.Location || job.location || '').toLowerCase().includes(term);
+        const matchTech = String(job.Technician || job.technician || '').toLowerCase().includes(term);
+        const matchPipe = String(job.PipeType || job.pipeType || '').toLowerCase().includes(term);
 
         if (!matchNo && !matchSmart && !matchName && !matchPhone && !matchLocation && !matchTech && !matchPipe) {
           return false;
@@ -190,7 +190,6 @@ export default function ReportsView({ jobs, currentUser }) {
       return acc;
     }, {});
 
-  // 📊 คำนวณสรุปชนิดและขนาดท่อ พร้อมจัดเรียงจากใหญ่ไปหาเล็ก และยไว้ล่างสุดถ้าไม่ใช่ท่อแตก/ไม่ระบุ
   const pipeSummaryMap = filteredJobs
     .filter(j => j.Status === 'COMPLETED' || j.status === 'COMPLETED')
     .reduce((acc, job) => {
@@ -210,10 +209,8 @@ export default function ReportsView({ jobs, currentUser }) {
   const pipeSummaryEntries = Object.entries(pipeSummaryMap).sort((a, b) => {
     const itemA = a[1];
     const itemB = b[1];
-    // ถ้าอันใดอันหนึ่งไม่รู้ขนาดหรือไม่ได้ระบุ ให้เอาไว้ล่างสุด
     if (itemA.isUnknown && !itemB.isUnknown) return 1;
     if (!itemA.isUnknown && itemB.isUnknown) return -1;
-    // เรียงจากใหญ่ไปหาเล็ก (Descending)
     return itemB.sizeNum - itemA.sizeNum;
   });
 
@@ -448,7 +445,7 @@ export default function ReportsView({ jobs, currentUser }) {
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6 text-slate-800 font-sans">
       
-      {/* 🌟 ส่วนหัวรายงานและการเลือกช่วงเวลาแบบไทย[cite: 7] */}
+      {/* 🌟 ส่วนหัวรายงานและการเลือกช่วงเวลาแบบไทย */}
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2.5">
@@ -465,7 +462,7 @@ export default function ReportsView({ jobs, currentUser }) {
 
         <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
           
-          {/* 📅 กล่องเลือกช่วงวันที่แบบไทย[cite: 7] */}
+          {/* 📅 กล่องเลือกช่วงวันที่แบบไทย */}
           <div className="bg-slate-50 border border-slate-200/80 p-2 rounded-2xl flex flex-wrap items-center gap-2 shadow-2xs">
             <div className="flex items-center gap-1.5 px-2 text-slate-600 text-xs font-bold">
               <CalendarDays className="w-4 h-4 text-blue-600" />
@@ -514,7 +511,7 @@ export default function ReportsView({ jobs, currentUser }) {
             <Download className="w-4 h-4" /> Export CSV
           </button>
 
-          {/* ปุ่มเลือกช่วงเวลารวดเร็ว[cite: 7] */}
+          {/* ปุ่มเลือกช่วงเวลารวดเร็ว */}
           <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-wrap gap-1">
             {[
               { id: 'all', label: 'ทั้งหมด' },
@@ -537,7 +534,7 @@ export default function ReportsView({ jobs, currentUser }) {
         </div>
       </div>
 
-      {/* แถบแสดงสถานะช่วงวันที่ที่เลือกอยู่ (ถ้ามี)[cite: 7] */}
+      {/* แถบแสดงสถานะช่วงวันที่ที่เลือกอยู่ (ถ้ามี) */}
       {(startDate || endDate) && (
         <div className="bg-blue-50 border border-blue-200 px-5 py-3 rounded-2xl flex items-center justify-between text-xs text-blue-900 font-medium">
           <div className="flex items-center gap-2">
@@ -554,7 +551,7 @@ export default function ReportsView({ jobs, currentUser }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white p-6 rounded-3xl shadow-md space-y-2">
-          <p className="text-xs text-blue-100 font-medium">รายการในรายงาน (ตามเงื่อนไข)</p>
+          <p className="text-xs text-blue-100 font-medium">รายการรับแจ้งทั้งหมด (ตามเงื่อนไข)</p>
           <h3 className="text-3xl font-bold">{filteredJobs.length} <span className="text-sm font-normal">เคส</span></h3>
         </div>
         <div className="bg-gradient-to-br from-emerald-600 to-teal-700 text-white p-6 rounded-3xl shadow-md space-y-2">
@@ -655,7 +652,7 @@ export default function ReportsView({ jobs, currentUser }) {
         <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50">
           <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
             <FileText className="w-5 h-5 text-blue-600" />
-            รายการรายงานผลการซ่อม ({filteredJobs.length} รายการ)
+            งานผลการซ่อม ({filteredJobs.length} รายการ)
           </h3>
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
             <div className="relative w-full sm:w-72">
@@ -680,7 +677,7 @@ export default function ReportsView({ jobs, currentUser }) {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 border-b border-slate-100">
-                <th className="p-4 font-semibold">เลขที่รับแจ้ง / วันเวลา</th>
+                <th className="p-4 font-semibold">เลขที่รับแจ้ง / วันเวลา / ทีมช่าง</th>
                 <th className="p-4 font-semibold">ผู้แจ้ง / เบอร์โทร</th>
                 <th className="p-4 font-semibold">หัวข้อร้องเรียน</th>
                 <th className="p-4 font-semibold">บริเวณ / ชนิดท่อ</th>
@@ -707,20 +704,26 @@ export default function ReportsView({ jobs, currentUser }) {
                   const isDone = (job.Status === 'COMPLETED' || job.status === 'COMPLETED');
                   const isUnrep = (job.Status === 'UNREPAIRABLE' || job.status === 'UNREPAIRABLE');
 
+                  const technicianName = job.Technician || job.technician || '-';
+
                   return (
                     <tr key={job.JobID || job.id} className="hover:bg-slate-50/80 transition">
-                      <td className="p-4">
+                      <td className="p-4 space-y-1">
                         <span className="font-mono font-bold text-blue-600">{getDisplayReceivedNo(job)}</span>
-                        <p className="text-[11px] text-slate-500 mt-0.5">รับแจ้ง: {formatThaiDate(job.Timestamp)}</p>
+                        <p className="text-[11px] text-slate-500">รับแจ้ง: {formatThaiDate(job.Timestamp)}</p>
                         {isDone || isUnrep ? (
-                          <p className="text-[11px] text-emerald-600 font-bold mt-0.5">
+                          <p className="text-[11px] text-emerald-600 font-bold">
                             ซ่อมเสร็จ: {job.ClosedAt && job.ClosedAt !== '-' ? formatThaiDate(job.ClosedAt) : '-'}
                           </p>
                         ) : (
-                          <p className="text-[11px] text-amber-600 font-medium mt-0.5">
+                          <p className="text-[11px] text-amber-600 font-medium">
                             สถานะ: รอดำเนินการ / กำลังซ่อม
                           </p>
                         )}
+                        <div className="pt-1 border-t border-slate-100 flex items-center gap-1 text-[11px] font-bold text-indigo-700">
+                          <Users className="w-3 h-3 text-indigo-500 shrink-0" />
+                          <span className="truncate">ทีมช่าง: {technicianName}</span>
+                        </div>
                       </td>
                       <td className="p-4">
                         <p className="font-bold text-slate-800">{job.ReporterName || 'ไม่ระบุชื่อ'}</p>
@@ -819,7 +822,7 @@ export default function ReportsView({ jobs, currentUser }) {
         )}
       </div>
 
-      {/* ⚠️ MODAL แสดงงานซ่อมไม่ได้[cite: 8] */}
+      {/* ⚠️ MODAL แสดงงานซ่อมไม่ได้ */}
       {isUnrepairableModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 font-sans">
           <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
@@ -847,7 +850,7 @@ export default function ReportsView({ jobs, currentUser }) {
         </div>
       )}
 
-      {/* 🖼️ MODAL ดูรูปภาพ[cite: 7] */}
+      {/* 🖼️ MODAL ดูรูปภาพ */}
       {selectedJobForPhotos && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 font-sans">
           <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -906,7 +909,7 @@ export default function ReportsView({ jobs, currentUser }) {
         </div>
       )}
 
-      {/* 🖨️ MODAL กรอกเลข Smart 1662 ก่อนพิมพ์[cite: 7] */}
+      {/* 🖨️ MODAL กรอกเลข Smart 1662 ก่อนพิมพ์ */}
       {selectedJobForPrint && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 font-sans">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 space-y-4">
