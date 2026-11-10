@@ -39,6 +39,14 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const [editingTeamJob, setEditingTeamJob] = useState(null);
   const [newSelectedTeam, setNewSelectedTeam] = useState('');
 
+  // 📍 State สำหรับเปลี่ยนพิกัดตอนเปลี่ยนทีมช่าง
+  const [changeTeamLat, setChangeTeamLat] = useState('');
+  const [changeTeamLng, setChangeTeamLng] = useState('');
+
+  // 📸 State สำหรับอัปโหลดรูปตอนเปลี่ยนทีมช่าง
+  const [changeTeamImageFile, setChangeTeamImageFile] = useState(null);
+  const [changeTeamImagePreview, setChangeTeamImagePreview] = useState('');
+
   // 🔴 State สำหรับ Modal แก้ไขข้อมูลของแอดมิน (รองรับทั้ง 4 สถานะ)
   const [editingAdminJob, setEditingAdminJob] = useState(null);
   const [adminEditForm, setAdminEditForm] = useState({
@@ -119,7 +127,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     return job.receivedNo || job.JobID || job.id || '-';
   };
 
-  // 📸 ฟังก์ชันจัดการเลือกไฟล์รูปภาพ
+  // 📸 ฟังก์ชันจัดการเลือกไฟล์รูปภาพ (ตอนจ่ายงาน)
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -127,6 +135,19 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       const reader = new FileReader();
       reader.onloadend = () => {
         setDispatchImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // 📸 ฟังก์ชันจัดการเลือกไฟล์รูปภาพ (ตอนเปลี่ยนทีมช่าง)
+  const handleChangeTeamImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setChangeTeamImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setChangeTeamImagePreview(reader.result);
       };
       reader.readAsDataURL(file);
     }
@@ -188,8 +209,13 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
           setTempLat(formattedLat);
           setTempLng(formattedLng);
 
-          setDispatchLat(formattedLat);
-          setDispatchLng(formattedLng);
+          if (selectedJobForDispatch) {
+            setDispatchLat(formattedLat);
+            setDispatchLng(formattedLng);
+          } else if (editingTeamJob) {
+            setChangeTeamLat(formattedLat);
+            setChangeTeamLng(formattedLng);
+          }
           setIsMapModalOpen(false);
         });
 
@@ -201,8 +227,13 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
           setTempLat(formattedLat);
           setTempLng(formattedLng);
 
-          setDispatchLat(formattedLat);
-          setDispatchLng(formattedLng);
+          if (selectedJobForDispatch) {
+            setDispatchLat(formattedLat);
+            setDispatchLng(formattedLng);
+          } else if (editingTeamJob) {
+            setChangeTeamLat(formattedLat);
+            setChangeTeamLng(formattedLng);
+          }
           setIsMapModalOpen(false);
         });
       };
@@ -261,7 +292,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message, parse_mode: "Markdown" })
       });
 
-      // ส่งรูปภาพไป Telegram ด้วยถ้ามี
       if (jobPayload.beforeImg) {
         await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
           method: "POST",
@@ -287,7 +317,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     setIsUploadingImage(true);
     let uploadedImageUrl = selectedJobForDispatch.beforeImg || selectedJobForDispatch.BeforeImg || '';
 
-    // ถ้ามีการเลือกรูปใหม่ให้อัปโหลดขึ้น Google Drive ผ่าน Apps Script
     if (dispatchImageFile) {
       try {
         const reader = new FileReader();
@@ -407,6 +436,39 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const handleConfirmChangeTeam = async () => {
     if (!newSelectedTeam || !editingTeamJob) return;
 
+    setIsUploadingImage(true);
+    let uploadedImageUrl = editingTeamJob.beforeImg || editingTeamJob.BeforeImg || '';
+
+    if (changeTeamImageFile) {
+      try {
+        const reader = new FileReader();
+        const base64Data = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = error => reject(error);
+          reader.readAsDataURL(changeTeamImageFile);
+        });
+
+        const uploadResponse = await fetch(WEB_APP_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "upload_image",
+            fileData: base64Data,
+            fileName: changeTeamImageFile.name,
+            mimeType: changeTeamImageFile.type
+          })
+        });
+
+        const uploadResult = await uploadResponse.json();
+        if (uploadResult && uploadResult.url) {
+          uploadedImageUrl = uploadResult.url;
+        }
+      } catch (uploadErr) {
+        console.error("Error uploading image during change team:", uploadErr);
+        alert("อัปโหลดรูปภาพไม่สำเร็จ แต่จะดำเนินการเปลี่ยนทีมช่างต่อ");
+      }
+    }
+
     const workerObj = workerAccounts.find(w => w.teamName === newSelectedTeam);
     const workerPhoneFormatted = workerObj && workerObj.phone && workerObj.phone !== '-' 
       ? formatPhoneForSheet(workerObj.phone)
@@ -418,6 +480,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
     const rawPhone = editingTeamJob.phone || editingTeamJob.Phone || '-';
     const formattedPhone = formatPhoneForSheet(rawPhone);
+
+    const finalLat = changeTeamLat || editingTeamJob.latitude || editingTeamJob.Latitude || '';
+    const finalLng = changeTeamLng || editingTeamJob.longitude || editingTeamJob.Longitude || '';
 
     const changeTeamPayload = {
       action: "dispatch_job",
@@ -436,7 +501,13 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       techPhone: workerPhoneFormatted,
       status: 'IN_PROGRESS', 
       Status: 'IN_PROGRESS',
-      dispatchedAt: currentDateTime
+      dispatchedAt: currentDateTime,
+      latitude: finalLat,
+      Latitude: finalLat,
+      longitude: finalLng,
+      Longitude: finalLng,
+      beforeImg: uploadedImageUrl,
+      BeforeImg: uploadedImageUrl
     };
 
     try {
@@ -452,16 +523,25 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       await sendTelegramNotification(changeTeamPayload);
     } catch (err) {
       console.error("Error changing team in Google Sheets:", err);
+    } finally {
+      setIsUploadingImage(false);
     }
 
     onStatusChange(editingTeamJob.id || editingTeamJob.JobID, 'IN_PROGRESS', {
       ...changeTeamPayload,
-      techPhone: String(workerPhoneFormatted).replace(/^'/, '')
+      techPhone: String(workerPhoneFormatted).replace(/^'/, ''),
+      latitude: finalLat,
+      longitude: finalLng,
+      beforeImg: uploadedImageUrl
     });
 
     setEditingTeamJob(null);
     setNewSelectedTeam('');
-    alert("เปลี่ยนทีมช่างและย้ายกลับสถานะกำลังดำเนินการซ่อมเรียบร้อยแล้ว");
+    setChangeTeamLat('');
+    setChangeTeamLng('');
+    setChangeTeamImageFile(null);
+    setChangeTeamImagePreview('');
+    alert("เปลี่ยนทีมช่างและอัปเดตข้อมูลเรียบร้อยแล้ว");
   };
 
   const handleOpenAdminEdit = (job) => {
@@ -555,8 +635,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   };
 
   const handleOpenMapPicker = () => {
-    setTempLat(dispatchLat || '17.4135');
-    setTempLng(dispatchLng || '104.7912');
+    setTempLat(selectedJobForDispatch ? (dispatchLat || '17.4135') : (changeTeamLat || '17.4135'));
+    setTempLng(selectedJobForDispatch ? (dispatchLng || '104.7912') : (changeTeamLng || '104.7912'));
     setIsMapModalOpen(true);
   };
 
@@ -753,6 +833,10 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                                   onClick={() => {
                                     setEditingTeamJob(job);
                                     setNewSelectedTeam(job.techName || job.technician || workerAccounts[0]?.teamName || '');
+                                    setChangeTeamLat(job.latitude || job.Latitude || '');
+                                    setChangeTeamLng(job.longitude || job.Longitude || '');
+                                    setChangeTeamImageFile(null);
+                                    setChangeTeamImagePreview(job.beforeImg || job.BeforeImg || '');
                                   }}
                                   className="text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-800 px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition cursor-pointer"
                                   title="เปลี่ยนทีมช่าง"
@@ -800,6 +884,10 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                                   onClick={() => {
                                     setEditingTeamJob(job);
                                     setNewSelectedTeam(job.techName || job.technician || workerAccounts[0]?.teamName || '');
+                                    setChangeTeamLat(job.latitude || job.Latitude || '');
+                                    setChangeTeamLng(job.longitude || job.Longitude || '');
+                                    setChangeTeamImageFile(null);
+                                    setChangeTeamImagePreview(job.beforeImg || job.BeforeImg || '');
                                   }}
                                   className="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded-lg font-bold transition shadow-sm cursor-pointer flex items-center gap-1 animate-pulse"
                                 >
@@ -828,7 +916,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         })}
       </div>
 
-      {/* Modal จ่ายงานซ่อม (เพิ่มส่วนอัปโหลดรูปภาพสภาพหน้างาน) */}
+      {/* Modal จ่ายงานซ่อม */}
       {selectedJobForDispatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
@@ -881,7 +969,6 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                 </select>
               </div>
 
-              {/* 📸 เพิ่มส่วนอัปโหลดรูปถ่ายสภาพหน้างานท่อแตก/ท่อรั่ว */}
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
                 <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
                   <ImageIcon className="w-3.5 h-3.5 text-blue-600" /> รูปถ่ายสภาพหน้างาน (ท่อแตก/ท่อรั่ว)
@@ -1080,10 +1167,10 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         </div>
       )}
 
-      {/* Modal สำหรับเปลี่ยนทีมช่าง */}
+      {/* Modal สำหรับเปลี่ยนทีมช่าง (เพิ่มส่วนแก้ไขพิกัดและอัปโหลดรูปภาพ) */}
       {editingTeamJob && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h4 className="font-bold text-slate-800 text-sm">เปลี่ยนทีมช่างใหม่: {getDisplayReceivedNo(editingTeamJob)}</h4>
               <button onClick={() => setEditingTeamJob(null)} className="cursor-pointer"><X className="w-5 h-5 text-slate-400" /></button>
@@ -1108,20 +1195,111 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                   ))}
                 </select>
               </div>
+
+              {/* 📸 เพิ่มส่วนอัปโหลด/แก้ไขรูปถ่ายสภาพหน้างานตอนเปลี่ยนทีมช่าง */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
+                <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <ImageIcon className="w-3.5 h-3.5 text-blue-600" /> รูปถ่ายสภาพหน้างาน (ท่อแตก/ท่อรั่ว)
+                </label>
+                
+                <div className="flex items-center gap-3">
+                  <label className="flex-1 cursor-pointer bg-white border border-dashed border-blue-300 hover:border-blue-500 rounded-xl p-3 text-center transition flex flex-col items-center justify-center gap-1 group">
+                    <Upload className="w-4 h-4 text-blue-500 group-hover:scale-110 transition" />
+                    <span className="text-[11px] font-bold text-slate-600">คลิกเปลี่ยนรูปภาพหน้างาน</span>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleChangeTeamImageChange} 
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
+
+                {changeTeamImagePreview && (
+                  <div className="relative mt-2 rounded-xl overflow-hidden border border-slate-200 bg-black/5 h-32 flex items-center justify-center">
+                    <img 
+                      src={getDisplayImageUrl(changeTeamImagePreview) || changeTeamImagePreview} 
+                      alt="Preview" 
+                      className="h-full object-contain"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { setChangeTeamImageFile(null); setChangeTeamImagePreview(''); }}
+                      className="absolute top-2 right-2 bg-rose-600 text-white p-1 rounded-full text-xs shadow-md hover:bg-rose-700 cursor-pointer"
+                      title="ลบรูปภาพ"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 📍 เพิ่มส่วนแก้ไขพิกัดจุดรั่วตอนเปลี่ยนทีมช่าง */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-rose-500" /> พิกัดจุดท่อแตกรั่ว
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleOpenMapPicker}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs cursor-pointer"
+                  >
+                    <Globe className="w-3.5 h-3.5" /> คลิกเลือกพิกัดจากแผนที่
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-medium">Latitude (ละติจูด)</span>
+                    <input
+                      type="text"
+                      value={changeTeamLat}
+                      onChange={(e) => setChangeTeamLat(e.target.value)}
+                      placeholder="เช่น 17.380340"
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-medium">Longitude (ลองจิจูด)</span>
+                    <input
+                      type="text"
+                      value={changeTeamLng}
+                      onChange={(e) => setChangeTeamLng(e.target.value)}
+                      placeholder="เช่น 104.786512"
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {changeTeamLat && changeTeamLng && (
+                  <a
+                    href={`https://maps.google.com/?q=${changeTeamLat},${changeTeamLng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-blue-600 font-bold flex items-center gap-1 pt-0.5 hover:underline"
+                  >
+                    <ExternalLink className="w-3 h-3" /> ตรวจสอบตำแหน่งพิกัดนี้บน Google Maps
+                  </a>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-2 pt-2">
               <button
                 onClick={() => setEditingTeamJob(null)}
+                disabled={isUploadingImage}
                 className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl cursor-pointer"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={handleConfirmChangeTeam}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer"
+                disabled={isUploadingImage}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
-                บันทึกการเปลี่ยนทีม (ย้ายเข้ากำลังซ่อม)
+                {isUploadingImage && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isUploadingImage ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนทีม (ย้ายเข้ากำลังซ่อม)'}
               </button>
             </div>
           </div>
