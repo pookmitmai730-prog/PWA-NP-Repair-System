@@ -121,7 +121,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
     ]
   });
 
-  // 🛒 State รายการที่ถูกเลือกในแต่ละหมวด
+  // 🛒 State รายการที่ถูกเลือกในแต่ละหมวด (เพิ่มฟิลด์ isFromStock: true/false สำหรับเช็คบอกเบิกคลัง)
   const [selectedItems, setSelectedItems] = useState([]);
 
   // State สำหรับฟอร์มเพิ่มรายการ
@@ -132,6 +132,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const [itemQty, setItemQty] = useState(1);
   const [customMaterialPrice, setCustomMaterialPrice] = useState('');
   const [customLaborPrice, setCustomLaborPrice] = useState('');
+  const [isFromStockInput, setIsFromStockInput] = useState(false); // เช็คบอกเบิกคลังสำหรับรายการใหม่
 
   // 💰 State สำหรับค่าใช้จ่ายอื่นๆ (จาก Cat7)
   const [otherExpenses, setOtherExpenses] = useState([]);
@@ -145,7 +146,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const [applyFactorF, setApplyFactorF] = useState(true);
   const [factorFValue, setFactorFValue] = useState(1.4018);
 
-  // 📦 การคืนพัสดุ / อุปกรณ์เดิม (เพิ่มสถานะการใช้งาน: 'usable' หรือ 'unusable')
+  // 📦 การคืนพัสดุ / อุปกรณ์เดิม
   const [returnStatusType, setReturnStatusType] = useState('ไม่มี');
   const [returnEquipmentList, setReturnEquipmentList] = useState([
     { id: 1, name: '', qty: 1, unit: 'ชิ้น', condition: 'usable' }
@@ -330,19 +331,23 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   // 🛡️ รายการ Job ID ที่เคยเบิกซ่อมแล้ว
   const billedJobIds = new Set(savedRepairCosts.map(item => String(item.Job_ID || item.jobId || '').trim()));
 
-  // 🔍 ตัวกรองใบงานในขั้นตอนเลือก
+  // 🔍 ตัวกรองใบงานในขั้นตอนเลือก (ปรับปรุงให้ปลอดภัยและค้นหาเจอแน่นอน)
   const filteredJobsForSelect = displayJobs.filter(j => {
     const jobId = String(j.JobID || j.id || j.receivedNo || j[0] || '').trim();
     if (billedJobIds.has(jobId)) return false;
 
     const term = searchJobKeyword.toLowerCase().trim();
     if (!term) return true;
+
     const location = String(j.Location || j.location || j[4] || '').toLowerCase();
     const reporter = String(j.ReporterName || j.reporterName || j[2] || '').toLowerCase();
-    return jobId.includes(term) || location.includes(term) || reporter.includes(term);
+    const phone = String(j.Phone || j.phone || j[3] || '').toLowerCase();
+    const rNo = String(j.rNumber || j.R_Number || '').toLowerCase();
+
+    return jobId.toLowerCase().includes(term) || location.includes(term) || reporter.includes(term) || phone.includes(term) || rNo.includes(term);
   });
 
-  // 🎯 ฟังก์ชันจัดการเมื่อเลือกใบงาน: แยกอุปกรณ์จาก Jobs_Archive (คอลัมน์ Equipment) ลงหมวด 2 และ 3 อัตโนมัติ
+  // 🎯 ฟังก์ชันจัดการเมื่อเลือกใบงาน: แยกอุปกรณ์จาก Jobs_Archive ลงหมวด 2 และ 3 อัตโนมัติ
   const handleSelectJob = (job) => {
     setSelectedJob(job);
 
@@ -387,6 +392,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
           quantity: qty,
           materialPrice: matPrice,
           laborPrice: labPrice,
+          isFromStock: false, // ค่าเริ่มต้น ไม่ได้ติ๊กเบิกคลัง
           totalMaterialPrice: matPrice * qty,
           totalLaborPrice: labPrice * qty
         });
@@ -512,6 +518,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
       laborPrice: labPriceToUse,
       category: activeCategory,
       quantity: qty,
+      isFromStock: (activeCategory === 'cat2' || activeCategory === 'cat3') ? isFromStockInput : false,
       totalMaterialPrice: matPriceToUse * qty,
       totalLaborPrice: labPriceToUse * qty
     };
@@ -522,10 +529,28 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
     setItemQty(1);
     setCustomMaterialPrice('');
     setCustomLaborPrice('');
+    setIsFromStockInput(false);
   };
 
   const handleRemoveItem = (cartId) => {
     setSelectedItems(selectedItems.filter(m => m.cartId !== cartId));
+  };
+
+  // ฟังก์ชันสลับสถานะติ๊กเบิกคลังของรายการในตะกร้า
+  const handleToggleStockItem = (cartId) => {
+    setSelectedItems(selectedItems.map(item => {
+      if (item.cartId === cartId) {
+        const newStockStatus = !item.isFromStock;
+        return {
+          ...item,
+          isFromStock: newStockStatus,
+          // ถ้านำเข้าเบิกคลัง ให้ราคาเป็น 0 ทันที
+          totalMaterialPrice: newStockStatus ? 0 : (item.materialPrice * item.quantity),
+          totalLaborPrice: newStockStatus ? 0 : (item.laborPrice * item.quantity)
+        };
+      }
+      return item;
+    }));
   };
 
   const handleOtherSearchChange = (e) => {
@@ -592,8 +617,9 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
   const getCategoryItems = (catKey) => selectedItems.filter(item => item.category === catKey);
 
-  const totalDirectMaterial = selectedItems.reduce((acc, item) => acc + item.totalMaterialPrice, 0);
-  const totalDirectLabor = selectedItems.reduce((acc, item) => acc + item.totalLaborPrice, 0);
+  // คำนวณยอดรวม (ไม่นำรายการที่ติ๊กเบิกคลังมาคำนวณราคา)
+  const totalDirectMaterial = selectedItems.filter(i => !i.isFromStock).reduce((acc, item) => acc + item.totalMaterialPrice, 0);
+  const totalDirectLabor = selectedItems.filter(i => !i.isFromStock).reduce((acc, item) => acc + item.totalLaborPrice, 0);
   const totalDirectCost = totalDirectMaterial + totalDirectLabor;
 
   const activeFactorF = applyFactorF ? Number(factorFValue || 1) : 1.0;
@@ -679,12 +705,8 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const managerName = signers.managers[2]?.name || 'นายเกรียงศักดิ์ วรสุทธิ์';
   const managerPos = signers.managers[2]?.position || 'ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม';
 
-  // ตรวจสอบว่ามีการใช้รถขุด (เช่น PC35 หรือมีคำว่า 'รถขุด' ในค่าใช้จ่ายอื่นๆ) หรือไม่
   const hasExcavator = otherExpenses.some(o => String(o.name).toLowerCase().includes('pc') || String(o.name).toLowerCase().includes('รถขุด') || String(o.name).toLowerCase().includes('แมคโคร'));
-
-  // ตรวจสอบวิธีการจัดซื้อ/จัดจ้างจากยอดเงิน (ไม่เกิน 500,000 = วิธีเฉพาะเจาะจง, เกิน = วิธีเสนอราคา)
   const procurementMethod = roundedGrandTotalVal <= 500000 ? 'วิธีเฉพาะเจาะจง' : 'วิธีเสนอราคา';
-
   const validReturnedEquipment = (returnStatusType === 'มีอุปกรณ์คืน' && returnEquipmentList.length > 0) ? returnEquipmentList.filter(eq => eq.name && eq.name.trim() !== '') : [];
 
   return (
@@ -764,7 +786,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
               type="text"
               value={searchJobKeyword}
               onChange={(e) => setSearchJobKeyword(e.target.value)}
-              placeholder="ค้นหาใบงานที่ยังไม่ได้เบิก ด้วยเลขที่งาน, สถานที่ หรือชื่อผู้แจ้ง..."
+              placeholder="ค้นหาใบงานที่ยังไม่ได้เบิก ด้วยเลขที่งาน, สถานที่, ชื่อผู้แจ้ง หรือเบอร์โทร..."
               className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 shadow-xs"
             />
             <div className="flex gap-2">
@@ -780,7 +802,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
               {filteredJobsForSelect.length === 0 ? (
                 <div className="text-center py-4 space-y-1">
                   <p className="text-xs text-slate-400">ไม่พบใบงานที่พร้อมทำการเบิกซ่อม</p>
-                  <p className="text-[10px] text-slate-500">(ใบงานที่เคยเบิกแล้วถูกซ่อนไว้เพื่อป้องกันการเบิกซ้ำ)</p>
+                  <p className="text-[10px] text-slate-500">(ใบงานที่เคยเบิกแล้วถูกซ่อนไว้ หรือไม่พบคำที่ค้นหา)</p>
                 </div>
               ) : (
                 filteredJobsForSelect.map((j, jIdx) => (
@@ -909,7 +931,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-4">
             <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
               <Layers className="w-4 h-4 text-blue-600"/>
-              เลือกและเพิ่มรายการตามหมวดหมู่แบบฟอร์ม (หมวด 2 และ 3 ดึงจากอุปกรณ์ใบงานอัตโนมัติ)
+              เลือกและเพิ่มรายการตามหมวดหมู่แบบฟอร์ม (หมวด 2 และ 3 สามารถติ๊ก "เบิกคลัง" ได้)
             </h3>
 
             {/* แถบเลือกหมวดหมู่ 1-6 */}
@@ -932,6 +954,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                     setCurrentSelectedItem(null);
                     setCustomMaterialPrice('');
                     setCustomLaborPrice('');
+                    setIsFromStockInput(false);
                   }}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                     activeCategory === tab.key
@@ -996,6 +1019,19 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                 className="w-16 bg-white border border-slate-200 rounded-xl px-2 py-2.5 text-xs font-bold text-center focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none shadow-xs"
               />
 
+              {/* เช็คบอกเบิกคลัง สำหรับหมวด 2 และ 3 เท่านั้น */}
+              {(activeCategory === 'cat2' || activeCategory === 'cat3') && (
+                <label className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl text-xs font-bold text-emerald-800 cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={isFromStockInput}
+                    onChange={(e) => setIsFromStockInput(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
+                  />
+                  <span>เบิกคลัง (ไม่คิดราคา)</span>
+                </label>
+              )}
+
               <button
                 type="button"
                 onClick={handleAddItem}
@@ -1005,7 +1041,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
               </button>
             </div>
 
-            {/* แสดงรายการที่เลือกแยกตามหมวด 1-6 */}
+            {/* แสดงรายการที่เลือกแยกตามหมวด 1-6 พร้อมฟีเจอร์ติ๊กเบิกคลัง */}
             <div className="space-y-3 pt-2">
               {[
                 { key: 'cat1', title: 'หมวดที่ 1: งานทุบสกัดสิ่งก่อสร้างตามชนิดพื้นผิว' },
@@ -1016,6 +1052,8 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                 { key: 'cat6', title: 'หมวดที่ 6: อื่นๆ' },
               ].map((cat) => {
                 const catItemList = getCategoryItems(cat.key);
+                const isCat2Or3 = (cat.key === 'cat2' || cat.key === 'cat3');
+
                 return (
                   <div key={cat.key} className="bg-white p-3 rounded-xl border border-slate-200 space-y-2">
                     <h4 className="text-[11px] font-bold text-slate-700 border-b border-slate-100 pb-1 flex justify-between">
@@ -1027,15 +1065,39 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                     ) : (
                       <div className="space-y-1.5">
                         {catItemList.map((item) => (
-                          <div key={item.cartId} className="flex justify-between items-center text-xs bg-slate-50 p-2 rounded-lg border border-slate-100">
-                            <div>
-                              <span className="font-bold text-slate-800">{item.name}</span>
+                          <div key={item.cartId} className="flex flex-wrap justify-between items-center text-xs bg-slate-50 p-2 rounded-lg border border-slate-100 gap-2">
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-800">{item.name}</span>
+                                {item.isFromStock && (
+                                  <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold text-[10px]">
+                                    📦 เบิกคลัง (ไม่คิดราคา)
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-[10px] text-slate-500 font-mono">
                                 จำนวน: {item.quantity} {item.unit} | วัสดุ: ฿{item.materialPrice} | ค่าแรง: ฿{item.laborPrice}
                               </p>
                             </div>
+
                             <div className="flex items-center gap-3">
-                              <span className="font-mono font-bold text-blue-600">฿{(item.totalMaterialPrice + item.totalLaborPrice).toLocaleString()}</span>
+                              {/* ช่องติ๊กเช็คบอกเบิกคลังเฉพาะหมวด 2 และ 3 */}
+                              {isCat2Or3 && (
+                                <label className="flex items-center gap-1 bg-white border border-slate-200 px-2 py-1 rounded-lg text-[11px] font-bold text-emerald-700 cursor-pointer shadow-2xs">
+                                  <input
+                                    type="checkbox"
+                                    checked={item.isFromStock || false}
+                                    onChange={() => handleToggleStockItem(item.cartId)}
+                                    className="w-3.5 h-3.5 text-emerald-600 rounded focus:ring-emerald-500"
+                                  />
+                                  <span>เบิกคลัง</span>
+                                </label>
+                              )}
+
+                              <span className={`font-mono font-bold ${item.isFromStock ? 'text-slate-400 line-through' : 'text-blue-600'}`}>
+                                ฿{(item.totalMaterialPrice + item.totalLaborPrice).toLocaleString()}
+                              </span>
+
                               <button
                                 type="button"
                                 onClick={() => handleRemoveItem(item.cartId)}
@@ -1270,7 +1332,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
             <div className="space-y-1.5 text-xs">
               <div className="flex justify-between text-slate-300">
-                <span>- รวมต้นทุนตรง หมวด 1-6 (ข้อ a):</span>
+                <span>- รวมต้นทุนตรง หมวด 1-6 (ไม่รวมรายการเบิกคลัง) (ข้อ a):</span>
                 <span className="font-mono font-bold text-white">฿{totalDirectCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
               </div>
               <div className="flex justify-between text-slate-300">
@@ -1486,12 +1548,22 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                                   catItems.map((item, itemIdx) => (
                                     <tr key={`pdf-item-${item.cartId}`}>
                                       <td className="border border-black p-0.5 text-center">{catHead.num}.{itemIdx + 1}</td>
-                                      <td className="border border-black p-0.5">{item.name}</td>
+                                      <td className="border border-black p-0.5">
+                                        {item.name} {item.isFromStock && <span className="text-emerald-700 font-bold">[เบิกคลัง]</span>}
+                                      </td>
                                       <td className="border border-black p-0.5 text-center">{item.quantity}</td>
                                       <td className="border border-black p-0.5 text-center">{item.unit}</td>
-                                      <td className="border border-black p-0.5 text-right">{item.totalMaterialPrice.toLocaleString()}</td>
-                                      <td className="border border-black p-0.5 text-right">{item.totalLaborPrice.toLocaleString()}</td>
-                                      <td className="border border-black p-0.5 text-right font-bold">{(item.totalMaterialPrice + item.totalLaborPrice).toLocaleString()}</td>
+                                      {item.isFromStock ? (
+                                        <>
+                                          <td className="border border-black p-0.5 text-center text-slate-400" colSpan="3">เบิกคลัง (ไม่คิดราคา)</td>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <td className="border border-black p-0.5 text-right">{item.totalMaterialPrice.toLocaleString()}</td>
+                                          <td className="border border-black p-0.5 text-right">{item.totalLaborPrice.toLocaleString()}</td>
+                                          <td className="border border-black p-0.5 text-right font-bold">{(item.totalMaterialPrice + item.totalLaborPrice).toLocaleString()}</td>
+                                        </>
+                                      )}
                                     </tr>
                                   ))
                                 )}
@@ -1638,7 +1710,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                 </div>
               </div>
 
-              {/* หน้าที่ 2: แผนที่ Google Maps และกรอบ แบบรายการซ่อมท่อ (ปรับแก้ให้เต็มจอพรีวิวและพิมพ์ A4) */}
+              {/* หน้าที่ 2: แผนที่ Google Maps และกรอบ แบบรายการซ่อมท่อ */}
               <div 
                 id="print-sheet-map" 
                 className="bg-white shadow-2xl text-black text-[11px] leading-normal flex flex-col justify-between relative group box-border shrink-0 mx-auto" 
@@ -1662,7 +1734,6 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                   </button>
                 </div>
 
-                {/* ส่วนแผนที่ด้านบน (48.5% ของหน้ากระดาษ) */}
                 <div className="flex flex-col space-y-2 border border-black p-3 bg-slate-50 box-border" style={{ height: '48.5%' }}>
                   <div className="flex justify-between items-center border-b border-black pb-1.5">
                     <h3 className="font-bold text-[12px] flex items-center gap-1.5 text-blue-900">
@@ -1685,7 +1756,6 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                   <p className="text-[10px] text-slate-600 truncate"><b>สถานที่ซ่อม:</b> {selectedJob.Location || selectedJob.location || '-'}</p>
                 </div>
 
-                {/* ส่วนแบบรายการซ่อมท่อด้านล่าง (48.5% ของหน้ากระดาษ) */}
                 <div className="flex flex-col space-y-1.5 border border-black p-3 bg-white box-border" style={{ height: '48.5%' }}>
                   <div className="border-b border-black pb-1">
                     <h3 className="font-bold text-[12px] text-slate-900 uppercase">แบบรายการซ่อมท่อ (ถ้ามี)</h3>
