@@ -430,7 +430,6 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
     }
   };
 
-  // 📐 นำพื้นที่ที่คำนวณได้มาใส่รอไว้ในช่องจำนวน (itemQty) เมื่ออยู่ในหมวด 1 หรือ 4 และเลือกสภาพพื้นที่ไม่ใช่ "พื้นดิน"
   useEffect(() => {
     const w = Number(workDetails.width) || 0;
     const l = Number(workDetails.length) || 0;
@@ -530,11 +529,8 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
   const handleStartEditItem = (item) => {
     setActiveCategory(item.category);
-    
-    // ดึงชื่อเดิมออกจากการติดวงเล็บขนาดพื้นที่ (ถ้ามี) เพื่อให้ช่องค้นหาแสดงชื่อปกติ
     const baseName = item.name.split(' (')[0];
     setSearchTerm(baseName);
-    
     setItemQty(item.quantity);
     setCustomMaterialPrice(item.materialPrice);
     setCustomLaborPrice(item.laborPrice);
@@ -553,7 +549,6 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
     const qty = Number(itemQty) || 1;
     const isStock = (activeCategory === 'cat2' || activeCategory === 'cat3') ? isFromStockInput : false;
 
-    // ถ้าเป็นหมวด 1 หรือ 4 และไม่ใช่พื้นดิน ให้ต่อท้ายชื่อด้วย (กว้าง x ยาว = ตร.ม.)
     let finalItemName = searchTerm.trim();
     if ((activeCategory === 'cat1' || activeCategory === 'cat4') && workDetails.surfaceType !== 'พื้นดิน') {
       const w = Number(workDetails.width) || 0;
@@ -1105,7 +1100,6 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                 className="w-24 bg-white border border-slate-200 rounded-xl px-2.5 py-2.5 text-xs font-bold text-center focus:ring-2 focus:ring-blue-500 text-slate-800 outline-none shadow-xs"
               />
 
-              {/* ช่องจำนวน (ถ้าเลือกหมวด 1 หรือ 4 และไม่ใช่พื้นดิน จะแสดงสีน้ำเงินพร้อมใส่พื้นที่รอไว้) */}
               <input
                 type="number"
                 min="1"
@@ -1292,7 +1286,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                   }}
                   className="bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-800 outline-none shadow-xs"
                 >
-                  <option value="ไม่มี">ไม่มีอุปกรณ์คืน</option>
+                  <option value="ไม่มี">ไม่มีอุปกรณ์ส่งคืน</option>
                   <option value="มีอุปกรณ์คืน">มีอุปกรณ์คืน</option>
                 </select>
               </div>
@@ -1757,12 +1751,13 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                       </table>
                     </div>
 
+                    {/* ปรับแก้จุดที่ 1: ตารางสรุปย่อยหน้า 1 แสดงคำว่า "ไม่มีอุปกรณ์ส่งคืน" แทนเครื่องหมาย - */}
                     <div className="w-[33.333%] border border-black p-2 flex flex-col justify-between bg-slate-50/30 text-[10px]">
                       <div className="space-y-2">
                         <div className="border-b border-black pb-1.5 space-y-0.5">
                           <p className="font-bold text-[10px]">รายละเอียดการตรวจสอบท่อ-อุปกรณ์เดิม</p>
                           {returnStatusType === 'ไม่มี' || returnEquipmentList.length === 0 ? (
-                            <p>-</p>
+                            <p className="text-slate-800 font-medium">ไม่มีอุปกรณ์ส่งคืน</p>
                           ) : (
                             <ul className="list-disc pl-4 space-y-0.5">
                               {returnEquipmentList.map((eq, i) => (
@@ -1821,7 +1816,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                 </div>
               </div>
 
-              {/* หน้าที่ 2: แผนที่ Google Maps (ปรับปรุงความสูงให้เต็มพื้นที่ A4 และไม่ถูกบีบในหน้าพรีวิว) */}
+              {/* หน้าที่ 2: แผนที่ Google Maps */}
               <div 
                 id="print-sheet-map" 
                 className="bg-white shadow-2xl text-black text-[11px] leading-normal flex flex-col justify-between relative group box-border shrink-0 mx-auto" 
@@ -2071,6 +2066,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                             <span>สภาพ (ใช้งานได้/ไม่ได้)</span>
                           </div>
                           
+                          {/* ปรับแก้จุดที่ 2: ช่องรายการอุปกรณ์หน้า 3 แสดงคำว่า "ไม่มีอุปกรณ์ส่งคืน" แทนช่องว่างเดิม */}
                           <div className="grid grid-cols-2 gap-1 px-1 text-[9px]">
                             <div className="space-y-0.2">
                               {validReturnedEquipment.length > 0 ? (
@@ -2078,10 +2074,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                                   <p key={i} className="truncate">{i + 1}. {eq.name} ({eq.qty} {eq.unit})</p>
                                 ))
                               ) : (
-                                <>
-                                  <p>1. ........................................</p>
-                                  <p>2. ........................................</p>
-                                </>
+                                <p className="font-bold text-slate-800">ไม่มีอุปกรณ์ส่งคืน</p>
                               )}
                             </div>
                             <div className="space-y-0.2 flex flex-col justify-around text-[9px]">
@@ -2093,10 +2086,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                                   </div>
                                 ))
                               ) : (
-                                <>
-                                  <div className="flex justify-around"><label><input type="checkbox" /> ใช้งานได้</label><label><input type="checkbox" /> ไม่ได้</label></div>
-                                  <div className="flex justify-around"><label><input type="checkbox" /> ใช้งานได้</label><label><input type="checkbox" /> ไม่ได้</label></div>
-                                </>
+                                <p className="text-slate-400 italic">-</p>
                               )}
                             </div>
                           </div>
