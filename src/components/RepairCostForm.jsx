@@ -26,7 +26,7 @@ const DEFAULT_ITEMS_BY_CATEGORY = {
     { id: '2', name: 'ค่าซ่อมถนนคอนกรีต', category: 'cat4', unit: 'ตร.ม.', materialPrice: 0, laborPrice: 500 },
   ],
   cat5: [
-    { id: '1', name: 'ค่าแรงจ้างซ่อมท่อ PB ขนาด 20 มม.', category: 'cat5', unit: 'บาท', materialPrice: 0, laborPrice: 259 },
+    { id: '1', name: 'ค่าแรงจ้างซ่อมท่อ PB ขนาด 20 มม.', category: 'cat5', unit: 'จุด', materialPrice: 0, laborPrice: 259 },
   ],
   cat6: [
     { id: '1', name: 'รายการอื่นๆ', category: 'cat6', unit: 'งาน', materialPrice: 0, laborPrice: 0 },
@@ -114,6 +114,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
   const [savedRepairCosts, setSavedRepairCosts] = useState([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historySearchKeyword, setHistorySearchKeyword] = useState(''); // 🔍 สถานะค้นหาประวัติ
   const [isEditingExisting, setIsEditingExisting] = useState(false);
 
   const [workDetails, setWorkDetails] = useState({
@@ -313,7 +314,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
         const parsedCat1 = parseItem(cat1Data, 'c1', 'ตร.ม.');
         const parsedCat4 = parseItem(cat4Data, 'c4', 'ตร.ม.');
-        const parsedCat5 = parseItem(cat5Data, 'c5', 'บาท');
+        const parsedCat5 = parseItem(cat5Data, 'c5', 'จุด');
         const parsedCat6 = parseItem(cat6Data, 'c6', 'งาน');
         const parsedCat7 = parseItem(cat7Data, 'c7', 'ชั่วโมง');
 
@@ -458,12 +459,19 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
       }
     } catch (e) { console.error(e); }
 
+    // ⚡ ปรับปรุงการโหลดข้อมูล "ค่าใช้จ่ายอื่นๆ" ให้สมบูรณ์และรองรับการแก้ไขต่อ
     try {
-      if (historyItem.Other_Expenses_JSON) {
-        const oth = typeof historyItem.Other_Expenses_JSON === 'string' ? JSON.parse(historyItem.Other_Expenses_JSON) : historyItem.Other_Expenses_JSON;
-        setOtherExpenses(oth);
+      const rawOther = historyItem.Other_Expenses_JSON || historyItem.otherExpenses || historyItem.Other_Expenses;
+      if (rawOther) {
+        const oth = typeof rawOther === 'string' ? JSON.parse(rawOther) : rawOther;
+        setOtherExpenses(Array.isArray(oth) ? oth : []);
+      } else {
+        setOtherExpenses([]);
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+      console.error("Error loading other expenses:", e); 
+      setOtherExpenses([]); 
+    }
 
     try {
       if (historyItem.Return_Equipment_JSON) {
@@ -708,7 +716,9 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const totalCostWithFactorF = totalDirectCost * activeFactorF;
 
   const sumOtherExpenses = otherExpenses.reduce((acc, item) => acc + item.amount, 0);
-  const vatAmount = sumOtherExpenses * 0.07;
+  
+  // กรณีไม่คิด Factor F (บุคคลธรรมดา) ให้ Vat 7% เป็น 0
+  const vatAmount = applyFactorF ? (sumOtherExpenses * 0.07) : 0;
   const totalOtherWithVat = sumOtherExpenses + vatAmount;
   
   const grandTotalWithVat = totalCostWithFactorF + totalOtherWithVat;
@@ -790,6 +800,16 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const hasExcavator = otherExpenses.some(o => String(o.name).toLowerCase().includes('pc') || String(o.name).toLowerCase().includes('รถขุด') || String(o.name).toLowerCase().includes('แมคโคร'));
   const procurementMethod = roundedGrandTotalVal <= 500000 ? 'วิธีเฉพาะเจาะจง' : 'วิธีเสนอราคา';
   const validReturnedEquipment = (returnStatusType === 'มีอุปกรณ์คืน' && returnEquipmentList.length > 0) ? returnEquipmentList.filter(eq => eq.name && eq.name.trim() !== '') : [];
+
+  // 🔍 กรองประวัติการเบิกซ่อมตามคำค้นหา
+  const filteredHistoryList = savedRepairCosts.filter(item => {
+    const term = historySearchKeyword.toLowerCase().trim();
+    if (!term) return true;
+    const jobId = String(item.Job_ID || item.jobId || '').toLowerCase();
+    const rNo = String(item.R_Number || '').toLowerCase();
+    const location = String(item.Location || '').toLowerCase();
+    return jobId.includes(term) || rNo.includes(term) || location.includes(term);
+  });
 
   return (
     <div className="max-w-4xl mx-auto bg-white p-6 rounded-3xl shadow-xl border border-slate-200 font-sans space-y-6">
@@ -1485,25 +1505,39 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
         </form>
       )}
 
-      {/* 📜 Modal ประวัติการเบิกซ่อมย้อนหลัง */}
+      {/* 📜 Modal ประวัติการเบิกซ่อมย้อนหลัง (พร้อมแถบค้นหา) */}
       {showHistoryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 font-sans">
           <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-2 font-bold text-sm">
                 <History className="w-5 h-5 text-amber-400"/>
-                <span>ประวัติการเบิกซ่อมท่อทั้งหมด ({savedRepairCosts.length} รายการ)</span>
+                <span>ประวัติการเบิกซ่อมท่อทั้งหมด ({filteredHistoryList.length} / {savedRepairCosts.length} รายการ)</span>
               </div>
               <button onClick={() => setShowHistoryModal(false)} className="text-slate-400 hover:text-white transition cursor-pointer">
                 <X className="w-5 h-5"/>
               </button>
             </div>
 
+            {/* 🔍 ช่องค้นหาในประวัติ */}
+            <div className="p-4 bg-white border-b border-slate-200 shrink-0">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={historySearchKeyword}
+                  onChange={(e) => setHistorySearchKeyword(e.target.value)}
+                  placeholder="ค้นหาประวัติด้วยเลขที่ Job ID, คำสั่งงาน (R), หรือสถานที่..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs font-medium focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 shadow-xs"
+                />
+              </div>
+            </div>
+
             <div className="p-4 overflow-y-auto space-y-3 flex-1 bg-slate-50">
-              {savedRepairCosts.length === 0 ? (
-                <p className="text-center text-slate-400 py-8 text-xs">ยังไม่มีประวัติการบันทึกเบิกซ่อม</p>
+              {filteredHistoryList.length === 0 ? (
+                <p className="text-center text-slate-400 py-8 text-xs">ไม่พบประวัติการเบิกซ่อมที่ค้นหา</p>
               ) : (
-                savedRepairCosts.map((item, idx) => (
+                filteredHistoryList.map((item, idx) => (
                   <div key={`hist-${idx}`} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap justify-between items-center gap-3">
                     <div className="space-y-1 text-xs">
                       <div className="flex items-center gap-2">
@@ -1694,7 +1728,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
                           <tr>
                             <td className="border border-black p-1 text-center">d</td>
-                            <td className="border border-black p-1 font-bold" colSpan="6">ค่าใช้จ่ายอื่นๆ (จาก Cat7) : (ไม่คิด Factor F)</td>
+                            <td className="border border-black p-1 font-bold" colSpan="6">ค่าใช้จ่ายอื่นๆ : (ไม่คิด Factor F)</td>
                           </tr>
                           {otherExpenses.length === 0 ? (
                             <tr>
@@ -1739,19 +1773,18 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                           </tr>
                           <tr className="font-bold bg-slate-50">
                             <td className="border border-black p-1 text-center"></td>
-                            <td className="border border-black p-1" colSpan="5">{applyFactorF ? 'ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น (ถอดภาษีฯ ออก)' : 'ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น (ราคาเดิม)'}</td>
+                            <td className="border border-black p-1" colSpan="5">{applyFactorF ? 'ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น (ไม่รวมภาษีมูลค่าเพิ่ม)' : 'ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น (ไม่รวมภาษีมูลค่าเพิ่ม)'}</td>
                             <td className="border border-black p-1 text-right font-mono">{calcGrandTotalVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                           </tr>
                           <tr className="font-bold bg-emerald-100 text-emerald-950">
                             <td className="border border-black p-1 text-center">⭐</td>
-                            <td className="border border-black p-1 underline" colSpan="5">ค่าจ้าง</td>
+                            <td className="border border-black p-1 underline" colSpan="5">ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น</td>
                             <td className="border border-black p-1 text-right font-mono text-[11px] font-bold">{formattedGrandTotalFormatted}</td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
 
-                    {/* ปรับแก้จุดที่ 1: ตารางสรุปย่อยหน้า 1 แสดงคำว่า "ไม่มีอุปกรณ์ส่งคืน" แทนเครื่องหมาย - */}
                     <div className="w-[33.333%] border border-black p-2 flex flex-col justify-between bg-slate-50/30 text-[10px]">
                       <div className="space-y-2">
                         <div className="border-b border-black pb-1.5 space-y-0.5">
@@ -2066,7 +2099,6 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                             <span>สภาพ (ใช้งานได้/ไม่ได้)</span>
                           </div>
                           
-                          {/* ปรับแก้จุดที่ 2: ช่องรายการอุปกรณ์หน้า 3 แสดงคำว่า "ไม่มีอุปกรณ์ส่งคืน" แทนช่องว่างเดิม */}
                           <div className="grid grid-cols-2 gap-1 px-1 text-[9px]">
                             <div className="space-y-0.2">
                               {validReturnedEquipment.length > 0 ? (
