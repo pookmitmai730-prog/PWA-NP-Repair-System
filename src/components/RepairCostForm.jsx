@@ -26,7 +26,7 @@ const DEFAULT_ITEMS_BY_CATEGORY = {
     { id: '2', name: 'ค่าซ่อมถนนคอนกรีต', category: 'cat4', unit: 'ตร.ม.', materialPrice: 0, laborPrice: 500 },
   ],
   cat5: [
-    { id: '1', name: 'ค่าแรงจ้างซ่อมท่อ PB ขนาด 20 มม.', category: 'cat5', unit: 'จุด', materialPrice: 0, laborPrice: 259 },
+    { id: '1', name: 'ค่าแรงจ้างเหมาซ่อมท่อ PB ขนาด 20 มม.', category: 'cat5', unit: 'จุด', materialPrice: 0, laborPrice: 259 },
   ],
   cat6: [
     { id: '1', name: 'รายการอื่นๆ', category: 'cat6', unit: 'งาน', materialPrice: 0, laborPrice: 0 },
@@ -822,7 +822,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
           </div>
           <div>
             <h2 className="font-bold text-slate-800 text-base">แบบฟอร์มควบคุมการซ่อมท่อ (การประปาส่วนภูมิภาคสาขานครพนม)</h2>
-            <p className="text-xs text-slate-500">หมวดที่ 1 ถึง หมวดที่ 6 และค่าใช้จ่ายอื่นๆ ตามมาตรฐานแบบฟอร์ม กปภ.</p>
+            <p className="text-xs text-slate-500">หมวดที่ 1 ถึง หมวดที่ 6 และค่าใช้จ่ายอื่นๆ (จาก Cat7) ตามมาตรฐานแบบฟอร์ม กปภ.</p>
           </div>
         </div>
 
@@ -1477,7 +1477,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
             <div className="pt-3 border-t border-slate-800 flex flex-wrap justify-between items-center gap-3">
               <div>
-                <span className="text-xs text-slate-400 block">ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น ({applyFactorF ? 'นิติบุคคล - ไม่รวมภาษีฯ' : 'บุคคลธรรมดา - ไม่รวมภาษีฯ'}):</span>
+                <span className="text-xs text-slate-400 block">ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น ({applyFactorF ? 'นิติบุคคล - ถอดภาษีฯ ออก' : 'บุคคลธรรมดา - ราคาเดิม'}):</span>
                 <span className="text-lg font-mono font-extrabold text-cyan-400">฿{formattedGrandTotalFormatted} บาท</span>
               </div>
 
@@ -1939,7 +1939,12 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                   <div className="text-right text-[11px] w-1/4 leading-tight">
                     <p><b>เลขที่รับแจ้ง :</b> {selectedJob.JobID || selectedJob.id || selectedJob[0] || '1/2569'}</p>
                     <p><b>วันที่ :</b> {formatThaiDate(selectedJob.Timestamp || new Date())}</p>
-                    <p><b>คำสั่งงานเลขที่ :</b> {rNumber.trim() ? rNumber : <span className="inline-block w-24"></span>}</p>
+                    <p>
+                      <b>คำสั่งงานเลขที่ :</b>{' '}
+                      <span className="inline-block min-w-[85px] border-b border-dashed border-red-600 text-center px-1 font-bold text-black">
+                        {rNumber.trim() ? rNumber : '\u00A0'}
+                      </span>
+                    </p>
                   </div>
                 </div>
 
@@ -2059,7 +2064,13 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                     <div className="border border-black p-1.5 space-y-0.5 text-[10.5px] flex flex-col justify-between flex-[1.6]">
                       <div>
                         <p className="font-bold text-[10.5px]">( 5 ) เรียน ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม</p>
-                        <p className="pl-2 leading-normal">งานบริการและลดน้ำสูญเสีย ตรวจสอบเหตุขัดข้องตามคำสั่งงาน <b>{rNumber || 'R202608036111'}</b> ขออนุมัติและให้ความเห็นชอบเพื่อดำเนินการดังนี้</p>
+                        <p className="pl-2 leading-normal">
+                          งานบริการและลดน้ำสูญเสีย ตรวจสอบเหตุขัดข้องตามคำสั่งงาน{' '}
+                          <span className="inline-block min-w-[85px] border-b border-dashed border-red-600 text-center px-1 font-bold text-black">
+                            {rNumber.trim() ? rNumber : '\u00A0'}
+                          </span>{' '}
+                          ขออนุมัติและให้ความเห็นชอบเพื่อดำเนินการดังนี้
+                        </p>
                         <p className="pl-3 leading-normal">
                           <b>( 5.1 )</b> อนุมัติทำการซ่อมท่อประปากรณีเร่งด่วนโดยจ้างเหมาด้วย{procurementMethod} วงเงินไม่เกิน <span className="text-[11.5px] font-extrabold text-red-600 font-mono">{formattedGrandTotalFormatted}</span> บาท
                         </p>
@@ -2138,7 +2149,13 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                     <div className="border border-black p-1.5 flex flex-col justify-between flex-[0.9]">
                       <div>
                         <p className="font-bold text-[10.5px]">(8) เรียน ผู้จัดการ กปภ.สาขานครพนม</p>
-                        <p className="pl-2 text-[10.5px] leading-normal">งานบริการฯ ได้ทำการปิดคำสั่งงาน เลขที่ {rNumber.trim() ? <span className="font-bold text-blue-900">{rNumber}</span> : <span className="inline-block w-24"></span>} เรียบร้อยแล้ว</p>
+                        <p className="pl-2 text-[10.5px] leading-normal">
+                          งานบริการฯ ได้ทำการปิดคำสั่งงาน เลขที่{' '}
+                          <span className="inline-block min-w-[85px] border-b border-dashed border-red-600 text-center px-1 font-bold text-blue-900">
+                            {rNumber.trim() ? rNumber : '\u00A0'}
+                          </span>{' '}
+                          เรียบร้อยแล้ว
+                        </p>
                       </div>
                       <div className="text-center pt-0.5">
                         <p className="text-[10.5px]">ลงชื่อ..............................................................</p>
