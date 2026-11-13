@@ -1616,7 +1616,12 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                       <h2 className="text-[14px] font-extrabold underline mt-0.5">แบบฟอร์มควบคุมการซ่อมท่อ</h2>
                     </div>
                     <div className="text-right text-[11px] w-1/4 leading-tight">
-                      <p><b>คำสั่งงานเลขที่ :</b> {rNumber || 'R202608036111'}</p>
+                      <p>
+                        <b>คำสั่งงานเลขที่ :</b>{' '}
+                        <span className="inline-block min-w-[85px] border-b border-dashed border-red-600 text-center px-1 font-bold text-black">
+                          {rNumber.trim() ? rNumber : '\u00A0'}
+                        </span>
+                      </p>
                       <p><b>วันที่ :</b> {formatThaiDate(selectedJob.ClosedAt || selectedJob.closedAt || new Date())}</p>
                     </div>
                   </div>
@@ -2096,7 +2101,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                       </div>
                     </div>
 
-                    <div className="border border-black p-1.5 space-y-0.5 text-[10.5px] flex flex-col justify-between flex-[1.8]">
+                    <div className="border border-black p-1.5 space-y-0.5 text-[10px] flex flex-col justify-between flex-[1.8]">
                       <div>
                         <p className="font-bold text-[10px]">({'\u00A0'}7{'\u00A0'}) เรียน ผู้จัดการ กปภ.สาขานครพนม</p>
                         <p className="pl-2 text-[9.5px] leading-tight">คณะกรรมการตรวจสอบท่อ และอุปกรณ์เดิม ได้ตรวจสอบรายละเอียดท่อ-อุปกรณ์แล้ว มีความเห็นดังนี้</p>
