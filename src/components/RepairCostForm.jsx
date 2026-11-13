@@ -350,10 +350,12 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const completedJobs = completedJobsList.filter(j => normalizeStatus(j.Status || j.status || j.JobStatus || j[10] || j[11]) === 'COMPLETED');
   const displayJobs = completedJobs.length > 0 ? completedJobs : completedJobsList;
 
+  // 🔍 ตรวจสอบ ID ของใบงานที่เคยบันทึกประมาณการเบิกซ่อมไปแล้ว
   const billedJobIds = new Set(savedRepairCosts.map(item => String(item.Job_ID || item.jobId || '').trim()));
 
   const filteredJobsForSelect = displayJobs.filter(j => {
     const jobId = String(j.JobID || j.id || j.receivedNo || j[0] || '').trim();
+    // 🛑 ซ่อนใบงานที่เคยทำประมาณการเบิกไปแล้ว (ไม่ให้แสดงซ้ำในขั้นตอนที่ 1)
     if (billedJobIds.has(jobId)) return false;
 
     const term = searchJobKeyword.toLowerCase().trim();
@@ -459,7 +461,6 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
       }
     } catch (e) { console.error(e); }
 
-    // ⚡ ปรับปรุงการโหลดข้อมูล "ค่าใช้จ่ายอื่นๆ" ให้สมบูรณ์และรองรับการแก้ไขต่อ
     try {
       const rawOther = historyItem.Other_Expenses_JSON || historyItem.otherExpenses || historyItem.Other_Expenses;
       if (rawOther) {
@@ -694,14 +695,6 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
     setOtherExpenses(otherExpenses.filter(item => item.id !== id));
   };
 
-  const handleAddReturnEquipment = () => {
-    setReturnEquipmentList([...returnEquipmentList, { id: Date.now(), name: '', qty: 1, unit: 'ชิ้น', condition: 'usable' }]);
-  };
-
-  const handleRemoveReturnEquipment = (id) => {
-    setReturnEquipmentList(returnEquipmentList.filter(item => item.id !== id));
-  };
-
   const handleReturnEquipmentChange = (id, field, value) => {
     setReturnEquipmentList(returnEquipmentList.map(item => item.id === id ? { ...item, [field]: value } : item));
   };
@@ -717,7 +710,6 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
   const sumOtherExpenses = otherExpenses.reduce((acc, item) => acc + item.amount, 0);
   
-  // กรณีไม่คิด Factor F (บุคคลธรรมดา) ให้ Vat 7% เป็น 0
   const vatAmount = applyFactorF ? (sumOtherExpenses * 0.07) : 0;
   const totalOtherWithVat = sumOtherExpenses + vatAmount;
   
@@ -1348,7 +1340,9 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
                       <button
                         type="button"
-                        onClick={() => handleRemoveReturnEquipment(eq.id)}
+                        onClick={() => {
+                          setReturnEquipmentList(returnEquipmentList.filter(item => item.id !== eq.id));
+                        }}
                         className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4"/>
@@ -1357,7 +1351,9 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                   ))}
                   <button
                     type="button"
-                    onClick={handleAddReturnEquipment}
+                    onClick={() => {
+                      setReturnEquipmentList([...returnEquipmentList, { id: Date.now(), name: '', qty: 1, unit: 'ชิ้น', condition: 'usable' }]);
+                    }}
                     className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5"/> เพิ่มรายการอุปกรณ์คืน
@@ -1550,13 +1546,28 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                       </p>
                     </div>
 
+                    {/* 🔧 เพิ่มเท็กซ์บ็อกซ์และปุ่มจัดการคำสั่งงานเลขที่ในประวัติ */}
                     <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={item.R_Number || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSavedRepairCosts(savedRepairCosts.map((s, sIdx) => sIdx === idx ? { ...s, R_Number: val } : s));
+                          if (selectedJob && String(selectedJob.JobID || selectedJob.id || selectedJob[0]) === String(item.Job_ID || item.jobId)) {
+                            setRNumber(val);
+                          }
+                        }}
+                        placeholder="เลขคำสั่งงาน (เช่น R...)"
+                        className="w-36 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 outline-none"
+                        title="แก้ไขคำสั่งงานเลขที่สำหรับรายการนี้"
+                      />
                       <button
                         type="button"
                         onClick={() => handleEditHistoryItem(item)}
-                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
                       >
-                        <Edit3 className="w-3.5 h-3.5"/> แก้ไขข้อมูล
+                        <Edit3 className="w-3.5 h-3.5"/> เลือกแก้ไข/พรีวิว
                       </button>
                     </div>
                   </div>
