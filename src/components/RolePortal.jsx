@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Wrench, Lock, UserCheck, Shield, Smartphone, Globe, KeyRound, User, PlusCircle, X, MapPin, Phone, AlertTriangle, Send, Loader2, Camera, Navigation } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Wrench, Lock, UserCheck, Shield, Smartphone, Globe, KeyRound, User, PlusCircle, X, MapPin, Phone, AlertTriangle, Send, Loader2, Camera, Navigation, Layers, ExternalLink, Video } from 'lucide-react';
 import TrackingSearch from './TrackingSearch';
 import { compressImage } from '../utils/imageCompressor';
 
@@ -26,6 +26,12 @@ export default function RolePortal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [publicFormImages, setPublicFormImages] = useState([]);
 
+  // State สำหรับ Modal เปิดกล้องถ่ายรูปสด
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [cameraStream, setCameraStream] = useState(null);
+
   // State สำหรับฟอร์มแจ้งซ่อมของประชาชนทั่วไป
   const [publicData, setPublicData] = useState({
     receivedNo: '',
@@ -41,6 +47,15 @@ export default function RolePortal({
   const [coords, setCoords] = useState({ lat: null, lng: null });
   const [isGettingLocation, setIsGettingLocation] = useState(false);
 
+  // 🗺️ State สำหรับ Modal แผนที่เลือกพิกัด (รูปแบบ Google Maps)
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const markerRef = useRef(null);
+  const tileLayerRef = useRef(null);
+  const [mapType, setMapType] = useState('streets'); // 'streets' (แผนที่ถนน Google) หรือ 'satellite' (ภาพถ่ายดาวเทียม Google Hybrid)
+  const [mapTempCoords, setMapTempCoords] = useState({ lat: 17.4157, lng: 104.7877 }); // พิกัดตั้งต้น นครพนม
+
   // State สำหรับฟอร์ม Login Admin
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -51,17 +66,17 @@ export default function RolePortal({
   const [workerPassword, setWorkerPassword] = useState('');
   const [workerError, setWorkerError] = useState('');
 
-  // 🕒 ฟังก์ชันสร้างเลขที่รับแจ้งอัตโนมัติสำหรับ ปชช.
+  // 🕒 1. ฟังก์ชันสร้างเลขที่รับแจ้งอัตโนมัติ (รูปแบบ ค.ศ. ปี-เดือน-วัน เวลาประเทศไทย)
   const generatePublicReceivedNo = () => {
     const now = new Date();
     const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
     
-    const yy = String(thaiTime.getFullYear()).slice(-2);
-    const mm = String(thaiTime.getMonth() + 1).padStart(2, '0');
-    const dd = String(thaiTime.getDate()).padStart(2, '0');
-    const hh = String(thaiTime.getHours()).padStart(2, '0');
-    const min = String(thaiTime.getMinutes()).padStart(2, '0');
-    const dateCode = `${yy}${mm}${dd}-${hh}${min}`;
+    const yyyy = thaiTime.getUTCFullYear();
+    const mm = String(thaiTime.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(thaiTime.getUTCDate()).padStart(2, '0');
+    const hh = String(thaiTime.getUTCHours()).padStart(2, '0');
+    const min = String(thaiTime.getUTCMinutes()).padStart(2, '0');
+    const dateCode = `${yyyy}${mm}${dd}-${hh}${min}`;
 
     const runningNo = String((jobs ? jobs.length : 0) + 1).padStart(2, '0');
     return `PWA-${dateCode}-${runningNo}`;
@@ -103,6 +118,60 @@ export default function RolePortal({
     setPublicFormImages(prev => prev.filter((_, i) => i !== index));
   };
 
+  // 📸 ฟังก์ชันเปิดกล้องถ่ายภาพสด
+  const handleOpenCameraController = async () => {
+    setIsCameraModalOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' }, 
+        audio: false 
+      });
+      setCameraStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Camera access error:", err);
+      alert("ไม่สามารถเข้าถึงกล้องได้ กรุณาตรวจสอบการอนุญาตใช้งานกล้อง");
+      setIsCameraModalOpen(false);
+    }
+  };
+
+  // 📸 ฟังก์ชันปิดกล้อง
+  const handleCloseCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    setIsCameraModalOpen(false);
+  };
+
+  // 📸 ฟังก์ชันกดชัตเตอร์ถ่ายภาพจากกล้อง
+  const handleCapturePhoto = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    try {
+      // แปลงและบีบอัดรูปภาพที่ถ่ายมา
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const compressedBase64 = await compressImage(blob, 1024, 0.7);
+      setPublicFormImages(prev => [...prev, compressedBase64]);
+    } catch (err) {
+      console.error("Capture compression error:", err);
+      setPublicFormImages(prev => [...prev, dataUrl]);
+    }
+
+    handleCloseCamera();
+  };
+
   const handleGetGPS = () => {
     if (!navigator.geolocation) {
       alert("เบราว์เซอร์ของคุณไม่รองรับการระบุตำแหน่ง GPS");
@@ -112,10 +181,10 @@ export default function RolePortal({
     setIsGettingLocation(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setCoords({
-          lat: position.coords.latitude.toFixed(6),
-          lng: position.coords.longitude.toFixed(6)
-        });
+        const lat = position.coords.latitude.toFixed(6);
+        const lng = position.coords.longitude.toFixed(6);
+        setCoords({ lat, lng });
+        setMapTempCoords({ lat: parseFloat(lat), lng: parseFloat(lng) });
         setIsGettingLocation(false);
       },
       (error) => {
@@ -125,6 +194,135 @@ export default function RolePortal({
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+  };
+
+  // 🗺️ เปิด Modal แผนที่รูปแบบ Google Maps
+  const handleOpenMapPicker = () => {
+    setMapType('streets');
+    setIsMapModalOpen(true);
+    setTimeout(() => {
+      initLeafletMap();
+    }, 300);
+  };
+
+  // 🗺️ โหลดและสร้างแผนที่สไตล์ Google Maps (พอดีกรอบ ไม่ล้น)
+  const initLeafletMap = () => {
+    if (!window.L) {
+      if (!document.getElementById('leaflet-css')) {
+        const link = document.createElement('link');
+        link.id = 'leaflet-css';
+        link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(link);
+      }
+      if (!document.getElementById('leaflet-js')) {
+        const script = document.createElement('script');
+        script.id = 'leaflet-js';
+        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        script.onload = () => createMapInstance();
+        document.body.appendChild(script);
+      } else {
+        createMapInstance();
+      }
+    } else {
+      createMapInstance();
+    }
+  };
+
+  const createMapInstance = () => {
+    if (!mapRef.current) return;
+    const initialLat = coords.lat ? parseFloat(coords.lat) : 17.4157;
+    const initialLng = coords.lng ? parseFloat(coords.lng) : 104.7877;
+
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
+    }
+
+    const map = window.L.map(mapRef.current, {
+      zoomControl: true,
+      attributionControl: false
+    }).setView([initialLat, initialLng], 16);
+    
+    // ตั้งค่า TileLayer เริ่มต้นเป็น Google Maps (แผนที่ถนนภาษาไทย)
+    const googleStreets = window.L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=th&x={x}&y={y}&z={z}', {
+      maxZoom: 20
+    });
+    googleStreets.addTo(map);
+    tileLayerRef.current = googleStreets;
+
+    // สร้างหมุดสีแดงสไตล์ Google Maps
+    const googlePinIcon = window.L.divIcon({
+      className: 'custom-google-pin',
+      html: `<div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-100%);">
+              <div style="width:28px;height:28px;background:#EA4335;border:2px solid #FFFFFF;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 3px 6px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;">
+                <div style="width:10px;height:10px;background:#811411;border-radius:50%;"></div>
+              </div>
+             </div>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0]
+    });
+
+    const marker = window.L.marker([initialLat, initialLng], { draggable: true, icon: googlePinIcon }).addTo(map);
+    markerRef.current = marker;
+    mapInstanceRef.current = map;
+
+    marker.on('dragend', () => {
+      const pos = marker.getLatLng();
+      setMapTempCoords({ lat: parseFloat(pos.lat.toFixed(6)), lng: parseFloat(pos.lng.toFixed(6)) });
+    });
+
+    map.on('click', (e) => {
+      marker.setLatLng(e.latlng);
+      setMapTempCoords({ lat: parseFloat(e.latlng.lat.toFixed(6)), lng: parseFloat(e.latlng.lng.toFixed(6)) });
+    });
+
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
+  };
+
+  // 🛰️ ฟังก์ชันสลับเลเยอร์แผนที่ Google Maps (แผนที่ถนน / ภาพถ่ายดาวเทียม Hybrid พร้อมชื่อถนนและสถานที่ภาษาไทย)
+  const handleToggleMapType = (type) => {
+    setMapType(type);
+    if (!mapInstanceRef.current || !window.L) return;
+
+    if (tileLayerRef.current) {
+      mapInstanceRef.current.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = null;
+    }
+
+    let newGoogleLayer;
+    if (type === 'satellite') {
+      // Google Hybrid (lyrs=y): ภาพถ่ายดาวเทียมของ Google พร้อมเส้นถนนและชื่อสถานที่ภาษาไทย
+      newGoogleLayer = window.L.tileLayer('https://mt1.google.com/vt/lyrs=y&hl=th&x={x}&y={y}&z={z}', {
+        maxZoom: 20
+      });
+    } else {
+      // Google Roadmap (lyrs=m): แผนที่ถนนของ Google ภาษาไทย
+      newGoogleLayer = window.L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=th&x={x}&y={y}&z={z}', {
+        maxZoom: 20
+      });
+    }
+
+    newGoogleLayer.addTo(mapInstanceRef.current);
+    tileLayerRef.current = newGoogleLayer;
+  };
+
+  // 🚶‍♂️ ฟังก์ชันเปิด Google Street View ในแท็บใหม่
+  const handleOpenStreetView = () => {
+    const lat = mapTempCoords.lat;
+    const lng = mapTempCoords.lng;
+    const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`;
+    window.open(streetViewUrl, '_blank');
+  };
+
+  const handleConfirmMapLocation = () => {
+    setCoords({
+      lat: mapTempCoords.lat.toFixed(6),
+      lng: mapTempCoords.lng.toFixed(6)
+    });
+    setIsMapModalOpen(false);
   };
 
   // 📲 ฟังก์ชันสำหรับส่งแจ้งเตือน Telegram
@@ -165,14 +363,15 @@ export default function RolePortal({
 
     setIsSubmitting(true);
     
-    // 🕒 1. ปรับรูปแบบวันที่และเวลาให้เป็นรูปแบบประเทศไทย (พ.ศ.) เช่น 3/11/2569 20:30
+    // 🕒 1. ปรับรูปแบบวันที่และเวลาให้เป็นเวลาประเทศไทย (เขตเวลา +7) อย่างแม่นยำ
     const now = new Date();
-    const thaiYear = now.getFullYear() + 543;
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const currentDateTimeThai = `${day}/${month}/${thaiYear} ${hours}:${minutes}`;
+    const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const yyyy = thaiTime.getUTCFullYear();
+    const mm = String(thaiTime.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(thaiTime.getUTCDate()).padStart(2, '0');
+    const hh = String(thaiTime.getUTCHours()).padStart(2, '0');
+    const min = String(thaiTime.getUTCMinutes()).padStart(2, '0');
+    const currentDateTimeThai = `${yyyy}-${mm}-${dd} ${hh}:${min}`;
 
     const finalComplaintTopic = publicData.complaintTopicType === 'อื่นๆ' 
       ? (publicData.customComplaintTopic.trim() || 'อื่นๆ') 
@@ -213,7 +412,7 @@ export default function RolePortal({
       Latitude: coords.lat || '',
       longitude: coords.lng || '',
       Longitude: coords.lng || '',
-      // 🖼️ 4. ส่งลิงก์รูปถ่าย (เก็บใน beforeImg / BeforeImg เพื่อให้ระบบบันทึกลง Drive และแสดงในตารางคอลัมน์ L)
+      // 🖼️ 4. ส่งลิงก์รูปถ่าย
       beforeImg: publicFormImages.length > 0 ? publicFormImages[0] : '',
       BeforeImg: publicFormImages.length > 0 ? publicFormImages[0] : ''
     };
@@ -295,7 +494,7 @@ export default function RolePortal({
           position: relative;
           border-radius: 9999px;
           overflow: hidden;
-          padding: 2px; /* ขนาดความหนาของเส้นแสงวิ่ง */
+          padding: 2px;
         }
         .logo-glow-container::before {
           content: '';
@@ -307,7 +506,7 @@ export default function RolePortal({
         .logo-inner {
           position: relative;
           z-index: 10;
-          background: #020617; /* สีพื้นหลังตัดกับแสงวิ่ง */
+          background: #020617;
           border-radius: 9999px;
         }
       `}</style>
@@ -662,24 +861,33 @@ export default function RolePortal({
                 />
               </div>
 
-              {/* 📸 แนบรูปถ่ายหน้างาน */}
+              {/* 📸 แนบรูปถ่ายหน้างาน และ ถ่ายภาพสดจากโปรแกรม */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <label className="block text-xs font-bold text-slate-300">แนบรูปถ่ายจุดเกิดเหตุ (ถ้ามี)</label>
-                  <label className="bg-slate-800 hover:bg-slate-700 text-cyan-400 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition">
-                    <Camera className="w-3.5 h-3.5" /> เลือกรูปภาพ
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handlePublicImagesChange}
-                      className="hidden"
-                    />
-                  </label>
+                  <label className="block text-xs font-bold text-slate-300">แนบรูปถ่าย / ถ่ายภาพจุดเกิดเหตุ</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleOpenCameraController}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition shadow-md"
+                    >
+                      <Video className="w-3.5 h-3.5" /> ถ่ายภาพสด
+                    </button>
+                    <label className="bg-slate-800 hover:bg-slate-700 text-cyan-400 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition">
+                      <Camera className="w-3.5 h-3.5" /> เลือกรูปภาพ
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handlePublicImagesChange}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 {publicFormImages.length > 0 && (
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-4 gap-2 pt-1">
                     {publicFormImages.map((imgUrl, index) => (
                       <div key={index} className="relative group rounded-xl overflow-hidden border border-slate-800 aspect-square bg-slate-950">
                         <img src={imgUrl} alt={`Preview ${index}`} className="w-full h-full object-cover" />
@@ -696,21 +904,30 @@ export default function RolePortal({
                 )}
               </div>
 
-              {/* 📍 พิกัด GPS */}
+              {/* 📍 พิกัด GPS & เลือกบนแผนที่ */}
               <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
                     <Navigation className="w-3.5 h-3.5 text-blue-400" /> พิกัดจุดเกิดเหตุ (GPS)
                   </span>
-                  <button
-                    type="button"
-                    onClick={handleGetGPS}
-                    disabled={isGettingLocation}
-                    className="bg-slate-800 hover:bg-slate-700 text-blue-400 px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                  >
-                    {isGettingLocation ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3 text-rose-500" />}
-                    {coords.lat ? 'ดึงพิกัดใหม่' : 'กดดึงพิกัดปัจจุบัน'}
-                  </button>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleGetGPS}
+                      disabled={isGettingLocation}
+                      className="bg-slate-800 hover:bg-slate-700 text-blue-400 px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                    >
+                      {isGettingLocation ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3 text-rose-500" />}
+                      ตำแหน่งปัจจุบัน
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenMapPicker}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <MapPin className="w-3 h-3" /> เลื่อนหาบนแผนที่
+                    </button>
+                  </div>
                 </div>
 
                 {coords.lat && (
@@ -747,6 +964,128 @@ export default function RolePortal({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 📸 Modal ถ่ายภาพสดจากกล้อง */}
+      {isCameraModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl p-5 space-y-4 text-slate-100 flex flex-col items-center">
+            <div className="w-full flex justify-between items-center border-b border-slate-800 pb-3">
+              <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                <Camera className="w-5 h-5 text-emerald-500" /> ถ่ายภาพจุดเกิดเหตุ
+              </h4>
+              <button onClick={handleCloseCamera} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="relative w-full aspect-video bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center">
+              <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+              <canvas ref={canvasRef} className="hidden" />
+            </div>
+
+            <div className="flex gap-3 w-full pt-1">
+              <button
+                type="button"
+                onClick={handleCloseCamera}
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold py-3 rounded-xl cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleCapturePhoto}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Camera className="w-4 h-4" /> บันทึกภาพนี้
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🗺️ Modal เลือกตำแหน่งพิกัดบนแผนที่ (Google Maps ไม่ล้นกรอบ) */}
+      {isMapModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl shadow-2xl p-5 space-y-3 text-slate-100 flex flex-col h-[82vh]">
+            
+            {/* Header: มีปุ่มตกลงอยู่มุมบนขวา */}
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
+              <div>
+                <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-rose-500" />
+                  เลือกตำแหน่งจุดเกิดเหตุบนแผนที่ (Google Maps)
+                </h4>
+                <p className="text-[11px] text-slate-400">ลากหมุดสีแดงหรือคลิกบนแผนที่ไปยังตำแหน่งที่ต้องการ</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmMapLocation}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg flex items-center gap-1.5 cursor-pointer transition"
+                >
+                  ✓ ตกลง (ยืนยันพิกัด)
+                </button>
+                <button onClick={() => setIsMapModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer p-1">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* แผงควบคุมเลเยอร์แผนที่และสตรีทวิว */}
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950 p-2 rounded-2xl border border-slate-800 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400 font-bold flex items-center gap-1">
+                  <Layers className="w-3.5 h-3.5 text-cyan-400"/> รูปแบบแผนที่:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleToggleMapType('streets')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${mapType === 'streets' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                >
+                  แผนที่ถนน (Google)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleMapType('satellite')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${mapType === 'satellite' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                >
+                  🛰️ ภาพถ่ายดาวเทียม
+                </button>
+              </div>
+
+              {/* เมนูเปิด Street View */}
+              <button
+                type="button"
+                onClick={handleOpenStreetView}
+                className="bg-cyan-600/20 border border-cyan-500/40 hover:bg-cyan-600/30 text-cyan-300 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> ดูสตรีทวิว
+              </button>
+            </div>
+
+            {/* ส่วนแสดงแผนที่ (ควบคุมขนาดให้เต็มกรอบพอดี ไม่ล้น) */}
+            <div className="flex-1 w-full relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-950">
+              <div ref={mapRef} className="absolute inset-0 w-full h-full" style={{ minHeight: '280px' }} />
+            </div>
+
+            {/* แสดงพิกัดที่กำลังเลือกอยู่ด้านล่าง */}
+            <div className="bg-slate-950 p-2.5 rounded-2xl border border-slate-800 flex justify-between items-center text-xs">
+              <span className="font-mono text-cyan-400 font-bold">
+                🎯 พิกัดเลือก: {mapTempCoords.lat}, {mapTempCoords.lng}
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsMapModalOpen(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-1.5 rounded-xl font-bold cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+            </div>
+
           </div>
         </div>
       )}
