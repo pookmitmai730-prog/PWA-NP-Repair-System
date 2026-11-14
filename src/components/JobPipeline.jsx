@@ -708,13 +708,19 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
           <input
             type="text"
             value={pipelineSearch}
-            onChange={(e) => setPipelineSearch(e.target.value)}
+            onChange={(e) => {
+              setPipelineSearch(e.target.value);
+              setCompletedPage(1); // รีเซ็ตหน้ากลับไปหน้าแรกเมื่อพิมพ์ค้นหา
+            }}
             placeholder="ค้นหาเลขรับแจ้ง, ชื่อ, สถานที่..."
             className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
           />
           {pipelineSearch && (
             <button
-              onClick={() => setPipelineSearch('')}
+              onClick={() => {
+                setPipelineSearch('');
+                setCompletedPage(1);
+              }}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
             >
               ✕
@@ -761,7 +767,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
             colJobs.sort((a, b) => getJobDateValue(b) - getJobDateValue(a));
           }
 
-          // 📄 การจัดการแบ่งหน้าเฉพาะสถานะ COMPLETED (หน้าละ 10 รายการ)
+          // 📄 การจัดการแบ่งหน้าเฉพาะสถานะ COMPLETED (หน้าละ 10 รายการ โดยรองรับการค้นหาข้ามหน้า)
           let paginatedJobs = colJobs;
           let totalPages = 1;
           if (col.id === 'COMPLETED') {
@@ -1182,9 +1188,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         </div>
       )}
 
-      {/* 🗺️ Modal แผนที่เลือกพิกัดสไตล์ Google Maps (เหมือนหน้าฟอร์มประชาชน) */}
+      {/* 🗺️ Modal แผนที่เลือกพิกัดสไตล์ Google Maps (ปรับ z-index เป็น z-[70] ให้อยู่ด้านหน้าสุดเสมอ) */}
       {isMapModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl shadow-2xl p-5 space-y-3 text-slate-100 flex flex-col h-[82vh]">
             
             {/* Header: มีปุ่มตกลงอยู่มุมบนขวา */}
@@ -1266,9 +1272,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         </div>
       )}
 
-      {/* Modal สำหรับเปลี่ยนทีมช่าง (เพิ่มส่วนแก้ไขพิกัดและอัปโหลดรูปภาพ) */}
+      {/* Modal สำหรับเปลี่ยนทีมช่าง (กำหนด z-index เป็น z-50 ให้อยู่ใต้ Modal แผนที่) */}
       {editingTeamJob && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h4 className="font-bold text-slate-800 text-sm">เปลี่ยนทีมช่างใหม่: {getDisplayReceivedNo(editingTeamJob)}</h4>
