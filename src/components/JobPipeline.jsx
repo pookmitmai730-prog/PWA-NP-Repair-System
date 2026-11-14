@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash, Trash2, ExternalLink, Image as ImageIcon, Globe, Layers, Upload, Loader2 } from 'lucide-react';
+import { Clock, Wrench, User, Phone, MapPin, AlertCircle, Users, X, AlertTriangle, Search, Edit3, Hash, Trash2, ExternalLink, Image as ImageIcon, Globe, Layers, Upload, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // 🌐 URL ของ Google Apps Script Web App ล่าสุด
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
@@ -35,6 +35,10 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const markerRef = useRef(null);
 
   const [pipelineSearch, setPipelineSearch] = useState('');
+
+  // 📄 State สำหรับการแบ่งหน้าสถานะ "ซ่อมเสร็จสิ้น" (หน้าละ 10 รายการ)
+  const [completedPage, setCompletedPage] = useState(1);
+  const itemsPerPage = 10;
 
   const [editingTeamJob, setEditingTeamJob] = useState(null);
   const [newSelectedTeam, setNewSelectedTeam] = useState('');
@@ -125,6 +129,13 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
   const getDisplayReceivedNo = (job) => {
     return job.receivedNo || job.JobID || job.id || '-';
+  };
+
+  // 🕒 ฟังก์ชันช่วยแปลงวันที่สำหรับนำมาเรียงลำดับ (จากปัจจุบันย้อนไปยังอดีต)
+  const getJobDateValue = (job) => {
+    const dateStr = job.receivedAt || job.Timestamp || job.createdAt || job.closedAt || job.ClosedAt || '';
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? 0 : d.getTime();
   };
 
   // 📸 ฟังก์ชันจัดการเลือกไฟล์รูปภาพ (ตอนจ่ายงาน)
@@ -714,7 +725,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {columns.map((col) => {
-          const colJobs = (jobs || []).filter(j => {
+          let colJobs = (jobs || []).filter(j => {
             const normalizedStatus = normalizeStatus(j.status || j.Status);
             const matchStatus = normalizedStatus === col.id;
             if (!matchStatus) return false;
@@ -730,6 +741,35 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
             return receivedNo.includes(q) || reporterName.includes(q) || phone.includes(q) || location.includes(q) || issue.includes(q);
           });
 
+          // 🔄 จัดเรียงลำดับรายการใบงานตามเงื่อนไขที่กำหนด
+          if (col.id === 'IN_PROGRESS') {
+            // สถานะกำลังซ่อม: ให้ใบงานที่ "ซ่อมไม่ได้" ขึ้นมาก่อน แล้วเรียงตามวันที่ปัจจุบันย้อนไปยังอดีต
+            colJobs.sort((a, b) => {
+              const statusA = String(a.status || a.Status || '').trim().toUpperCase();
+              const statusB = String(b.status || b.Status || '').trim().toUpperCase();
+              const isUnrepairableA = statusA === 'UNREPAIRABLE' || statusA.includes('CANNOT_FIX') || statusA.includes('ซ่อมไม่ได้');
+              const isUnrepairableB = statusB === 'UNREPAIRABLE' || statusB.includes('CANNOT_FIX') || statusB.includes('ซ่อมไม่ได้');
+
+              if (isUnrepairableA && !isUnrepairableB) return -1;
+              if (!isUnrepairableA && isUnrepairableB) return 1;
+
+              // ถ้าสถานะเหมือนกัน ให้เรียงจากปัจจุบันไปอดีต (Newest -> Oldest)
+              return getJobDateValue(b) - getJobDateValue(a);
+            });
+          } else {
+            // สำหรับสถานะอื่นๆ (รวมถึง COMPLETED) เรียงจากวันที่ปัจจุบันย้อนไปยังอดีต (Newest -> Oldest)
+            colJobs.sort((a, b) => getJobDateValue(b) - getJobDateValue(a));
+          }
+
+          // 📄 การจัดการแบ่งหน้าเฉพาะสถานะ COMPLETED (หน้าละ 10 รายการ)
+          let paginatedJobs = colJobs;
+          let totalPages = 1;
+          if (col.id === 'COMPLETED') {
+            totalPages = Math.ceil(colJobs.length / itemsPerPage) || 1;
+            const startIndex = (completedPage - 1) * itemsPerPage;
+            paginatedJobs = colJobs.slice(startIndex, startIndex + itemsPerPage);
+          }
+
           return (
             <div key={col.id} className={`rounded-3xl border ${col.border} ${col.bgLight} p-4 flex flex-col min-h-[500px]`}>
               <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-200/60">
@@ -743,13 +783,13 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
               </div>
 
               <div className="space-y-3 flex-1 overflow-y-auto pr-1">
-                {colJobs.length === 0 ? (
+                {paginatedJobs.length === 0 ? (
                   <div className="h-32 flex flex-col items-center justify-center text-slate-400 text-xs text-center border border-dashed border-slate-200 rounded-2xl bg-white/40">
                     <AlertCircle className="w-5 h-5 mb-1 opacity-40" />
                     <span>ไม่มีรายการในหมวดนี้</span>
                   </div>
                 ) : (
-                  colJobs.map((job, index) => {
+                  paginatedJobs.map((job, index) => {
                     const uniqueJobKey = job.id || job.JobID || job.receivedNo || `job-${col.id}-${index}`;
                     
                     const currentUrgency = job.Notes || job.notes || job.urgency || job.Urgency || job.urgencyLevel || 'ปกติ';
@@ -953,6 +993,29 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                   })
                 )}
               </div>
+
+              {/* 📄 แผงควบคุมการเปลี่ยนหน้า (Pagination) เฉพาะคอลัมน์ COMPLETED */}
+              {col.id === 'COMPLETED' && colJobs.length > itemsPerPage && (
+                <div className="pt-3 mt-3 border-t border-slate-200/60 flex items-center justify-between text-xs font-medium text-slate-600">
+                  <button
+                    onClick={() => setCompletedPage(prev => Math.max(prev - 1, 1))}
+                    disabled={completedPage === 1}
+                    className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 cursor-pointer shadow-xs"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" /> ก่อนหน้า
+                  </button>
+                  <span className="font-bold text-slate-700 font-mono">
+                    {completedPage} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCompletedPage(prev => Math.min(prev + 1, totalPages))}
+                    disabled={completedPage === totalPages}
+                    className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 cursor-pointer shadow-xs"
+                  >
+                    ถัดไป <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
