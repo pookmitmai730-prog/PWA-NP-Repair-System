@@ -27,7 +27,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [tempLat, setTempLat] = useState('');
   const [tempLng, setTempLng] = useState('');
-  const [mapTileType, setMapTileType] = useState('streets'); // 'streets' | 'satellite'
+  const [mapType, setMapType] = useState('streets'); // 'streets' (แผนที่ถนน Google) หรือ 'satellite' (ภาพถ่ายดาวเทียม Google Hybrid)
   
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -166,39 +166,67 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       const script = document.createElement('script');
       script.id = 'leaflet-js';
       script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      document.head.appendChild(script);
+      document.body.appendChild(script);
     }
   }, []);
 
-  // 🗺️ ฟังก์ชันสร้างแผนที่ Leaflet เมื่อเปิด Modal
+  // 🗺️ ฟังก์ชันสร้างแผนที่ Leaflet สไตล์ Google Maps เมื่อเปิด Modal
   useEffect(() => {
     if (isMapModalOpen && mapContainerRef.current) {
       const initMap = () => {
         if (!window.L) return;
 
-        const initialLat = parseFloat(tempLat) || 17.4135;
-        const initialLng = parseFloat(tempLng) || 104.7912;
+        const initialLat = parseFloat(tempLat) || 17.4157;
+        const initialLng = parseFloat(tempLng) || 104.7877;
 
         if (mapInstanceRef.current) {
           mapInstanceRef.current.remove();
+          mapInstanceRef.current = null;
         }
 
-        const map = window.L.map(mapContainerRef.current).setView([initialLat, initialLng], 15);
+        const map = window.L.map(mapContainerRef.current, {
+          zoomControl: true,
+          attributionControl: false
+        }).setView([initialLat, initialLng], 16);
+
+        // ตั้งค่า TileLayer เริ่มต้นเป็น Google Maps (แผนที่ถนนภาษาไทย)
+        const googleStreets = window.L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=th&x={x}&y={y}&z={z}', {
+          maxZoom: 20
+        });
+        googleStreets.addTo(map);
+        tileLayerRef.current = googleStreets;
+
+        // สร้างหมุดสีแดงสไตล์ Google Maps
+        const googlePinIcon = window.L.divIcon({
+          className: 'custom-google-pin',
+          html: `<div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-100%);">
+                  <div style="width:28px;height:28px;background:#EA4335;border:2px solid #FFFFFF;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 3px 6px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;">
+                    <div style="width:10px;height:10px;background:#811411;border-radius:50%;"></div>
+                  </div>
+                 </div>`,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0]
+        });
+
+        const marker = window.L.marker([initialLat, initialLng], { draggable: true, icon: googlePinIcon }).addTo(map);
+        markerRef.current = marker;
         mapInstanceRef.current = map;
 
-        const tileUrl = mapTileType === 'satellite'
-          ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-          : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+        marker.on('dragend', () => {
+          const pos = marker.getLatLng();
+          const formattedLat = pos.lat.toFixed(6);
+          const formattedLng = pos.lng.toFixed(6);
+          setTempLat(formattedLat);
+          setTempLng(formattedLng);
 
-        const tileAttrib = mapTileType === 'satellite'
-          ? 'Tiles © Esri & DigitalGlobe'
-          : '© OpenStreetMap';
-
-        const tileLayer = window.L.tileLayer(tileUrl, { maxZoom: 19, attribution: tileAttrib }).addTo(map);
-        tileLayerRef.current = tileLayer;
-
-        const marker = window.L.marker([initialLat, initialLng], { draggable: true }).addTo(map);
-        markerRef.current = marker;
+          if (selectedJobForDispatch) {
+            setDispatchLat(formattedLat);
+            setDispatchLng(formattedLng);
+          } else if (editingTeamJob) {
+            setChangeTeamLat(formattedLat);
+            setChangeTeamLng(formattedLng);
+          }
+        });
 
         map.on('click', (e) => {
           const { lat, lng } = e.latlng;
@@ -216,26 +244,11 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
             setChangeTeamLat(formattedLat);
             setChangeTeamLng(formattedLng);
           }
-          setIsMapModalOpen(false);
         });
 
-        marker.on('dragend', () => {
-          const position = marker.getLatLng();
-          const formattedLat = position.lat.toFixed(6);
-          const formattedLng = position.lng.toFixed(6);
-
-          setTempLat(formattedLat);
-          setTempLng(formattedLng);
-
-          if (selectedJobForDispatch) {
-            setDispatchLat(formattedLat);
-            setDispatchLng(formattedLng);
-          } else if (editingTeamJob) {
-            setChangeTeamLat(formattedLat);
-            setChangeTeamLng(formattedLng);
-          }
-          setIsMapModalOpen(false);
-        });
+        setTimeout(() => {
+          map.invalidateSize();
+        }, 250);
       };
 
       if (window.L) {
@@ -251,22 +264,50 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     }
   }, [isMapModalOpen]);
 
+  // 🛰️ ฟังก์ชันสลับเลเยอร์แผนที่ Google Maps (แผนที่ถนน / ภาพถ่ายดาวเทียม Hybrid ภาษาไทย)
   const handleChangeMapType = (type) => {
-    setMapTileType(type);
-    if (mapInstanceRef.current && tileLayerRef.current && window.L) {
+    setMapType(type);
+    if (!mapInstanceRef.current || !window.L) return;
+
+    if (tileLayerRef.current) {
       mapInstanceRef.current.removeLayer(tileLayerRef.current);
-
-      const tileUrl = type === 'satellite'
-        ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-
-      const tileAttrib = type === 'satellite'
-        ? 'Tiles © Esri & DigitalGlobe'
-        : '© OpenStreetMap';
-
-      const newTileLayer = window.L.tileLayer(tileUrl, { maxZoom: 19, attribution: tileAttrib }).addTo(mapInstanceRef.current);
-      tileLayerRef.current = newTileLayer;
+      tileLayerRef.current = null;
     }
+
+    let newGoogleLayer;
+    if (type === 'satellite') {
+      // Google Hybrid (lyrs=y): ภาพถ่ายดาวเทียมพร้อมชื่อสถานที่ภาษาไทย
+      newGoogleLayer = window.L.tileLayer('https://mt1.google.com/vt/lyrs=y&hl=th&x={x}&y={y}&z={z}', {
+        maxZoom: 20
+      });
+    } else {
+      // Google Roadmap (lyrs=m): แผนที่ถนนภาษาไทย
+      newGoogleLayer = window.L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=th&x={x}&y={y}&z={z}', {
+        maxZoom: 20
+      });
+    }
+
+    newGoogleLayer.addTo(mapInstanceRef.current);
+    tileLayerRef.current = newGoogleLayer;
+  };
+
+  // 🚶‍♂️ ฟังก์ชันเปิด Google Street View ในแท็บใหม่
+  const handleOpenStreetView = () => {
+    const lat = tempLat || '17.4157';
+    const lng = tempLng || '104.7877';
+    const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`;
+    window.open(streetViewUrl, '_blank');
+  };
+
+  const handleConfirmMapLocation = () => {
+    if (selectedJobForDispatch) {
+      setDispatchLat(tempLat);
+      setDispatchLng(tempLng);
+    } else if (editingTeamJob) {
+      setChangeTeamLat(tempLat);
+      setChangeTeamLng(tempLng);
+    }
+    setIsMapModalOpen(false);
   };
 
   const sendTelegramNotification = async (jobPayload) => {
@@ -635,8 +676,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   };
 
   const handleOpenMapPicker = () => {
-    setTempLat(selectedJobForDispatch ? (dispatchLat || '17.4135') : (changeTeamLat || '17.4135'));
-    setTempLng(selectedJobForDispatch ? (dispatchLng || '104.7912') : (changeTeamLng || '104.7912'));
+    setMapType('streets');
+    setTempLat(selectedJobForDispatch ? (dispatchLat || '17.4157') : (changeTeamLat || '17.4157'));
+    setTempLng(selectedJobForDispatch ? (dispatchLng || '104.7877') : (changeTeamLng || '104.7877'));
     setIsMapModalOpen(true);
   };
 
@@ -1077,92 +1119,86 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         </div>
       )}
 
-      {/* Modal แผนที่ขนาดใหญ่ */}
+      {/* 🗺️ Modal แผนที่เลือกพิกัดสไตล์ Google Maps (เหมือนหน้าฟอร์มประชาชน) */}
       {isMapModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-md p-2 sm:p-4 animate-fadeIn">
-          <div className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl shadow-2xl p-5 space-y-3 text-slate-100 flex flex-col h-[82vh]">
             
-            <div className="bg-slate-900 px-5 py-3.5 flex flex-wrap justify-between items-center text-white gap-2">
-              <div className="flex items-center gap-2">
-                <Globe className="w-5 h-5 text-blue-400" />
-                <h4 className="font-bold text-sm sm:text-base">เลือกพิกัดจุดเกิดเหตุบนแผนที่</h4>
+            {/* Header: มีปุ่มตกลงอยู่มุมบนขวา */}
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
+              <div>
+                <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-rose-500" />
+                  เลือกตำแหน่งจุดเกิดเหตุบนแผนที่ (Google Maps)
+                </h4>
+                <p className="text-[11px] text-slate-400">ลากหมุดสีแดงหรือคลิกบนแผนที่ไปยังตำแหน่งที่ต้องการ</p>
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="bg-slate-800 p-1 rounded-xl flex items-center gap-1 border border-slate-700">
-                  <button
-                    type="button"
-                    onClick={() => handleChangeMapType('streets')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                      mapTileType === 'streets' 
-                        ? 'bg-blue-600 text-white shadow-sm' 
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Layers className="w-3.5 h-3.5" /> ถนน
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleChangeMapType('satellite')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                      mapTileType === 'satellite' 
-                        ? 'bg-blue-600 text-white shadow-sm' 
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Globe className="w-3.5 h-3.5" /> ภาพถ่ายดาวเทียม
-                  </button>
-                </div>
-
-                <button 
-                  onClick={() => setIsMapModalOpen(false)} 
-                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 transition cursor-pointer"
-                >
-                  <X className="w-5 h-5 text-white" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-2.5 bg-blue-50 border-b border-blue-100 text-xs text-blue-800 flex justify-between items-center font-medium">
-              <span>👉 คลิกที่จุดใดก็ได้บนแผนที่ หรือคลิกลากหมุดเพื่อเลือกพิกัด ระบบจะบันทึกพิกัดและปิดหน้าต่างให้อัตโนมัติ</span>
-            </div>
-
-            <div ref={mapContainerRef} className="flex-1 w-full h-full bg-slate-100 z-10"></div>
-
-            <div className="p-3 bg-white border-t border-slate-200 space-y-2">
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <span className="text-slate-500 font-bold block mb-1">ละติจูด (Latitude)</span>
-                  <input
-                    type="text"
-                    readOnly
-                    value={tempLat}
-                    placeholder="17.4135"
-                    className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2 font-mono font-bold text-slate-800 outline-none"
-                  />
-                </div>
-                <div>
-                  <span className="text-slate-500 font-bold block mb-1">ลองจิจูด (Longitude)</span>
-                  <input
-                    type="text"
-                    readOnly
-                    value={tempLng}
-                    placeholder="104.7912"
-                    className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2 font-mono font-bold text-slate-800 outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setIsMapModalOpen(false)}
-                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-2xl text-xs font-bold transition cursor-pointer"
+                  onClick={handleConfirmMapLocation}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg flex items-center gap-1.5 cursor-pointer transition"
                 >
-                  ยกเลิก
+                  ✓ ตกลง (ยืนยันพิกัด)
+                </button>
+                <button onClick={() => setIsMapModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer p-1">
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
+
+            {/* แผงควบคุมเลเยอร์แผนที่และสตรีทวิว */}
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950 p-2 rounded-2xl border border-slate-800 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400 font-bold flex items-center gap-1">
+                  <Layers className="w-3.5 h-3.5 text-cyan-400"/> รูปแบบแผนที่:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleChangeMapType('streets')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${mapType === 'streets' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                >
+                  แผนที่ถนน (Google)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleChangeMapType('satellite')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${mapType === 'satellite' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                >
+                  🛰️ ภาพถ่ายดาวเทียม
+                </button>
+              </div>
+
+              {/* เมนูเปิด Street View */}
+              <button
+                type="button"
+                onClick={handleOpenStreetView}
+                className="bg-cyan-600/20 border border-cyan-500/40 hover:bg-cyan-600/30 text-cyan-300 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> ดูสตรีทวิว
+              </button>
+            </div>
+
+            {/* ส่วนแสดงแผนที่ (ควบคุมขนาดให้เต็มกรอบพอดี ไม่ล้น) */}
+            <div className="flex-1 w-full relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-950">
+              <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" style={{ minHeight: '280px' }} />
+            </div>
+
+            {/* แสดงพิกัดที่กำลังเลือกอยู่ด้านล่าง */}
+            <div className="bg-slate-950 p-2.5 rounded-2xl border border-slate-800 flex justify-between items-center text-xs">
+              <span className="font-mono text-cyan-400 font-bold">
+                🎯 พิกัดเลือก: {tempLat}, {tempLng}
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsMapModalOpen(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-1.5 rounded-xl font-bold cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+            </div>
+
           </div>
         </div>
       )}
