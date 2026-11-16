@@ -19,6 +19,10 @@ export default function ReportsView({ jobs, currentUser }) {
   const [smart1662Input, setSmart1662Input] = useState('');
   const [selectedJobForPhotos, setSelectedJobForPhotos] = useState(null);
   const [isUnrepairableModalOpen, setIsUnrepairableModalOpen] = useState(false);
+  
+  // 🟠 State สำหรับเปิด Modal แสดงงานค้างซ่อมทั้งหมด
+  const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
+
   const [jobToDelete, setJobToDelete] = useState(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -155,10 +159,14 @@ export default function ReportsView({ jobs, currentUser }) {
 
   const filteredJobs = getFilteredJobs();
   const completedCount = filteredJobs.filter(j => j.Status === 'COMPLETED' || j.status === 'COMPLETED').length;
-  const inProgressCount = (jobs || []).filter(j => {
+  
+  // แปลงรายการงานที่ค้างซ่อม / กำลังดำเนินการทั้งหมด
+  const allJobsArray = Array.isArray(jobs) ? jobs : (jobs ? Object.values(jobs) : []);
+  const pendingJobsList = allJobsArray.filter(j => {
     const s = j.Status || j.status;
     return s === 'DISPATCHED' || s === 'IN_PROGRESS' || s === 'PENDING';
-  }).length;
+  });
+  const inProgressCount = pendingJobsList.length;
   
   const unrepairableJobsList = filteredJobs.filter(j => j.Status === 'UNREPAIRABLE' || j.status === 'UNREPAIRABLE');
 
@@ -190,17 +198,26 @@ export default function ReportsView({ jobs, currentUser }) {
       return acc;
     }, {});
 
+  // 📊 สรุปชนิดและขนาดท่อ: ถ้าไม่มีขนาดท่อ ให้แสดงข้อความ "อื่นๆ" และเรียงจากใหญ่ไปเล็ก
   const pipeSummaryMap = filteredJobs
     .filter(j => j.Status === 'COMPLETED' || j.status === 'COMPLETED')
     .reduce((acc, job) => {
-      const type = job.PipeType || job.pipeType || 'ไม่ระบุชนิด';
+      const type = job.PipeType || job.pipeType || '';
       const rawSize = job.PipeSize || job.pipeSize || '';
       const sizeNum = parseFloat(rawSize) || 0;
-      const size = rawSize ? `${rawSize} มม.` : 'ไม่ระบุขนาด';
-      const key = `${type} (ขนาด ${size})`;
+      
+      let key = '';
+      let isUnknown = false;
+
+      if (!type || type === '-' || type === 'ไม่ระบุชนิด' || !rawSize) {
+        key = 'อื่นๆ';
+        isUnknown = true;
+      } else {
+        key = `${type} (ขนาด ${rawSize} มม.)`;
+      }
 
       if (!acc[key]) {
-        acc[key] = { count: 0, sizeNum: sizeNum, isUnknown: !rawSize || type === 'ไม่ระบุชนิด' || type === '-' };
+        acc[key] = { count: 0, sizeNum: sizeNum, isUnknown: isUnknown };
       }
       acc[key].count += 1;
       return acc;
@@ -398,7 +415,7 @@ export default function ReportsView({ jobs, currentUser }) {
             ${job.PipeType || job.PipeSize ? `
               <div style="margin-top: 6px; border-top: 1px solid #e2e8f0; padding-top: 6px;">
                 <strong>วัสดุท่อที่ซ่อม:</strong> 
-                <span style="color: #ea580c; font-weight: bold;">ท่อชนิด ${job.PipeType || 'ไม่ระบุ'} ขนาด ${job.PipeSize ? job.PipeSize + ' มม.' : 'ไม่ระบุ'}</span>
+                <span style="color: #ea580c; font-weight: bold;">ท่อชนิด ${job.PipeType || 'ไม่ระบุ'} ขนาด ${job.PipeSize ? job.PipeSize + ' มม.' : 'อื่นๆ'}</span>
               </div>
             ` : ''}
             <div class="info-row">
@@ -456,7 +473,7 @@ export default function ReportsView({ jobs, currentUser }) {
           </h2>
           <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            การประปาส่วนภูมิภาคสาขานครพนม • เชื่อมต่อฐานข้อมูล Google Sheets สำเร็จ
+            การประปาส่วนภูมิภาคสาขานครพนม • เชื่อมต่อฐานข้อมูล Google Sheets สำเร็จ[cite: 8]
           </p>
         </div>
 
@@ -558,8 +575,17 @@ export default function ReportsView({ jobs, currentUser }) {
           <p className="text-xs text-emerald-100 font-medium">ดำเนินการเสร็จสิ้น (ปิดงาน)</p>
           <h3 className="text-3xl font-bold">{completedCount} <span className="text-sm font-normal">จุด</span></h3>
         </div>
-        <div className="bg-gradient-to-br from-amber-500 to-orange-600 text-white p-6 rounded-3xl shadow-md space-y-2">
-          <p className="text-xs text-amber-100 font-medium">กำลังดำเนินการ / ค้างซ่อมทั้งหมด</p>
+        
+        {/* 🟠 การ์ดสถิติ สามารถคลิกเพื่อเปิด Modal งานค้างซ่อมทั้งหมดได้ */}
+        <div 
+          onClick={() => setIsPendingModalOpen(true)}
+          className="bg-gradient-to-br from-amber-500 to-orange-600 text-white p-6 rounded-3xl shadow-md space-y-2 cursor-pointer hover:shadow-lg transition transform hover:-translate-y-0.5 active:scale-95"
+          title="คลิกเพื่อดูรายการงานค้างทั้งหมด"
+        >
+          <div className="flex justify-between items-center">
+            <p className="text-xs text-amber-100 font-medium">กำลังดำเนินการ / ค้างซ่อมทั้งหมด (คลิกเพื่อดู)</p>
+            <Eye className="w-4 h-4 text-amber-100 opacity-80" />
+          </div>
           <h3 className="text-3xl font-bold">{inProgressCount} <span className="text-sm font-normal">จุด</span></h3>
         </div>
       </div>
@@ -584,12 +610,12 @@ export default function ReportsView({ jobs, currentUser }) {
           )}
         </div>
 
-        {/* 📊 ส่วนสรุปชนิดและขนาดท่อ พร้อมกราฟแท่ง (เรียงจากใหญ่ไปหาเล็ก และย้ายท่อที่ไม่ระบุไว้ล่างสุด) */}
+        {/* 📊 ส่วนสรุปชนิดและขนาดท่อ พร้อมกราฟแท่ง (เรียงจากใหญ่ไปหาเล็ก และเปลี่ยนรายการไม่มีขนาดท่อเป็น "อื่นๆ") */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-3 lg:col-span-2">
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
               <Layers className="w-4 h-4 text-orange-600" />
-              สรุปชนิดและขนาดท่อที่ใช้ซ่อม (เรียงจากท่อใหญ่ไปเล็ก) พร้อมกราฟแท่งแสดงผล
+              สรุปชนิดและขนาดท่อที่ใช้ซ่อม (เรียงจากท่อใหญ่ไปเล็ก) พร้อมกราฟแท่งแสดงผล[cite: 8]
             </h3>
             <span className="text-[10px] text-slate-400 bg-slate-100 px-2.5 py-1 rounded-xl font-bold">ตามเงื่อนไขที่เลือก</span>
           </div>
@@ -705,6 +731,7 @@ export default function ReportsView({ jobs, currentUser }) {
                   const isUnrep = (job.Status === 'UNREPAIRABLE' || job.status === 'UNREPAIRABLE');
 
                   const technicianName = job.Technician || job.technician || '-';
+                  const equipmentVal = job.Equipment || job.equipment || '';
 
                   return (
                     <tr key={job.JobID || job.id} className="hover:bg-slate-50/80 transition">
@@ -730,14 +757,23 @@ export default function ReportsView({ jobs, currentUser }) {
                         <p className="text-slate-500 font-mono">{job.Phone || '-'}</p>
                       </td>
                       <td className="p-4 font-medium text-slate-700 max-w-xs truncate">{job.IssueType || '-'}</td>
-                      <td className="p-4 text-slate-600 max-w-xs">
-                        <p className="truncate">{job.Location || '-'}</p>
-                        {job.PipeType && job.PipeType !== '-' && (
-                          <p className="text-[10px] font-bold text-orange-600 mt-0.5">
-                            ท่อ {job.PipeType} {job.PipeSize ? `(${job.PipeSize} มม.)` : ''}
+                      
+                      {/* บริเวณ / ชนิดท่อ พร้อมแสดงข้อมูล Equipment เป็นสีเขียวเฉพาะใบงานที่ปิดงานแล้วและไม่มีขนาดท่อ */}
+                      <td className="p-4 text-slate-600 max-w-xs space-y-1">
+                        <p className="truncate font-medium">{job.Location || '-'}</p>
+                        {job.PipeType && job.PipeType !== '-' && job.PipeSize && job.PipeSize !== '-' ? (
+                          <p className="text-[10px] font-bold text-orange-600">
+                            ท่อ {job.PipeType} ({job.PipeSize} มม.)
                           </p>
-                        )}
+                        ) : null}
+                        
+                        {isDone && (!job.PipeSize || job.PipeSize === '-' || !job.PipeType || job.PipeType === '-') && equipmentVal ? (
+                          <p className="text-[11px] font-bold text-emerald-600">
+                            {equipmentVal}
+                          </p>
+                        ) : null}
                       </td>
+
                       <td className="p-4 text-center">
                         <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] inline-flex items-center gap-1.5 border shadow-2xs ${
                           isDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
@@ -821,6 +857,43 @@ export default function ReportsView({ jobs, currentUser }) {
           </div>
         )}
       </div>
+
+      {/* 🟠 MODAL แสดงงานค้างซ่อม / กำลังดำเนินการทั้งหมด */}
+      {isPendingModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 font-sans">
+          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-5 bg-gradient-to-r from-amber-600 to-orange-700 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-amber-200" />
+                <h3 className="font-bold text-sm">รายการงานค้างซ่อม / กำลังดำเนินการทั้งหมด ({pendingJobsList.length} จุด)</h3>
+              </div>
+              <button onClick={() => setIsPendingModalOpen(false)} className="p-1.5 rounded-xl bg-amber-800 text-white cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 overflow-y-auto space-y-3 flex-1 bg-slate-50">
+              {pendingJobsList.length === 0 ? (
+                <p className="text-center text-xs text-slate-400 py-8">ไม่มีงานค้างซ่อมในขณะนี้</p>
+              ) : (
+                pendingJobsList.map((job) => {
+                  const jobId = job.JobID || job.receivedNo || job.id;
+                  const statusLabel = job.Status === 'DISPATCHED' ? 'มอบหมายช่างแล้ว' : job.Status === 'IN_PROGRESS' ? 'กำลังดำเนินการซ่อม' : 'รอดำเนินการ';
+                  return (
+                    <div key={jobId} className="bg-white p-4 rounded-2xl border border-amber-200 shadow-2xs space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">{jobId}</span>
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">{statusLabel}</span>
+                      </div>
+                      <p className="text-xs text-slate-700 font-bold"><strong>ผู้แจ้ง:</strong> {job.ReporterName || job.reporterName || '-'} ({job.Phone || job.phone || '-'})</p>
+                      <p className="text-xs text-slate-600"><strong>สถานที่:</strong> {job.Location || job.location || '-'}</p>
+                      <p className="text-xs text-slate-500"><strong>วันที่แจ้ง:</strong> {formatThaiDate(job.Timestamp || job.timestamp)}</p>
+                      <p className="text-xs text-indigo-700 font-medium"><strong>ทีมช่างรับผิดชอบ:</strong> {job.Technician || job.technician || 'ยังไม่ระบุ'}</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ⚠️ MODAL แสดงงานซ่อมไม่ได้ */}
       {isUnrepairableModalOpen && (
@@ -919,7 +992,7 @@ export default function ReportsView({ jobs, currentUser }) {
               type="text"
               value={smart1662Input}
               onChange={(e) => setSmart1662Input(e.target.value)}
-              placeholder="เช่น 1662-68-XXXXX"
+              placeholder="เช่น RXXXXXXXX"
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono"
               autoFocus
             />
