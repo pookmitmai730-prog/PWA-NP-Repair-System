@@ -51,7 +51,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const [changeTeamImageFile, setChangeTeamImageFile] = useState(null);
   const [changeTeamImagePreview, setChangeTeamImagePreview] = useState('');
 
-  // 🔴 State สำหรับ Modal แก้ไขข้อมูลของแอดมิน (รองรับทั้ง 4 สถานะ)
+  // 🔴 State สำหรับ Modal แก้ไขข้อมูลของแอดมิน (รองรับสถานะรอรับเรื่อง, มอบหมายช่างแล้ว และกำลังดำเนินการซ่อม)
   const [editingAdminJob, setEditingAdminJob] = useState(null);
   const [adminEditForm, setAdminEditForm] = useState({
     receivedNo: '',
@@ -618,6 +618,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   };
 
   const handleOpenAdminEdit = (job) => {
+    // ล็อกสถานะซ่อมเสร็จสิ้น (COMPLETED) ไม่ให้เปิดแก้ไข
+    if (normalizeStatus(job.status || job.Status) === 'COMPLETED') return;
+
     setEditingAdminJob(job);
     const currentUrgency = job.Notes || job.notes || job.urgency || job.Urgency || job.urgencyLevel || 'ปกติ';
     const rawPhone = job.phone || job.Phone || '';
@@ -636,10 +639,15 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     e.preventDefault();
     if (!editingAdminJob) return;
 
+    const currentJobStatus = editingAdminJob.status || editingAdminJob.Status || 'PENDING';
+    // ล็อกสถานะซ่อมเสร็จสิ้น (COMPLETED) ไม่ให้บันทึกการแก้ไข
+    if (normalizeStatus(currentJobStatus) === 'COMPLETED') {
+      setEditingAdminJob(null);
+      return;
+    }
+
     const formattedPhone = formatPhoneForSheet(adminEditForm.phone);
     const targetId = editingAdminJob.id || editingAdminJob.JobID || adminEditForm.receivedNo;
-    
-    const currentJobStatus = editingAdminJob.status || editingAdminJob.Status || 'PENDING';
     const preservedTimestamp = editingAdminJob.receivedAt || editingAdminJob.Timestamp
       ? formatThaiDateTimeString(editingAdminJob.receivedAt || editingAdminJob.Timestamp)
       : getThaiTimestamp();
@@ -688,6 +696,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   };
 
   const handleDeleteJob = async (jobToDelete) => {
+    // ล็อกสถานะซ่อมเสร็จสิ้น (COMPLETED) ไม่ให้ลบข้อมูล
+    if (normalizeStatus(jobToDelete.status || jobToDelete.Status) === 'COMPLETED') return;
+
     const targetId = jobToDelete.id || jobToDelete.JobID || getDisplayReceivedNo(jobToDelete);
     if (!window.confirm(`คุณต้องการลบใบงานเลขที่ ${getDisplayReceivedNo(jobToDelete)} ใช่หรือไม่?`)) return;
 
@@ -851,15 +862,17 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     return (
                       <div key={uniqueJobKey} className={`bg-white p-4 rounded-2xl shadow-sm border transition space-y-2.5 relative ${isUnrepairable ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-100 hover:shadow-md'}`}>
                         
-                        <button
-                          onClick={() => handleOpenAdminEdit(job)}
-                          className="absolute top-3 right-3 p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
-                          title="แก้ไขข้อมูล"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
+                        {!isCompletedJob && (
+                          <button
+                            onClick={() => handleOpenAdminEdit(job)}
+                            className="absolute top-3 right-3 p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                            title="แก้ไขข้อมูล"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        )}
 
-                        <div className="flex justify-between items-start pr-6">
+                        <div className={`flex justify-between items-start ${!isCompletedJob ? 'pr-6' : ''}`}>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
                               {getDisplayReceivedNo(job)}
@@ -1447,7 +1460,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                 </div>
                 <div>
                   <h4 className="font-bold text-sm tracking-wide">แก้ไขข้อมูลใบงาน</h4>
-                  <p className="text-[11px] text-blue-100 opacity-90">แก้ไขข้อมูลรับแจ้งทั่วไป (รองรับทุกสถานะ)</p>
+                  <p className="text-[11px] text-blue-100 opacity-90">แก้ไขข้อมูลรับแจ้ง (รอรับเรื่อง / มอบหมายช่างแล้ว / กำลังดำเนินการซ่อม)</p>
                 </div>
               </div>
               <button 
@@ -1460,11 +1473,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
             <form onSubmit={handleSaveAdminEdit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>เลขที่รับแจ้ง / Smart 1662 (อ้างอิงสำหรับติดตามสถานะ)</span>
-                  <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                    🔒 ล็อกข้อมูล
-                  </span>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  เลขที่รับแจ้ง / Smart 1662 (อ้างอิงสำหรับติดตามสถานะ)
                 </label>
                 <div className="relative">
                   <input 
