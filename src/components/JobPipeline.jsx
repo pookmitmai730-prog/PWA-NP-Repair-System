@@ -90,31 +90,43 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     return `'${cleanPhone}`;
   };
 
+  // 🕒 แปลงวันที่และเวลาเป็นรูปแบบ ค.ศ. ปี-เดือน-วัน เวลาประเทศไทย (YYYY-MM-DD HH:mm)
   const formatThaiDateTimeString = (dateInput) => {
     if (!dateInput) return '-';
-    let date = new Date(dateInput);
-    if (isNaN(date.getTime())) {
-      return String(dateInput).replace('T', ' '); 
+    const rawStr = String(dateInput).trim();
+
+    // หากเป็นรูปแบบ YYYY-MM-DD HH:mm อยู่แล้ว ให้คืนค่าตามรูปแบบเดิมทันที
+    const plainMatch = rawStr.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+    if (plainMatch && !rawStr.endsWith('Z') && !rawStr.includes('+')) {
+      return `${plainMatch[1]} ${plainMatch[2]}`;
     }
 
-    const thaiMonths = [
-      'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-      'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
-    ];
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) {
+      return rawStr.replace('T', ' ');
+    }
 
-    const day = date.getDate();
-    const month = thaiMonths[date.getMonth()];
-    const year = date.getFullYear() + 543;
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const thaiTime = new Date(date.getTime() + (7 * 60 * 60 * 1000));
+    const yyyy = thaiTime.getUTCFullYear();
+    const mm = String(thaiTime.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(thaiTime.getUTCDate()).padStart(2, '0');
+    const hh = String(thaiTime.getUTCHours()).padStart(2, '0');
+    const min = String(thaiTime.getUTCMinutes()).padStart(2, '0');
 
-    return `${day} ${month} ${year} เวลา ${hours}.${minutes} น.`;
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
   };
 
+  // 🕒 ดึงเวลาปัจจุบันของประเทศไทยในรูปแบบ ค.ศ. ปี-เดือน-วัน เวลา (YYYY-MM-DD HH:mm)
   const getThaiTimestamp = () => {
     const now = new Date();
     const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-    return formatThaiDateTimeString(thaiTime);
+    const yyyy = thaiTime.getUTCFullYear();
+    const mm = String(thaiTime.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(thaiTime.getUTCDate()).padStart(2, '0');
+    const hh = String(thaiTime.getUTCHours()).padStart(2, '0');
+    const min = String(thaiTime.getUTCMinutes()).padStart(2, '0');
+
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
   };
 
   const normalizeStatus = (status) => {
@@ -437,6 +449,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       status: 'DISPATCHED',
       Status: 'DISPATCHED',
       dispatchedAt: currentDateTime,
+      assignedAt: currentDateTime,
+      AssignedAt: currentDateTime,
       latitude: finalLat,
       Latitude: finalLat,
       longitude: finalLng,
@@ -468,6 +482,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       techName: workerObj?.teamName || selectedTeam,
       techPhone: String(workerPhoneFormatted).replace(/^'/, ''),
       dispatchedAt: currentDateTime,
+      assignedAt: currentDateTime,
+      AssignedAt: currentDateTime,
       urgency: urgencyLevel,
       Notes: urgencyLevel,
       latitude: finalLat,
@@ -529,6 +545,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     const techDetails = workerObj ? `${workerObj.teamName} (${String(workerPhoneFormatted).replace(/^'/, '')})` : newSelectedTeam;
     const originalReceivedNo = getDisplayReceivedNo(editingTeamJob);
     const currentDateTime = getThaiTimestamp();
+    const existingInProgressAt = editingTeamJob.inProgressAt || editingTeamJob.InProgressAt
+      ? formatThaiDateTimeString(editingTeamJob.inProgressAt || editingTeamJob.InProgressAt)
+      : currentDateTime;
 
     const rawPhone = editingTeamJob.phone || editingTeamJob.Phone || '-';
     const formattedPhone = formatPhoneForSheet(rawPhone);
@@ -554,6 +573,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       status: 'IN_PROGRESS', 
       Status: 'IN_PROGRESS',
       dispatchedAt: currentDateTime,
+      inProgressAt: existingInProgressAt,
+      InProgressAt: existingInProgressAt,
       latitude: finalLat,
       Latitude: finalLat,
       longitude: finalLng,
@@ -619,14 +640,17 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     const targetId = editingAdminJob.id || editingAdminJob.JobID || adminEditForm.receivedNo;
     
     const currentJobStatus = editingAdminJob.status || editingAdminJob.Status || 'PENDING';
+    const preservedTimestamp = editingAdminJob.receivedAt || editingAdminJob.Timestamp
+      ? formatThaiDateTimeString(editingAdminJob.receivedAt || editingAdminJob.Timestamp)
+      : getThaiTimestamp();
 
     const updatedData = {
       action: "create_job",
       id: targetId,
       JobID: adminEditForm.receivedNo,
       receivedNo: adminEditForm.receivedNo,
-      timestamp: editingAdminJob.receivedAt || editingAdminJob.Timestamp || getThaiTimestamp(),
-      Timestamp: editingAdminJob.receivedAt || editingAdminJob.Timestamp || getThaiTimestamp(),
+      timestamp: preservedTimestamp,
+      Timestamp: preservedTimestamp,
       reporterName: adminEditForm.reporterName,
       ReporterName: adminEditForm.reporterName,
       phone: formattedPhone,
@@ -804,11 +828,11 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     const rawReceivedAt = job.receivedAt || job.Timestamp || job.createdAt;
                     const formattedReceivedAt = rawReceivedAt ? formatThaiDateTimeString(rawReceivedAt) : '-';
 
-                    const rawDispatchedAt = job.dispatchedAt;
+                    const rawDispatchedAt = job.dispatchedAt || job.AssignedAt || job.assignedAt;
                     const formattedDispatchedAt = rawDispatchedAt ? formatThaiDateTimeString(rawDispatchedAt) : '';
 
                     const isCompletedJob = normalizeStatus(job.status || job.Status) === 'COMPLETED';
-                    const rawCompletedAt = isCompletedJob ? (job.completedAt || job.CompletedAt) : '';
+                    const rawCompletedAt = isCompletedJob ? (job.completedAt || job.CompletedAt || job.closedAt || job.ClosedAt) : '';
                     const formattedCompletedAt = rawCompletedAt ? formatThaiDateTimeString(rawCompletedAt) : '';
 
                     const rawTechPhone = job.techPhone || job.TechPhone;
