@@ -136,8 +136,10 @@ export default function TrackingSearch({ jobs = [], teams = [] }) {
       rawTech = rawTech.substring(0, rawTech.indexOf('(')).trim();
     }
 
-    const receivedTime = job.receivedAt || job.Timestamp || job.createdAt || '';
-    const closedTime = job.completedAt || job.ClosedAt || job.closedAt || null;
+    const receivedTime = job.receivedAt || job.Timestamp || job.createdAt || null;
+    const assignedTime = job.AssignedAt || job.assignedAt || job.dispatchedAt || job.DispatchedAt || null;
+    const inProgressTime = job.InProgressAt || job.inProgressAt || null;
+    const closedTime = job.ClosedAt || job.closedAt || job.completedAt || job.CompletedAt || null;
 
     return {
       receivedNo: job.receivedNo || job.smart1662No || job.JobID || job.id || '-',
@@ -148,9 +150,8 @@ export default function TrackingSearch({ jobs = [], teams = [] }) {
       reporterName: job.reporterName || job.ReporterName || 'ไม่ระบุชื่อ',
       phone: rawPhone !== '-' ? String(rawPhone).replace(/^'/, '') : '-',
       receivedAt: receivedTime,
-      // ดึงวันเวลาจากข้อมูลใน Sheet หรือใช้เวลาอ้างอิงเพื่อให้แสดงผลต่อเนื่อง
-      dispatchedAt: job.dispatchedAt || job.DispatchedAt || receivedTime,
-      inProgressAt: job.inProgressAt || job.InProgressAt || receivedTime,
+      dispatchedAt: assignedTime,
+      inProgressAt: inProgressTime,
       completedAt: closedTime
     };
   };
@@ -167,21 +168,21 @@ export default function TrackingSearch({ jobs = [], teams = [] }) {
       label: 'รับแจ้งเรื่อง', 
       desc: 'บันทึกคำร้องเข้าระบบ', 
       icon: Clock,
-      time: formatThaiDateTime(jobInfo?.receivedAt)
+      time: jobInfo?.receivedAt ? formatThaiDateTime(jobInfo.receivedAt) : '-'
     },
     { 
       step: 2, 
       label: 'จ่ายงานช่าง', 
       desc: 'มอบหมายทีมช่างภาคสนาม', 
       icon: ShieldCheck,
-      time: isDispatchedOrMore ? formatThaiDateTime(jobInfo?.dispatchedAt) : 'รอจ่ายงาน'
+      time: isDispatchedOrMore && jobInfo?.dispatchedAt ? formatThaiDateTime(jobInfo.dispatchedAt) : 'รอจ่ายงาน'
     },
     { 
       step: 3, 
       label: 'กำลังซ่อมแซม', 
       desc: 'ทีมช่างเข้าหน้างาน', 
       icon: Truck,
-      time: isInProgressOrMore ? formatThaiDateTime(jobInfo?.inProgressAt) : 'รอดำเนินการ'
+      time: isInProgressOrMore && jobInfo?.inProgressAt ? formatThaiDateTime(jobInfo.inProgressAt) : 'รอดำเนินการ'
     },
     { 
       step: 4, 
@@ -362,12 +363,12 @@ export default function TrackingSearch({ jobs = [], teams = [] }) {
                       <Clock className="w-4 h-4 text-slate-400 shrink-0" />
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase font-bold block">วันเวลาที่รับแจ้ง</span>
-                        <p className="font-mono text-slate-400 text-[11px]">{formatThaiDateTime(jobInfo.receivedAt)}</p>
+                        <p className="font-mono text-slate-400 text-[11px]">{jobInfo.receivedAt ? formatThaiDateTime(jobInfo.receivedAt) : '-'}</p>
                       </div>
                     </div>
 
                     {/* 2. จ่ายงานช่าง (วันเวลาจ่ายงาน) */}
-                    {isDispatchedOrMore && (
+                    {isDispatchedOrMore && jobInfo.dispatchedAt && (
                       <div className="flex items-center gap-2 pt-1">
                         <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0" />
                         <div>
@@ -378,7 +379,7 @@ export default function TrackingSearch({ jobs = [], teams = [] }) {
                     )}
 
                     {/* 3. กำลังซ่อมแซม (วันเวลาเข้าหน้างาน) */}
-                    {isInProgressOrMore && (
+                    {isInProgressOrMore && jobInfo.inProgressAt && (
                       <div className="flex items-center gap-2 pt-1">
                         <Truck className="w-4 h-4 text-blue-400 shrink-0" />
                         <div>
