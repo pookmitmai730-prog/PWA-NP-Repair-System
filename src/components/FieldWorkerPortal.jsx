@@ -78,6 +78,46 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     'อื่นๆ (ระบุในรายละเอียด)'
   ];
 
+  // 📲 แจ้งเตือนรายงานไปยัง Telegram เฉพาะตอนช่างปิดงาน / บันทึกผลซ่อม (ไม่เรียกตอนแก้ไขใบงานที่ปิดแล้ว)
+  const sendCloseJobTelegramReport = async (jobPayload) => {
+    const statusLabel = jobPayload.status === 'UNREPAIRABLE'
+      ? '⚠️ รายงานซ่อมไม่ได้ (รอแก้ไข)'
+      : '✅ ปิดงานซ่อมท่อเรียบร้อยแล้ว';
+
+    const latVal = jobPayload.latitude || '';
+    const lngVal = jobPayload.longitude || '';
+    const mapLink = latVal && lngVal
+      ? `https://maps.google.com/?q=${latVal},${lngVal}`
+      : '-';
+
+    const messageLines = [
+      statusLabel,
+      `เลขที่รับแจ้ง: ${jobPayload.receivedNo || '-'}`,
+      `หัวข้อ: ${jobPayload.issueType || '-'}`,
+      `สถานที่: ${jobPayload.location || '-'}`,
+      `ชนิด/ขนาดท่อ: ${jobPayload.pipeType || '-'} ${jobPayload.pipeSize && jobPayload.pipeSize !== '-' ? `${jobPayload.pipeSize} มม.` : ''}`.trim(),
+      `อุปกรณ์/หมายเหตุ: ${jobPayload.equipment || '-'}`,
+      `ทีมช่าง: ${jobPayload.technician || '-'}`,
+      `เวลาปิดงาน: ${jobPayload.closedAt || '-'}`,
+      ...(latVal && lngVal ? [`พิกัด: ${latVal}, ${lngVal}`, `แผนที่: ${mapLink}`] : [])
+    ];
+
+    try {
+      await fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'send_telegram_close_job',
+          message: messageLines.join('\n'),
+          jobData: jobPayload
+        })
+      });
+    } catch (tgErr) {
+      console.error("Error sending Telegram report:", tgErr);
+    }
+  };
+
   const convertGoogleDriveUrl = (url) => {
     if (!url || typeof url !== 'string') return '';
     const cleanUrl = url.trim();
@@ -371,10 +411,10 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
     if (completedSearchTerm.trim()) {
       const term = completedSearchTerm.trim().toLowerCase();
-      const matchNo = (j.receivedNo || j.JobID || j.id || '').toLowerCase().includes(term);
-      const matchName = (j.reporterName || j.ReporterName || '').toLowerCase().includes(term);
-      const matchPhone = (j.phone || j.Phone || '').toLowerCase().includes(term);
-      const matchLocation = (j.location || j.Location || '').toLowerCase().includes(term);
+      const matchNo = String(j.receivedNo || j.JobID || j.id || '').toLowerCase().includes(term);
+      const matchName = String(j.reporterName || j.ReporterName || '').toLowerCase().includes(term);
+      const matchPhone = String(j.phone || j.Phone || '').toLowerCase().includes(term);
+      const matchLocation = String(j.location || j.Location || '').toLowerCase().includes(term);
       return matchNo || matchName || matchPhone || matchLocation;
     }
 
@@ -401,6 +441,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     setSearchTerm('');
   };
 
+  // แก้ไขใบงานที่ปิดไปแล้ว: ไม่ส่งแจ้งเตือนเข้า Telegram ซ้ำ
   const handleSaveUpdatedPhotos = async () => {
     if (!editingPhotoJob || isSubmitting) return;
 
@@ -413,6 +454,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
       const jobDataPayload = {
         action: "archive_job",
+        skipTelegram: true,
         jobData: {
           id: targetId,
           JobID: targetId,
@@ -649,6 +691,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
     }
   };
 
+  // ช่างปิดงาน / บันทึกผลซ่อม: แจ้งรายงานไปยัง Telegram
   const handleSubmitFix = async (e) => {
     e.preventDefault();
     if (!selectedJob || isSubmitting) return;
@@ -757,6 +800,8 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
         inProgImg: result.inProgImgUrl ? parseImages(result.inProgImgUrl) : cleanInProgImg,
         afterImg: result.afterImgUrl ? parseImages(result.afterImgUrl) : cleanAfterImg
       };
+
+      await sendCloseJobTelegramReport(finalUpdatedData);
 
       if (onUpdateJobStatus) {
         await onUpdateJobStatus(targetJobId, targetStatus, finalUpdatedData);
@@ -1085,23 +1130,35 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
               )}
             </div>
 
-            <div className="space-y-3 pt-4 border-t border-slate-200">
+            <div className="space-y-3 pt-4 border-t border-slate-200 relative z-10">
               <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
                 <ImageIcon className="w-4 h-4 text-indigo-600" />
                 จัดการแก้ไขรูปภาพและข้อมูลใบงานที่ปิดแล้ว ({myCompletedJobs.length} งาน)
               </h3>
 
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Search className="w-4 h-4" />
-                </span>
+              <div className="relative z-10 flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-xs focus-within:ring-2 focus-within:ring-indigo-500">
+                <Search className="w-4 h-4 text-slate-400 shrink-0 mr-2" />
                 <input
                   type="text"
+                  autoComplete="off"
+                  spellCheck={false}
                   value={completedSearchTerm}
                   onChange={(e) => setCompletedSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.preventDefault();
+                  }}
                   placeholder="ค้นหาเลขรับแจ้ง, ผู้แจ้ง, สถานที่ซ่อม..."
-                  className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 shadow-xs"
+                  className="w-full bg-transparent text-xs font-medium outline-none text-slate-800"
                 />
+                {completedSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setCompletedSearchTerm('')}
+                    className="text-slate-400 hover:text-slate-600 ml-1.5 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {myCompletedJobs.length === 0 ? (
