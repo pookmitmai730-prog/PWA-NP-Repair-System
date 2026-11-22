@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Polygon, Marker, Popup, Tooltip, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import initSqlJs from 'sql.js';
+import initSqlJs from 'sql.js'
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { MapPin, Layers, CheckCircle2, RefreshCw, CalendarDays, Droplets, X, Gauge, Eye, EyeOff, Search } from 'lucide-react';
 
@@ -15,6 +15,181 @@ const DMA_GPKG_URL = "/B5522027_DMA_BOUNDARY.gpkg";
 const defaultCenter = [17.4157, 104.7877];
 
 const ZONE_PALETTE = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#db2777', '#0891b2', '#4f46e5', '#65a30d'];
+
+// 📋 รายการรหัสและชื่อ DMA / MM ตามภาพที่ส่งมา
+const OFFICIAL_DMA_ENTRIES = [
+  { code: 'MM-01-01', area: 'โรงกรองน้ำ กปภ.สาขานครพนม', label: 'MM-01-01 : โรงกรองน้ำ กปภ.สาขานครพนม' },
+  { code: 'DMA-04', area: 'ถนนหลังโรงพยาบาล', label: 'DMA-04 : ถนนหลังโรงพยาบาล' },
+  { code: 'DMA-05-01', area: 'สี่แยกนิติพลคลินิก (ตู้หน้า ธ.ไทยเครดิต)', label: 'DMA-05-01 : สี่แยกนิติพลคลินิก (ตู้หน้า ธ.ไทยเครดิต)' },
+  { code: 'DMA-06', area: 'จ่ายบ้านหนองจันทร์', label: 'DMA-06 : จ่ายบ้านหนองจันทร์' },
+  { code: 'DMA-07', area: 'จ่ายบ้านน้อยใต้,แฟลตตำรวจ', label: 'DMA-07 : จ่ายบ้านน้อยใต้,แฟลตตำรวจ' },
+  { code: 'DMA-03', area: 'ข้างสำนักงานประปา', label: 'DMA-03 : ข้างสำนักงานประปา' },
+  { code: 'DMA-05-02', area: 'สี่แยกนิติพลข้างร้านยาง (ตู้หน้าตึกนิติพล)', label: 'DMA-05-02 : สี่แยกนิติพลข้างร้านยาง (ตู้หน้าตึกนิติพล)' },
+  { code: 'DMA-02', area: 'ถนนหลังสำนักงานประปา', label: 'DMA-02 : ถนนหลังสำนักงานประปา' },
+  { code: 'DMA-01', area: 'หน้า นรข', label: 'DMA-01 : หน้า นรข' },
+  { code: 'MM-03', area: 'โรงกรองน้ำนครพนม(ถังสูง)', label: 'MM-03 : โรงกรองน้ำนครพนม(ถังสูง)' },
+  { code: 'DMA-09', area: 'สะพานมิตรภาพ', label: 'DMA-09 : สะพานมิตรภาพ' },
+  { code: 'P3-DMA-09', area: 'บ้านสำราญดง ม.2', label: 'P3-DMA-09 : บ้านสำราญดง ม.2' },
+  { code: 'DMA-10', area: 'ถนนบายพาสแยกท่าควาย', label: 'DMA-10 : ถนนบายพาสแยกท่าควาย' },
+  { code: 'P3-DMA-10-1', area: 'บ้านนาสมดี', label: 'P3-DMA-10-1 : บ้านนาสมดี' },
+  { code: 'P3-MM-03-01', area: 'ศูนย์การขนส่งชายแดน จ.นครพนม', label: 'P3-MM-03-01 : ศูนย์การขนส่งชายแดน จ.นครพนม' },
+  { code: 'P3-MM-03-1', area: 'บ้านไผ่ล้อม', label: 'P3-MM-03-1 : บ้านไผ่ล้อม' },
+  { code: 'P3-MM-03-3', area: 'บ้านเนินสะอาด', label: 'P3-MM-03-3 : บ้านเนินสะอาด' },
+  { code: 'P3-MM-03-4', area: 'บ้านดอนยานาง', label: 'P3-MM-03-4 : บ้านดอนยานาง' },
+  { code: 'DMA-08', area: 'จ่ายโรงแรมบุญดารา , ท่าค้อ', label: 'DMA-08 : จ่ายโรงแรมบุญดารา , ท่าค้อ' },
+  { code: 'P3-DMA-08-1', area: 'น.ค่ายพระยอดเมืองขวางจ่ายภายในค่าย', label: 'น.ค่ายพระยอดเมืองขวางจ่ายภายในค่าย' },
+  { code: 'RWM-02', area: 'น้ำดิบโรงกรองน้ำท่าอุเทน', label: 'RWM-02 : น้ำดิบโรงกรองน้ำท่าอุเทน' },
+  { code: 'MM-02', area: 'โรงกรองน้ำหน่วยบริการท่าอุเทน', label: 'MM-02 : โรงกรองน้ำหน่วยบริการท่าอุเทน' },
+  { code: 'P3-MM-02-1', area: 'บ้านโนนตาล', label: 'P3-MM-02-1 : บ้านโนนตาล' },
+  { code: 'MM-02-01', area: 'น.ท่าอุเทนจ่ายท่าจำปา', label: 'MM-02-01 : น.ท่าอุเทนจ่ายท่าจำปา' },
+  { code: 'P3-MM-02-01-2', area: 'บ้านคำพอก', label: 'P3-MM-02-01-2 : บ้านคำพอก' }
+];
+
+// 🔄 แปลงรหัส/ชื่อเฉพาะที่ระบุให้ตรงตามชื่อที่ต้องการ
+const CUSTOM_ZONE_OVERRIDES = {
+  '6af04d4f8d0faf878827f0ec': 'NO DMA',
+  '6af04d4f8d0faf878827f0f0': 'น.ค่ายพระยอดเมืองขวางจ่ายภายนอกค่าย',
+  '6af04d4f8d0faf878827f0f1': 'น.ค่ายพระยอดเมืองขวางจ่ายภายในค่าย',
+};
+
+const applyCustomZoneOverride = (rawLabel) => {
+  if (!rawLabel) return rawLabel;
+  const trimmed = String(rawLabel).trim();
+  const lower = trimmed.toLowerCase();
+
+  for (const [key, replacement] of Object.entries(CUSTOM_ZONE_OVERRIDES)) {
+    if (lower === key.toLowerCase() || lower.includes(key.toLowerCase())) {
+      return replacement;
+    }
+  }
+  return trimmed;
+};
+
+const OFFICIAL_DMA_BY_CODE = OFFICIAL_DMA_ENTRIES.reduce((acc, item) => {
+  acc[item.code] = item.label;
+  return acc;
+}, {});
+
+// 🔧 แปลงรหัสให้อยู่ในรูปมาตรฐานตามภาพ เช่น DMA01 -> DMA-01, MM0101 -> MM-01-01
+const normalizeCodeForMatch = (rawStr) => {
+  if (!rawStr) return '';
+  const cleaned = String(rawStr)
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/_/g, '-');
+
+  if (OFFICIAL_DMA_BY_CODE[cleaned]) return cleaned;
+
+  const rwmMatch = cleaned.match(/^RWM-?0*(\d+)$/);
+  if (rwmMatch) {
+    const code = `RWM-${rwmMatch[1].padStart(2, '0')}`;
+    return OFFICIAL_DMA_BY_CODE[code] ? code : code;
+  }
+
+  const dmaMatch = cleaned.match(/^(P3-)?DMA-?0*(\d+)(?:-(.+))?$/);
+  if (dmaMatch) {
+    const prefix = dmaMatch[1] ? 'P3-DMA' : 'DMA';
+    const num = dmaMatch[2].padStart(2, '0');
+    const sub = dmaMatch[3] ? `-${dmaMatch[3].replace(/^0+(?=\d)/, '')}` : '';
+    const code = `${prefix}-${num}${sub}`;
+    if (OFFICIAL_DMA_BY_CODE[code]) return code;
+
+    // ลองแบบคงเลขศูนย์หน้าส่วนย่อย เช่น 01
+    const rawSub = dmaMatch[3] ? `-${dmaMatch[3]}` : '';
+    const codeWithRawSub = `${prefix}-${num}${rawSub}`;
+    return OFFICIAL_DMA_BY_CODE[codeWithRawSub] ? codeWithRawSub : code;
+  }
+
+  const mmMatch = cleaned.match(/^(P3-)?MM-?(\d{2})(?:-?(\d+))?(?:-(.+))?$/);
+  if (mmMatch) {
+    const prefix = mmMatch[1] ? 'P3-MM' : 'MM';
+    const p1 = mmMatch[2];
+    const p2 = mmMatch[3] ? `-${mmMatch[3]}` : '';
+    const p3 = mmMatch[4] ? `-${mmMatch[4]}` : '';
+    const code = `${prefix}-${p1}${p2}${p3}`;
+    return OFFICIAL_DMA_BY_CODE[code] ? code : code;
+  }
+
+  return cleaned;
+};
+
+// 🏷️ จับคู่ข้อมูลจากแถวของไฟล์ .gpkg ให้เป็นรหัสและชื่อตามภาพ
+const resolveZoneLabelFromRow = (rowValues, columns, geomIdx, rowIndex) => {
+  const attrTexts = [];
+  rowValues.forEach((val, cIdx) => {
+    if (cIdx === geomIdx || val === null || val === undefined) return;
+    if (typeof val === 'string' || typeof val === 'number') {
+      const str = String(val).trim();
+      if (str !== '') attrTexts.push(str);
+    }
+  });
+
+  // 0. ตรวจสอบรหัส/ชื่อที่กำหนดให้เปลี่ยนเป็นพิเศษก่อน
+  for (const text of attrTexts) {
+    const overridden = applyCustomZoneOverride(text);
+    if (overridden !== text) {
+      return {
+        code: text,
+        label: overridden
+      };
+    }
+  }
+
+  // 1. ค้นหารหัส DMA / MM / P3 / RWM ในทุกคอลัมน์ของแถว
+  for (const text of attrTexts) {
+    const codeTokenMatch = text.match(/\b((?:P3-)?(?:DMA|MM|RWM)[\s_-]*\d+(?:[\s_-]*\d+)*)\b/i);
+    if (codeTokenMatch) {
+      const normCode = normalizeCodeForMatch(codeTokenMatch[1]);
+      if (OFFICIAL_DMA_BY_CODE[normCode]) {
+        return {
+          code: normCode,
+          label: applyCustomZoneOverride(OFFICIAL_DMA_BY_CODE[normCode])
+        };
+      }
+      const restArea = text
+        .replace(codeTokenMatch[0], '')
+        .replace(/^[\s:\-–]+/, '')
+        .trim();
+      const rawCombined = restArea ? `${normCode} : ${restArea}` : normCode;
+      return {
+        code: normCode,
+        label: applyCustomZoneOverride(rawCombined)
+      };
+    }
+  }
+
+  // 2. ค้นหาจากชื่อพื้นที่ที่ตรงกับรายการในภาพ
+  for (const text of attrTexts) {
+    const cleanText = text.replace(/\s+/g, '');
+    const matchedEntry = OFFICIAL_DMA_ENTRIES.find((entry) => {
+      const cleanArea = entry.area.replace(/\s+/g, '');
+      return cleanText.includes(cleanArea) || cleanArea.includes(cleanText);
+    });
+    if (matchedEntry) {
+      return {
+        code: matchedEntry.code,
+        label: applyCustomZoneOverride(matchedEntry.label)
+      };
+    }
+  }
+
+  // 3. หากใน .gpkg มีเฉพาะข้อความชื่อพื้นที่อื่นๆ
+  const meaningfulText = attrTexts.find((t) => !/^\d+$/.test(t));
+  if (meaningfulText) {
+    return {
+      code: `DMA-${rowIndex + 1}`,
+      label: applyCustomZoneOverride(meaningfulText)
+    };
+  }
+
+  // 4. ใช้ลำดับตามรายการรหัสในภาพแทนการแสดงเลข 1, 2, 3 เปล่าๆ
+  const fallbackEntry = OFFICIAL_DMA_ENTRIES[rowIndex % OFFICIAL_DMA_ENTRIES.length];
+  return {
+    code: fallbackEntry.code,
+    label: applyCustomZoneOverride(fallbackEntry.label)
+  };
+};
 
 // 🔴 Custom Marker สีแดงขนาดเล็ก
 const smallRedDotIcon = L.divIcon({
@@ -220,30 +395,22 @@ const loadDmaBoundariesFromGpkg = async (url) => {
 
     const { columns, values } = rowsRes[0];
     const geomIdx = columns.findIndex(c => String(c).toLowerCase() === String(geomCol).toLowerCase());
-    const nameColIdx = columns.findIndex(c =>
-      ['dma_name', 'dmaname', 'name', 'dma', 'zone_name', 'label'].includes(String(c).toLowerCase())
-    );
-    const idColIdx = columns.findIndex(c =>
-      ['dma_code', 'dmacode', 'code', 'id', 'fid', 'objectid'].includes(String(c).toLowerCase())
-    );
 
     const zones = [];
     values.forEach((row, idx) => {
       const geomBlob = geomIdx >= 0 ? row[geomIdx] : null;
       const rings = parseGeoPackageGeometry(geomBlob);
-      const rawName = nameColIdx >= 0 && row[nameColIdx] ? String(row[nameColIdx]).trim() : '';
-      const rawId = idColIdx >= 0 && row[idColIdx] ? String(row[idColIdx]).trim() : `DMA-${idx + 1}`;
-      const zoneName = rawName || rawId || `ขอบเขต DMA ${idx + 1}`;
+      const resolved = resolveZoneLabelFromRow(row, columns, geomIdx, idx);
       const color = ZONE_PALETTE[idx % ZONE_PALETTE.length];
 
       rings.forEach((path, ringIdx) => {
         if (Array.isArray(path) && path.length >= 3) {
           zones.push({
-            id: `${rawId}-${ringIdx}`,
-            name: zoneName,
+            id: `${resolved.code}-${idx}-${ringIdx}`,
+            name: resolved.label,
             color,
             pressureBar: 1.0,
-            esp32DeviceId: `ESP32-${rawId}`,
+            esp32DeviceId: `ESP32-${resolved.code}`,
             paths: path,
             centroid: getPolygonCentroid(path)
           });
@@ -504,7 +671,7 @@ export default function DmaMapReport({ jobs: propJobs }) {
     }
   };
 
-  // 🗺️ กำหนดรายละเอียด TileLayer ของแต่ละโหมดแผนที่
+  // 🗺️ กำหนดรายละเอียด TileLayer ของแต่ละโหมดแผนที่ (ตัดโหมดมืดออก)
   const getTileLayerConfig = () => {
     switch (mapLayerMode) {
       case 'satellite':
@@ -516,11 +683,6 @@ export default function DmaMapReport({ jobs: propJobs }) {
         return {
           url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
           attribution: '&copy; OpenTopoMap'
-        };
-      case 'dark':
-        return {
-          url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-          attribution: '&copy; CARTO'
         };
       case 'streets':
       default:
@@ -630,8 +792,7 @@ export default function DmaMapReport({ jobs: propJobs }) {
             {[
               { id: 'streets', label: '🗺️ แผนที่ถนน' },
               { id: 'satellite', label: '🛰️ ดาวเทียม' },
-              { id: 'topo', label: '⛰️ ภูมิประเทศ' },
-              { id: 'dark', label: '🌙 โหมดมืด' }
+              { id: 'topo', label: '⛰️ ภูมิประเทศ' }
             ].map((mode) => (
               <button
                 key={mode.id}
@@ -755,7 +916,7 @@ export default function DmaMapReport({ jobs: propJobs }) {
 
                     <div className="bg-slate-50 p-2 rounded-lg space-y-1 text-xs">
                       <div className="flex justify-between items-center">
-                        <span className="font-medium text-slate-600">จุดซ่อมที่มีขนาดท่อ:</span>
+                        <span className="font-medium text-slate-600">จำนวนจุดซ่อมท่อในพื้นที่:</span>
                         <span className="font-bold text-emerald-600">{clickedReport.totalJobs} จุด</span>
                       </div>
                       <div className="flex justify-between items-center border-t border-slate-200 pt-1">
