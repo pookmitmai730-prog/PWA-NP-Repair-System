@@ -24,7 +24,7 @@ const smallRedDotIcon = L.divIcon({
   iconAnchor: [6, 6]
 });
 
-// 🕒 แปลงวันที่/เวลา (เช่น 2026-11-19T14:20:00.000Z) เป็นรูปแบบวันเวลาไทย
+// 🕒 แปลงวันที่/เวลา เป็นรูปแบบวันเวลาไทยเต็ม (เช่น 17 พฤศจิกายน 2569 เวลา 14.38 น.)
 const formatThaiDateTime = (rawDate) => {
   if (!rawDate || rawDate === '-') return '-';
   let dateObj = null;
@@ -46,7 +46,10 @@ const formatThaiDateTime = (rawDate) => {
 
   if (!dateObj || isNaN(dateObj.getTime())) return String(rawDate);
 
-  const thaiMonthsShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const thaiMonthsFull = [
+    'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+    'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+  ];
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Bangkok',
     year: 'numeric',
@@ -64,7 +67,7 @@ const formatThaiDateTime = (rawDate) => {
   const hour = getPart('hour');
   const minute = getPart('minute');
 
-  return `${day} ${thaiMonthsShort[monthIdx]} ${yearBE} ${hour}:${minute} น.`;
+  return `${day} ${thaiMonthsFull[monthIdx]} ${yearBE} เวลา ${hour}.${minute} น.`;
 };
 
 // 📍 หาจุดกึ่งกลางของ Polygon เพื่อวางป๊อบอัพลอยประจำพื้นที่
