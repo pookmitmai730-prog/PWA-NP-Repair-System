@@ -11,7 +11,8 @@ import {
   Briefcase,
   FileText,
   UserPlus,
-  Loader2
+  Loader2,
+  Search
 } from 'lucide-react';
 
 export default function AdminManagementModal({ 
@@ -25,9 +26,14 @@ export default function AdminManagementModal({
   onAddWorkerAccount,
   onEditWorkerAccount,
   onDeleteWorkerAccount,
-  webAppUrl // 🌐 เชื่อมต่อ URL Google Apps Script
+  webAppUrl
 }) {
   const [activeTab, setActiveTab] = useState('admins');
+
+  // Search States
+  const [adminSearchQuery, setAdminSearchQuery] = useState('');
+  const [workerSearchQuery, setWorkerSearchQuery] = useState('');
+  const [signerSearchQuery, setSignerSearchQuery] = useState('');
 
   // Form State: Admin
   const [adminUsernameInput, setAdminUsernameInput] = useState('');
@@ -45,7 +51,7 @@ export default function AdminManagementModal({
   const [workerPasswordInput, setWorkerPasswordInput] = useState('');
   const [editingWorkerUsername, setEditingWorkerUsername] = useState(null);
 
-  // Form State: Document Signers (สอดคล้องกับ Google Sheets DocumentSigners)
+  // Form State: Document Signers[cite: 1]
   const [signersData, setSignersData] = useState({
     committeeCheck: [],
     committeeReceive: [],
@@ -57,7 +63,7 @@ export default function AdminManagementModal({
   const [signerPositionInput, setSignerPositionInput] = useState('');
   const [editingSignerId, setEditingSignerId] = useState(null);
 
-  // 📥 ดึงข้อมูลผู้ลงนามจาก Google Sheets เมื่อเปิดแท็บเอกสาร
+  // 📥 ดึงข้อมูลผู้ลงนามจาก Google Sheets
   useEffect(() => {
     if (isOpen && activeTab === 'documents' && webAppUrl) {
       const fetchSigners = async () => {
@@ -106,12 +112,12 @@ export default function AdminManagementModal({
   };
 
   const handleEditAdminClick = (admin) => {
-    setEditingAdminUsername(admin.username);
-    setAdminUsernameInput(admin.username || '');
+    setEditingAdminUsername(String(admin.username));
+    setAdminUsernameInput(admin.username !== undefined && admin.username !== null ? String(admin.username) : '');
     setAdminNameInput(admin.name || '');
-    setAdminPositionInput(admin.position !== '-' ? admin.position : '');
-    setAdminPhoneInput(admin.phone && admin.phone !== '-' ? admin.phone.replace(/^'/, '') : '');
-    setAdminPasswordInput(admin.password ? admin.password.replace(/^'/, '') : '');
+    setAdminPositionInput(admin.position && admin.position !== '-' ? String(admin.position) : '');
+    setAdminPhoneInput(admin.phone && admin.phone !== '-' ? String(admin.phone).replace(/^'/, '') : '');
+    setAdminPasswordInput(admin.password !== undefined && admin.password !== null ? String(admin.password).replace(/^'/, '') : '');
   };
 
   const resetAdminForm = () => {
@@ -121,6 +127,13 @@ export default function AdminManagementModal({
     setAdminPositionInput('');
     setAdminPhoneInput('');
     setAdminPasswordInput('');
+  };
+
+  const handleDeleteAdminClick = (admin) => {
+    const targetUsername = admin?.username !== undefined && admin?.username !== null ? String(admin.username).trim() : '';
+    const targetName = admin?.name ? String(admin.name).trim() : targetUsername;
+    if (!onDeleteAdmin || !targetUsername) return;
+    onDeleteAdmin(targetUsername, targetName);
   };
 
   // --- Handlers Worker ---
@@ -149,12 +162,12 @@ export default function AdminManagementModal({
   };
 
   const handleEditWorkerClick = (worker) => {
-    setEditingWorkerUsername(worker.username);
-    setWorkerTeamNameInput(worker.teamName || '');
-    setWorkerPositionInput(worker.position !== '-' ? worker.position : '');
-    setWorkerPhoneInput(worker.phone && worker.phone !== '-' ? worker.phone.replace(/^'/, '') : '');
-    setWorkerUsernameInput(worker.username || '');
-    setWorkerPasswordInput(worker.password ? worker.password.replace(/^'/, '') : '');
+    setEditingWorkerUsername(String(worker.username || worker.teamName || ''));
+    setWorkerTeamNameInput(worker.teamName ? String(worker.teamName) : '');
+    setWorkerPositionInput(worker.position && worker.position !== '-' ? String(worker.position) : '');
+    setWorkerPhoneInput(worker.phone && worker.phone !== '-' ? String(worker.phone).replace(/^'/, '') : '');
+    setWorkerUsernameInput(worker.username ? String(worker.username) : '');
+    setWorkerPasswordInput(worker.password !== undefined && worker.password !== null ? String(worker.password).replace(/^'/, '') : '');
   };
 
   const resetWorkerForm = () => {
@@ -166,20 +179,33 @@ export default function AdminManagementModal({
     setWorkerPasswordInput('');
   };
 
-  // --- Handlers Document Signers (ส่งข้อมูลไปบันทึกใน Google Sheets) ---
+  const handleDeleteWorkerClick = (worker) => {
+    const cleanUsername = worker?.username !== undefined && worker?.username !== null ? String(worker.username).trim() : '';
+    const cleanTeamName = worker?.teamName !== undefined && worker?.teamName !== null ? String(worker.teamName).trim() : '';
+    const cleanId = worker?.id !== undefined && worker?.id !== null ? String(worker.id).trim() : cleanUsername;
+    if (!onDeleteWorkerAccount) return;
+    onDeleteWorkerAccount(cleanId, cleanUsername, cleanTeamName);
+  };
+
+  // --- Handlers Document Signers ---
   const handleSaveSignerToSheet = async (newSignersData) => {
     if (!webAppUrl) return;
     try {
-      await fetch(webAppUrl, {
+      const response = await fetch(webAppUrl, {
         method: 'POST',
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({
           action: 'save_document_signers',
           signers: newSignersData
         })
       });
+      const result = await response.json();
+      if (result.status !== 'success') {
+        alert("เกิดข้อผิดพลาดในการบันทึก: " + (result.message || 'ไม่ทราบสาเหตุ'));
+      }
     } catch (err) {
       console.error("Error saving signers to sheet:", err);
-      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Google Sheets");
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์เพื่อบันทึกข้อมูลผู้ลงนาม");
     }
   };
 
@@ -190,14 +216,14 @@ export default function AdminManagementModal({
     const updatedData = { ...signersData };
 
     if (editingSignerId) {
-      updatedData[signerCategory] = updatedData[signerCategory].map(item => 
-        item.id === editingSignerId 
+      updatedData[signerCategory] = (updatedData[signerCategory] || []).map(item => 
+        String(item.id) === String(editingSignerId)
           ? { ...item, name: signerNameInput.trim(), position: signerPositionInput.trim() }
           : item
       );
     } else {
       const newItem = {
-        id: Date.now(),
+        id: String(Date.now()),
         name: signerNameInput.trim(),
         position: signerPositionInput.trim() || (signerCategory === 'managers' ? 'ผู้จัดการ' : 'กรรมการฯ')
       };
@@ -217,8 +243,9 @@ export default function AdminManagementModal({
   };
 
   const handleDeleteSigner = (category, id) => {
+    if (!window.confirm("คุณต้องการลบรายชื่อผู้ลงนามนี้ใช่หรือไม่?")) return;
     const updatedData = { ...signersData };
-    updatedData[category] = updatedData[category].filter(item => item.id !== id);
+    updatedData[category] = (updatedData[category] || []).filter(item => String(item.id) !== String(id));
     setSignersData(updatedData);
     handleSaveSignerToSheet(updatedData);
   };
@@ -227,6 +254,36 @@ export default function AdminManagementModal({
     setEditingSignerId(null);
     setSignerNameInput('');
     setSignerPositionInput('');
+  };
+
+  // Filtered Lists for Search
+  const filteredAdmins = adminUsers.filter(a => {
+    const q = adminSearchQuery.toLowerCase();
+    return (
+      (a.name && String(a.name).toLowerCase().includes(q)) ||
+      (a.username !== undefined && a.username !== null && String(a.username).toLowerCase().includes(q)) ||
+      (a.position && String(a.position).toLowerCase().includes(q)) ||
+      (a.phone && String(a.phone).toLowerCase().includes(q))
+    );
+  });
+
+  const filteredWorkers = workerAccounts.filter(w => {
+    const q = workerSearchQuery.toLowerCase();
+    return (
+      (w.teamName && String(w.teamName).toLowerCase().includes(q)) ||
+      (w.username !== undefined && w.username !== null && String(w.username).toLowerCase().includes(q)) ||
+      (w.position && String(w.position).toLowerCase().includes(q)) ||
+      (w.phone && String(w.phone).toLowerCase().includes(q))
+    );
+  });
+
+  const filterSignerList = (list) => {
+    if (!signerSearchQuery.trim()) return list || [];
+    const q = signerSearchQuery.toLowerCase();
+    return (list || []).filter(item => 
+      (item.name && String(item.name).toLowerCase().includes(q)) ||
+      (item.position && String(item.position).toLowerCase().includes(q))
+    );
   };
 
   return (
@@ -371,34 +428,51 @@ export default function AdminManagementModal({
                 </div>
               </form>
 
+              {/* Search Bar for Admins */}
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl">
+                <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                <input
+                  type="text"
+                  value={adminSearchQuery}
+                  onChange={(e) => setAdminSearchQuery(e.target.value)}
+                  placeholder="ค้นหาชื่อ, Username, ตำแหน่ง หรือเบอร์โทรแอดมิน..."
+                  className="w-full bg-transparent text-xs outline-none text-slate-700"
+                />
+                {adminSearchQuery && (
+                  <button onClick={() => setAdminSearchQuery('')} className="text-slate-400 hover:text-slate-600 text-xs">ล้าง</button>
+                )}
+              </div>
+
               <div className="space-y-2">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">รายชื่อแอดมินใน Google Sheets ({adminUsers.length})</p>
-                {adminUsers.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-4">ยังไม่มีข้อมูลแอดมินใน Google Sheets</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  รายชื่อแอดมินใน Google Sheets ({filteredAdmins.length} / {adminUsers.length})
+                </p>
+                {filteredAdmins.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">ไม่พบข้อมูลแอดมินที่ค้นหา</p>
                 ) : (
-                  adminUsers.map((a) => (
-                    <div key={a.username} className="flex justify-between items-center bg-white border border-slate-200 px-4 py-3 rounded-2xl text-xs shadow-xs">
+                  filteredAdmins.map((a, idx) => (
+                    <div key={`${String(a.username)}-${idx}`} className="flex justify-between items-center bg-white border border-slate-200 px-4 py-3 rounded-2xl text-xs shadow-xs">
                       <div>
-                        <p className="font-bold text-slate-800 flex items-center gap-2">
+                        <p className="font-bold text-slate-800 flex items-center gap-2 flex-wrap">
                           <span>{a.name}</span>
                           <span className="text-[11px] font-normal text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
                             {a.position || 'แอดมิน'}
                           </span>
-                          {a.phone && a.phone !== '-' && (
+                          {a.phone && String(a.phone) !== '-' && (
                             <span className="text-[11px] font-normal text-slate-500 flex items-center gap-1">
-                              <Phone className="w-3 h-3 text-indigo-600" /> {a.phone.replace(/^'/, '')}
+                              <Phone className="w-3 h-3 text-indigo-600" /> {String(a.phone).replace(/^'/, '')}
                             </span>
                           )}
                         </p>
                         <p className="text-slate-500 font-mono text-[11px] mt-0.5">
-                          Username: <span className="text-indigo-600 font-bold">{a.username}</span> | Password: <span className="text-slate-700 font-bold">{a.password ? a.password.replace(/^'/, '') : ''}</span>
+                          Username: <span className="text-indigo-600 font-bold">{String(a.username)}</span> | Password: <span className="text-slate-700 font-bold">{a.password !== undefined && a.password !== null ? String(a.password).replace(/^'/, '') : ''}</span>
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
                         <button onClick={() => handleEditAdminClick(a)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer" title="แก้ไข">
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button onClick={() => onDeleteAdmin(a.username)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer" title="ลบ">
+                        <button onClick={() => handleDeleteAdminClick(a)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer" title="ลบ">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -494,36 +568,53 @@ export default function AdminManagementModal({
                 </div>
               </form>
 
+              {/* Search Bar for Workers */}
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl">
+                <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                <input
+                  type="text"
+                  value={workerSearchQuery}
+                  onChange={(e) => setWorkerSearchQuery(e.target.value)}
+                  placeholder="ค้นหาชื่อทีม, Username, ตำแหน่ง หรือเบอร์โทรช่าง..."
+                  className="w-full bg-transparent text-xs outline-none text-slate-700"
+                />
+                {workerSearchQuery && (
+                  <button onClick={() => setWorkerSearchQuery('')} className="text-slate-400 hover:text-slate-600 text-xs">ล้าง</button>
+                )}
+              </div>
+
               <div className="space-y-2">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">บัญชีทีมช่างใน Google Sheets ({workerAccounts.length})</p>
-                {workerAccounts.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-4">ยังไม่มีข้อมูลทีมช่างใน Google Sheets</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  บัญชีทีมช่างใน Google Sheets ({filteredWorkers.length} / {workerAccounts.length})
+                </p>
+                {filteredWorkers.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">ไม่พบข้อมูลทีมช่างที่ค้นหา</p>
                 ) : (
-                  workerAccounts.map((w) => (
-                    <div key={w.username || w.teamName} className="flex justify-between items-center bg-white border border-slate-200 px-4 py-3 rounded-2xl text-xs shadow-xs">
+                  filteredWorkers.map((w, idx) => (
+                    <div key={`${String(w.username || w.teamName)}-${idx}`} className="flex justify-between items-center bg-white border border-slate-200 px-4 py-3 rounded-2xl text-xs shadow-xs">
                       <div>
-                        <p className="font-bold text-slate-800 flex items-center gap-2">
+                        <p className="font-bold text-slate-800 flex items-center gap-2 flex-wrap">
                           <span>{w.teamName}</span>
-                          {w.position && w.position !== '-' && (
+                          {w.position && String(w.position) !== '-' && (
                             <span className="text-[11px] font-normal text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
                               <Briefcase className="w-3 h-3 inline mr-0.5" /> {w.position}
                             </span>
                           )}
-                          {w.phone && w.phone !== '-' && (
+                          {w.phone && String(w.phone) !== '-' && (
                             <span className="text-[11px] font-normal text-slate-500 flex items-center gap-1">
-                              <Phone className="w-3 h-3 text-emerald-600" /> {w.phone.replace(/^'/, '')}
+                              <Phone className="w-3 h-3 text-emerald-600" /> {String(w.phone).replace(/^'/, '')}
                             </span>
                           )}
                         </p>
                         <p className="text-slate-500 font-mono text-[11px] mt-0.5">
-                          Username: <span className="text-emerald-700 font-bold">{w.username}</span> | Password: <span className="text-slate-700 font-bold">{w.password ? w.password.replace(/^'/, '') : ''}</span>
+                          Username: <span className="text-emerald-700 font-bold">{String(w.username || '')}</span> | Password: <span className="text-slate-700 font-bold">{w.password !== undefined && w.password !== null ? String(w.password).replace(/^'/, '') : ''}</span>
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
                         <button onClick={() => handleEditWorkerClick(w)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer" title="แก้ไข">
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button onClick={() => onDeleteWorkerAccount(w.username, w.teamName)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer" title="ลบ">
+                        <button onClick={() => handleDeleteWorkerClick(w)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer" title="ลบ">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -534,7 +625,7 @@ export default function AdminManagementModal({
             </div>
           )}
 
-          {/* TAB 3: ตั้งค่าผู้ลงนามเอกสาร (เชื่อมกับตาราง DocumentSigners บน Google Sheets) */}
+          {/* TAB 3: ตั้งค่าผู้ลงนามเอกสาร */}
           {activeTab === 'documents' && (
             <div className="space-y-5">
               {isLoadingSigners ? (
@@ -605,17 +696,32 @@ export default function AdminManagementModal({
                     </div>
                   </form>
 
+                  {/* Search Bar for Signers */}
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl">
+                    <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                    <input
+                      type="text"
+                      value={signerSearchQuery}
+                      onChange={(e) => setSignerSearchQuery(e.target.value)}
+                      placeholder="ค้นหาชื่อ หรือตำแหน่งผู้ลงนาม..."
+                      className="w-full bg-transparent text-xs outline-none text-slate-700"
+                    />
+                    {signerSearchQuery && (
+                      <button onClick={() => setSignerSearchQuery('')} className="text-slate-400 hover:text-slate-600 text-xs">ล้าง</button>
+                    )}
+                  </div>
+
                   <div className="space-y-4">
                     {/* ส่วนที่ 1: คณะกรรมการตรวจสอบท่อ และอุปกรณ์เดิม */}
                     <div className="bg-white border border-slate-200 p-4 rounded-2xl space-y-2.5">
                       <h4 className="text-xs font-bold text-slate-800 border-b border-slate-100 pb-1.5">
-                        1. คณะกรรมการตรวจสอบท่อ และอุปกรณ์เดิม ({signersData.committeeCheck?.length || 0} คน)
+                        1. คณะกรรมการตรวจสอบท่อ และอุปกรณ์เดิม ({filterSignerList(signersData.committeeCheck).length} คน)
                       </h4>
                       <div className="space-y-1.5">
-                        {(!signersData.committeeCheck || signersData.committeeCheck.length === 0) ? (
-                          <p className="text-[11px] text-slate-400 italic">ยังไม่มีข้อมูล</p>
+                        {filterSignerList(signersData.committeeCheck).length === 0 ? (
+                          <p className="text-[11px] text-slate-400 italic">ไม่พบข้อมูล</p>
                         ) : (
-                          signersData.committeeCheck.map((item) => (
+                          filterSignerList(signersData.committeeCheck).map((item) => (
                             <div key={item.id} className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-xl text-xs border border-slate-100">
                               <div>
                                 <span className="font-bold text-slate-800">{item.name}</span>
@@ -638,13 +744,13 @@ export default function AdminManagementModal({
                     {/* ส่วนที่ 2: คณะกรรมการตรวจรับพัสดุ */}
                     <div className="bg-white border border-slate-200 p-4 rounded-2xl space-y-2.5">
                       <h4 className="text-xs font-bold text-slate-800 border-b border-slate-100 pb-1.5">
-                        2. คณะกรรมการตรวจรับพัสดุ ({signersData.committeeReceive?.length || 0} คน)
+                        2. คณะกรรมการตรวจรับพัสดุ ({filterSignerList(signersData.committeeReceive).length} คน)
                       </h4>
                       <div className="space-y-1.5">
-                        {(!signersData.committeeReceive || signersData.committeeReceive.length === 0) ? (
-                          <p className="text-[11px] text-slate-400 italic">ยังไม่มีข้อมูล</p>
+                        {filterSignerList(signersData.committeeReceive).length === 0 ? (
+                          <p className="text-[11px] text-slate-400 italic">ไม่พบข้อมูล</p>
                         ) : (
-                          signersData.committeeReceive.map((item) => (
+                          filterSignerList(signersData.committeeReceive).map((item) => (
                             <div key={item.id} className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-xl text-xs border border-slate-100">
                               <div>
                                 <span className="font-bold text-slate-800">{item.name}</span>
@@ -667,13 +773,13 @@ export default function AdminManagementModal({
                     {/* ส่วนที่ 3: หัวหน้างานบริการฯ และ ผู้จัดการ */}
                     <div className="bg-white border border-slate-200 p-4 rounded-2xl space-y-2.5">
                       <h4 className="text-xs font-bold text-slate-800 border-b border-slate-100 pb-1.5">
-                        3. หัวหน้างานบริการฯ และ ผู้จัดการ ({signersData.managers?.length || 0} คน)
+                        3. หัวหน้างานบริการฯ และ ผู้จัดการ ({filterSignerList(signersData.managers).length} คน)
                       </h4>
                       <div className="space-y-1.5">
-                        {(!signersData.managers || signersData.managers.length === 0) ? (
-                          <p className="text-[11px] text-slate-400 italic">ยังไม่มีข้อมูล</p>
+                        {filterSignerList(signersData.managers).length === 0 ? (
+                          <p className="text-[11px] text-slate-400 italic">ไม่พบข้อมูล</p>
                         ) : (
-                          signersData.managers.map((item) => (
+                          filterSignerList(signersData.managers).map((item) => (
                             <div key={item.id} className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-xl text-xs border border-slate-100">
                               <div>
                                 <span className="font-bold text-slate-800">{item.name}</span>
