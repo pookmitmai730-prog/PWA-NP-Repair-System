@@ -794,7 +794,7 @@ export default function DmaMapReport({ jobs: propJobs }) {
                     <Gauge className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold text-slate-900">ป๊อบอัพลอยพื้นที่ DMA</h3>
+                    <h3 className="text-xs font-bold text-slate-900">ขอบเขตพื้นที่ DMA</h3>
                     <p className="text-[10px] text-slate-500">
                       แสดงอยู่ {activeFloatingCount} / {dmaZones.length} พื้นที่
                     </p>
