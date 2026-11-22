@@ -459,7 +459,7 @@ export default function RolePortal({
     );
 
     if (foundAdmin) {
-      onAdminLogin();
+      onAdminLogin(foundAdmin);
     } else {
       setAdminError('ชื่อผู้ใช้หรือรหัสผ่านผู้ดูแลระบบไม่ถูกต้อง');
     }
