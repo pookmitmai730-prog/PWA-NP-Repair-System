@@ -454,12 +454,19 @@ export default function RolePortal({
     e.preventDefault();
     setAdminError('');
 
+    const normalizedUsername = String(adminUsername || '').trim();
+    const normalizedPassword = String(adminPassword || '').replace(/^'/, '');
+
     const foundAdmin = adminUsers.find(
-      a => a.username === adminUsername.trim() && a.password === adminPassword
+      a =>
+        String(a.username || '').trim() === normalizedUsername &&
+        String(a.password || '').replace(/^'/, '') === normalizedPassword
     );
 
     if (foundAdmin) {
-      onAdminLogin(foundAdmin);
+      if (typeof onAdminLogin === 'function') {
+        onAdminLogin(foundAdmin);
+      }
     } else {
       setAdminError('ชื่อผู้ใช้หรือรหัสผ่านผู้ดูแลระบบไม่ถูกต้อง');
     }
@@ -470,12 +477,19 @@ export default function RolePortal({
     e.preventDefault();
     setWorkerError('');
 
+    const normalizedUsername = String(workerUsername || '').trim();
+    const normalizedPassword = String(workerPassword || '').replace(/^'/, '');
+
     const foundWorker = workerAccounts.find(
-      w => w.username === workerUsername.trim() && w.password === workerPassword
+      w =>
+        String(w.username || '').trim() === normalizedUsername &&
+        String(w.password || '').replace(/^'/, '') === normalizedPassword
     );
 
     if (foundWorker) {
-      onWorkerLogin(foundWorker.teamName);
+      if (typeof onWorkerLogin === 'function') {
+        onWorkerLogin(foundWorker.teamName);
+      }
     } else {
       setWorkerError('ชื่อผู้ใช้หรือรหัสผ่านช่างภาคสนามไม่ถูกต้อง');
     }
