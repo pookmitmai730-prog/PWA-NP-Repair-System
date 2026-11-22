@@ -6,30 +6,93 @@ import CreateJobModal from './components/CreateJobModal';
 import JobList from './components/JobPipeline';
 import FieldWorkerPortal from './components/FieldWorkerPortal';
 import ReportsView from './components/ReportsView';
+import RepairCostReportView from './components/RepairCostReportView';
+import DMARepairReportView from './components/DMARepairReportView';
 import RolePortal from './components/RolePortal';
 import AdminManagementModal from './components/AdminManagementModal';
 import RepairCostForm from './components/RepairCostForm';
-import { LayoutDashboard, Smartphone, BarChart3, LogOut, Shield, UserCheck, RefreshCw, Calculator } from 'lucide-react';
+import { LayoutDashboard, Smartphone, BarChart3, LogOut, Shield, UserCheck, RefreshCw, Calculator, ChevronDown } from 'lucide-react';
 
 // 🌐 URL ของ Google Apps Script Web App
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
 
+const extractAdminName = (input) => {
+  if (!input) return '';
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (!trimmed) return '';
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return extractAdminName(JSON.parse(trimmed));
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+  if (typeof input === 'object') {
+    const candidate =
+      input.name ||
+      input.fullName ||
+      input.fullname ||
+      input.adminName ||
+      input.staffName ||
+      input.officerName ||
+      input.displayName ||
+      input.username ||
+      input.user ||
+      input.data ||
+      input.admin ||
+      '';
+    return extractAdminName(candidate);
+  }
+  return '';
+};
+
+const findStoredAdminName = (adminsList = []) => {
+  const directKeys = [
+    'pwa_admin_name',
+    'pwa_admin_user',
+    'admin_name',
+    'adminName',
+    'admin_user',
+    'logged_in_admin',
+    'current_admin',
+    'currentUser',
+    'user_name',
+    'username'
+  ];
+
+  for (const key of directKeys) {
+    const fromLocal = extractAdminName(localStorage.getItem(key));
+    if (fromLocal) return fromLocal;
+    const fromSession = extractAdminName(sessionStorage.getItem(key));
+    if (fromSession) return fromSession;
+  }
+
+  if (Array.isArray(adminsList) && adminsList.length === 1) {
+    return extractAdminName(adminsList[0]);
+  }
+
+  return '';
+};
+
 export default function App() {
   const [userRole, setUserRole] = useState(localStorage.getItem('pwa_user_role') || 'portal');
+  const [activeAdminName, setActiveAdminName] = useState(() => findStoredAdminName());
   const [activeWorkerTeam, setActiveWorkerTeam] = useState(localStorage.getItem('pwa_worker_team') || '');
 
-  // เปลี่ยน currentView ให้รองรับค่า 'repair_cost' สำหรับการแสดงผลเต็มหน้าจอ
   const [currentView, setCurrentView] = useState('dashboard');
+  const [isReportsMenuOpen, setIsReportsMenuOpen] = useState(false);
+
   const [jobs, setJobs] = useState([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAdminManageOpen, setIsAdminManageOpen] = useState(false);
 
-  // ☁️ บัญชีผู้ใช้งานและข้อมูลใบงานดึงตรงจาก Google Sheets 100%
   const [adminUsers, setAdminUsers] = useState([]);
   const [workerAccounts, setWorkerAccounts] = useState([]);
 
-  // 🔄 ฟังก์ชันดึงข้อมูลใบงาน (Jobs) จาก Google Sheets (ชีต Jobs_Archive)
   const fetchJobsFromSheet = async () => {
     setLoadingJobs(true);
     try {
@@ -67,7 +130,16 @@ export default function App() {
     fetchDataFromSheet();
   }, []);
 
-  // 🛡️ จัดการบันทึก/ลบ Admins ใน Google Sheets
+  useEffect(() => {
+    if (userRole === 'admin' && !activeAdminName) {
+      const resolved = findStoredAdminName(adminUsers);
+      if (resolved) {
+        setActiveAdminName(resolved);
+        localStorage.setItem('pwa_admin_name', resolved);
+      }
+    }
+  }, [userRole, activeAdminName, adminUsers]);
+
   const handleAddAdmin = async (newAdmin) => {
     try {
       await fetch(WEB_APP_URL, {
@@ -87,24 +159,34 @@ export default function App() {
     await handleAddAdmin(updatedAdmin);
   };
 
-  const handleDeleteAdmin = async (username) => {
-    if (window.confirm(`คุณต้องการลบแอดมิน "${username}" ใช่หรือไม่?`)) {
+  const handleDeleteAdmin = async (username, displayName) => {
+    const cleanUsername = username !== undefined && username !== null ? String(username).trim() : '';
+    if (!cleanUsername) {
+      alert("ไม่พบ Username ของแอดมินที่จะลบ");
+      return;
+    }
+
+    const label = displayName ? `${displayName} (${cleanUsername})` : cleanUsername;
+    if (window.confirm(`คุณต้องการลบแอดมิน "${label}" ใช่หรือไม่?`)) {
       try {
         await fetch(WEB_APP_URL, {
           method: 'POST',
           mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: "delete_admin", data: { username } })
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: "delete_admin", data: { username: cleanUsername } })
         });
-        alert("ลบแอดมินเรียบร้อยแล้ว!");
-        fetchDataFromSheet();
+        setAdminUsers(prev => prev.filter(a => String(a.username || '').trim() !== cleanUsername));
+        alert("ส่งคำขอลบแอดมินเรียบร้อยแล้ว!");
+        setTimeout(() => {
+          fetchDataFromSheet();
+        }, 600);
       } catch (err) {
+        console.error("Error deleting admin:", err);
         alert("เกิดข้อผิดพลาดในการลบ");
       }
     }
   };
 
-  // 👥 จัดการบันทึก/ลบ Workers ใน Google Sheets
   const handleAddWorkerAccount = async (newWorker) => {
     try {
       await fetch(WEB_APP_URL, {
@@ -125,20 +207,41 @@ export default function App() {
   };
 
   const handleDeleteWorkerAccount = async (id, username, teamName) => {
-    const targetName = teamName || username || id;
+    const cleanUsername = username !== undefined && username !== null ? String(username).trim() : '';
+    const cleanTeamName = teamName !== undefined && teamName !== null ? String(teamName).trim() : '';
+    const cleanId = id !== undefined && id !== null ? String(id).trim() : '';
+    const targetName = cleanTeamName || cleanUsername || cleanId;
+
+    if (!targetName) {
+      alert("ไม่พบข้อมูลบัญชีช่างที่จะลบ");
+      return;
+    }
+
     if (window.confirm(`คุณต้องการลบบัญชีช่าง "${targetName}" ใช่หรือไม่?`)) {
       try {
         await fetch(WEB_APP_URL, {
           method: 'POST',
           mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            action: "delete_worker", 
-            data: { username: username || targetName, teamName: teamName || targetName } 
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: "delete_worker",
+            data: {
+              username: cleanUsername || cleanId,
+              teamName: cleanTeamName
+            }
           })
         });
-        alert("ลบบัญชีช่างเรียบร้อยแล้ว!");
-        fetchDataFromSheet();
+        setWorkerAccounts(prev => prev.filter(w => {
+          const wUser = String(w.username || '').trim();
+          const wTeam = String(w.teamName || '').trim();
+          const matchUser = cleanUsername !== '' && wUser === cleanUsername;
+          const matchTeam = cleanTeamName !== '' && wTeam === cleanTeamName;
+          return !(matchUser || matchTeam);
+        }));
+        alert("ส่งคำขอลบบัญชีช่างเรียบร้อยแล้ว!");
+        setTimeout(() => {
+          fetchDataFromSheet();
+        }, 600);
       } catch (err) {
         console.error("Error deleting worker:", err);
         alert("เกิดข้อผิดพลาดในการลบ");
@@ -146,9 +249,17 @@ export default function App() {
     }
   };
 
-  const handleAdminLogin = () => {
+  const handleAdminLogin = (adminData) => {
+    const resolvedName = extractAdminName(adminData) || findStoredAdminName(adminUsers);
+
     setUserRole('admin');
+    setActiveAdminName(resolvedName);
     localStorage.setItem('pwa_user_role', 'admin');
+    if (resolvedName) {
+      localStorage.setItem('pwa_admin_name', resolvedName);
+    } else {
+      localStorage.removeItem('pwa_admin_name');
+    }
     setCurrentView('dashboard');
   };
 
@@ -161,8 +272,10 @@ export default function App() {
 
   const handleLogout = () => {
     setUserRole('portal');
+    setActiveAdminName('');
     setActiveWorkerTeam('');
     localStorage.removeItem('pwa_user_role');
+    localStorage.removeItem('pwa_admin_name');
     localStorage.removeItem('pwa_worker_team');
     setCurrentView('dashboard');
   };
@@ -214,10 +327,10 @@ export default function App() {
     const currentJob = jobs.find(j => j.JobID === jobId || j.id === jobId || j.receivedNo === jobId);
     if (!currentJob) return;
 
-    const assignedTechnician = extraData.technician || (newStatus !== 'PENDING' 
-      ? (currentJob.Technician && !currentJob.Technician.includes('ยังไม่ระบุ') 
-          ? currentJob.Technician 
-          : (workerAccounts[0] ? `${workerAccounts[0].teamName}` : 'ทีมช่าง กปภ.')) 
+    const assignedTechnician = extraData.technician || (newStatus !== 'PENDING'
+      ? (currentJob.Technician && !currentJob.Technician.includes('ยังไม่ระบุ')
+          ? currentJob.Technician
+          : (workerAccounts[0] ? `${workerAccounts[0].teamName}` : 'ทีมช่าง กปภ.'))
       : currentJob.Technician);
 
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
@@ -246,7 +359,7 @@ export default function App() {
 
   if (userRole === 'portal') {
     return (
-      <RolePortal 
+      <RolePortal
         onSelectRole={(role) => setUserRole(role)}
         adminUsers={adminUsers}
         workerAccounts={workerAccounts}
@@ -276,9 +389,9 @@ export default function App() {
   if (userRole === 'worker') {
     return (
       <div className="min-h-screen bg-slate-100 font-sans">
-        <FieldWorkerPortal 
-          jobs={jobs} 
-          onUpdateJobStatus={handleStatusChange} 
+        <FieldWorkerPortal
+          jobs={jobs}
+          onUpdateJobStatus={handleStatusChange}
           teams={workerAccounts.map(w => w.teamName)}
           onLogout={handleLogout}
         />
@@ -289,36 +402,67 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
       <div className="bg-slate-900 text-white py-2 px-4 text-xs flex flex-wrap justify-between items-center border-b border-slate-800 sticky top-0 z-40">
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
           <span className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
             <Shield className="w-3 h-3" /> ADMIN
           </span>
-          <span className="font-bold text-slate-200">สิทธิ์ผู้ดูแลระบบ (Google Sheets Database)</span>
+          <span className="font-bold text-slate-200">
+            ยินดีต้อนรับ{activeAdminName ? ` ${activeAdminName}` : ''} (สิทธิ์ผู้ดูแลระบบ)
+          </span>
         </div>
 
-        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+        <div className="flex items-center space-x-2 flex-wrap gap-y-1 relative">
           <button onClick={fetchJobsFromSheet} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1">
             <RefreshCw className={`w-3.5 h-3.5 ${loadingJobs ? 'animate-spin' : ''}`} /> <span>รีเฟรช</span>
           </button>
 
-          <button onClick={() => setCurrentView('dashboard')} className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${currentView === 'dashboard' ? 'bg-blue-600 font-bold text-white' : 'text-slate-400 hover:text-white'}`}>
+          <button onClick={() => { setCurrentView('dashboard'); setIsReportsMenuOpen(false); }} className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${currentView === 'dashboard' ? 'bg-blue-600 font-bold text-white' : 'text-slate-400 hover:text-white'}`}>
             <LayoutDashboard className="w-3.5 h-3.5" /> <span>ศูนย์ควบคุม</span>
           </button>
 
-          {/* 🌟 ปุ่ม "ฟอร์มจ้างซ่อม" เปลี่ยนเป็นเปลี่ยน View เป็น 'repair_cost' เพื่อแสดงผลเต็มหน้าจอทันที */}
-          <button 
-            onClick={() => setCurrentView('repair_cost')}
+          <button
+            onClick={() => { setCurrentView('repair_cost'); setIsReportsMenuOpen(false); }}
             className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${currentView === 'repair_cost' ? 'bg-emerald-600 font-bold text-white' : 'bg-emerald-600/80 hover:bg-emerald-600 text-white'}`}
             title="เปิดฟอร์มจ้างซ่อมแบบเต็มหน้าจอ"
           >
             <Calculator className="w-3.5 h-3.5" /> <span>ฟอร์มจ้างซ่อม</span>
           </button>
 
-          <button onClick={() => setCurrentView('reports')} className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${currentView === 'reports' ? 'bg-indigo-600 font-bold text-white' : 'text-slate-400 hover:text-white'}`}>
-            <BarChart3 className="w-3.5 h-3.5" /> <span>รายงาน</span>
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setIsReportsMenuOpen(!isReportsMenuOpen)}
+              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${['reports', 'report_repair_cost', 'report_dma_repair'].includes(currentView) ? 'bg-indigo-600 font-bold text-white' : 'text-slate-400 hover:text-white'}`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span>รายงาน</span>
+              <ChevronDown className={`w-3 h-3 transition-transform ${isReportsMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-          <button onClick={() => setCurrentView('field')} className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${currentView === 'field' ? 'bg-emerald-600 font-bold text-white' : 'text-slate-400 hover:text-white'}`}>
+            {isReportsMenuOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden z-50 py-1">
+                <button
+                  onClick={() => { setCurrentView('reports'); setIsReportsMenuOpen(false); }}
+                  className={`w-full text-left px-4 py-2.5 text-xs transition flex items-center gap-2 ${currentView === 'reports' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-800'}`}
+                >
+                  <span>1. รายงานภาพรวมซ่อมท่อ</span>
+                </button>
+                <button
+                  onClick={() => { setCurrentView('report_repair_cost'); setIsReportsMenuOpen(false); }}
+                  className={`w-full text-left px-4 py-2.5 text-xs transition flex items-center gap-2 ${currentView === 'report_repair_cost' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-800'}`}
+                >
+                  <span>2. รายงานการเบิกซ่อมท่อ</span>
+                </button>
+                <button
+                  onClick={() => { setCurrentView('report_dma_repair'); setIsReportsMenuOpen(false); }}
+                  className={`w-full text-left px-4 py-2.5 text-xs transition flex items-center gap-2 ${currentView === 'report_dma_repair' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-800'}`}
+                >
+                  <span>3. รายงานจุดซ่อมท่อในแต่ละ DMA</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          <button onClick={() => { setCurrentView('field'); setIsReportsMenuOpen(false); }} className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg transition cursor-pointer ${currentView === 'field' ? 'bg-emerald-600 font-bold text-white' : 'text-slate-400 hover:text-white'}`}>
             <Smartphone className="w-3.5 h-3.5" /> <span>จำลองหน้าช่าง</span>
           </button>
 
@@ -338,16 +482,15 @@ export default function App() {
           <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
             <StatsOverview stats={stats} />
             <TrackingSearch jobs={jobs} />
-            <JobList 
-              jobs={jobs} 
-              onStatusChange={handleStatusChange} 
+            <JobList
+              jobs={jobs}
+              onStatusChange={handleStatusChange}
               workerAccounts={workerAccounts}
             />
           </main>
         </>
       )}
 
-      {/* 🌟 หน้าจอแสดงผลแบบเต็มหน้าจอ เมื่อเลือก View เป็น 'repair_cost' */}
       {currentView === 'repair_cost' && (
         <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
           <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -362,8 +505,8 @@ export default function App() {
               ← กลับหน้าศูนย์ควบคุม
             </button>
           </div>
-          
-          <RepairCostForm 
+
+          <RepairCostForm
             jobs={jobs}
             onSubmitCost={async (costPayload) => {
               alert(`บันทึกข้อมูลจ้างเหมาซ่อมท่อสำเร็จ!\nยอดรวมสุทธิ: ฿${costPayload.grandTotal.toLocaleString()} บาท`);
@@ -374,33 +517,36 @@ export default function App() {
       )}
 
       {currentView === 'reports' && <ReportsView jobs={jobs} />}
+      {currentView === 'report_repair_cost' && <RepairCostReportView jobs={jobs} />}
+      {currentView === 'report_dma_repair' && <DMARepairReportView jobs={jobs} />}
 
       {currentView === 'field' && (
-        <FieldWorkerPortal 
-          jobs={jobs} 
-          onUpdateJobStatus={handleStatusChange} 
+        <FieldWorkerPortal
+          jobs={jobs}
+          onUpdateJobStatus={handleStatusChange}
           teams={workerAccounts.map(w => w.teamName)}
           onLogout={handleLogout}
         />
       )}
 
-      <CreateJobModal 
+      <CreateJobModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleCreateJob}
       />
 
-      <AdminManagementModal 
+      <AdminManagementModal
         isOpen={isAdminManageOpen}
         onClose={() => setIsAdminManageOpen(false)}
         adminUsers={adminUsers}
         onAddAdmin={handleAddAdmin}
         onEditAdmin={handleEditAdmin}
-        onDeleteAdmin={(id, username) => handleDeleteAdmin(username)}
+        onDeleteAdmin={handleDeleteAdmin}
         workerAccounts={workerAccounts}
         onAddWorkerAccount={handleAddWorkerAccount}
         onEditWorkerAccount={handleEditWorkerAccount}
-        onDeleteWorkerAccount={(id, username, teamName) => handleDeleteWorkerAccount(id, username, teamName)}
+        onDeleteWorkerAccount={handleDeleteWorkerAccount}
+        webAppUrl={WEB_APP_URL}
       />
     </div>
   );
