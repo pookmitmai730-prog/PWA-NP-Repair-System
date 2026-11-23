@@ -1666,16 +1666,23 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
                   <div className="flex gap-2 items-stretch">
                     <div className="w-[66.666%]">
-                      <table className="w-full h-full border-collapse border border-black text-[10px]">
+                      <table className="w-full h-full border-collapse border border-black text-[9.5px]">
                         <thead>
                           <tr className="bg-slate-100 font-bold text-center">
-                            <th className="border border-black p-1" width="5%">ลำดับ</th>
-                            <th className="border border-black p-1" width="37%">รายการ</th>
-                            <th className="border border-black p-1" width="7%">จำนวน</th>
-                            <th className="border border-black p-1" width="8%">หน่วย</th>
-                            <th className="border border-black p-1" width="14%">ค่าวัสดุ (บ.)</th>
-                            <th className="border border-black p-1" width="14%">ค่าแรง (บ.)</th>
-                            <th className="border border-black p-1" width="15%">รวม (บ.)</th>
+                            <th className="border border-black p-0.5" rowSpan="2" width="5%">ลำดับ</th>
+                            <th className="border border-black p-0.5" rowSpan="2" width="27%">รายการ/ขนาด</th>
+                            <th className="border border-black p-0.5" rowSpan="2" width="7%">จำนวน</th>
+                            <th className="border border-black p-0.5" rowSpan="2" width="7%">หน่วย</th>
+                            <th className="border border-black p-0.5" colSpan="2" width="20%">ค่าวัสดุต่อหน่วย(บาท)</th>
+                            <th className="border border-black p-0.5" colSpan="2" width="20%">ค่าแรงต่อหน่วย(บาท)</th>
+                            <th className="border border-black p-0.5" width="14%">รวมเป็นเงิน</th>
+                          </tr>
+                          <tr className="bg-slate-100 font-bold text-center">
+                            <th className="border border-black p-0.5" width="9%">ต่อหน่วย</th>
+                            <th className="border border-black p-0.5" width="11%">ค่าวัสดุ</th>
+                            <th className="border border-black p-0.5" width="9%">ต่อหน่วย</th>
+                            <th className="border border-black p-0.5" width="11%">ค่าแรง</th>
+                            <th className="border border-black p-0.5" width="14%">(บาท)</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1692,35 +1699,44 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                               <React.Fragment key={`pdf-cat-${catHead.key}`}>
                                 <tr className="bg-slate-50 font-bold">
                                   <td className="border border-black p-0.5 text-center">{catHead.num}</td>
-                                  <td className="border border-black p-0.5" colSpan="6">{catHead.title}</td>
+                                  <td className="border border-black p-0.5" colSpan="8">{catHead.title}</td>
                                 </tr>
                                 {catItems.length === 0 ? (
                                   <tr>
                                     <td className="border border-black p-0.5 text-center">-</td>
-                                    <td className="border border-black p-0.5 text-slate-400 italic" colSpan="6">ไม่มีรายการ</td>
+                                    <td className="border border-black p-0.5 text-slate-400 italic" colSpan="8">ไม่มีรายการ</td>
                                   </tr>
                                 ) : (
-                                  catItems.map((item, itemIdx) => (
-                                    <tr key={`pdf-item-${item.cartId}`}>
-                                      <td className="border border-black p-0.5 text-center">{catHead.num}.{itemIdx + 1}</td>
-                                      <td className="border border-black p-0.5">
-                                        {item.name} {item.isFromStock && <span className="text-emerald-700 font-bold">[เบิกคลัง]</span>}
-                                      </td>
-                                      <td className="border border-black p-0.5 text-center">{item.quantity}</td>
-                                      <td className="border border-black p-0.5 text-center">{item.unit}</td>
-                                      {item.isFromStock ? (
-                                        <>
-                                          <td className="border border-black p-0.5 text-center text-slate-400" colSpan="3">เบิกคลัง (ไม่คิดราคา)</td>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <td className="border border-black p-0.5 text-right">{item.totalMaterialPrice.toLocaleString()}</td>
-                                          <td className="border border-black p-0.5 text-right">{item.totalLaborPrice.toLocaleString()}</td>
-                                          <td className="border border-black p-0.5 text-right font-bold">{(item.totalMaterialPrice + item.totalLaborPrice).toLocaleString()}</td>
-                                        </>
-                                      )}
-                                    </tr>
-                                  ))
+                                  catItems.map((item, itemIdx) => {
+                                    const qty = Number(item.quantity) || 0;
+                                    const matUnit = Number(item.materialPrice) || 0;
+                                    const labUnit = Number(item.laborPrice) || 0;
+                                    const matTotal = qty * matUnit;
+                                    const labTotal = qty * labUnit;
+                                    const rowTotal = matTotal + labTotal;
+
+                                    return (
+                                      <tr key={`pdf-item-${item.cartId}`}>
+                                        <td className="border border-black p-0.5 text-center">{catHead.num}.{itemIdx + 1}</td>
+                                        <td className="border border-black p-0.5">
+                                          {item.name} {item.isFromStock && <span className="text-emerald-700 font-bold">[เบิกคลัง]</span>}
+                                        </td>
+                                        <td className="border border-black p-0.5 text-center">{qty}</td>
+                                        <td className="border border-black p-0.5 text-center">{item.unit}</td>
+                                        {item.isFromStock ? (
+                                          <td className="border border-black p-0.5 text-center text-slate-400" colSpan="5">เบิกคลัง (ไม่คิดราคา)</td>
+                                        ) : (
+                                          <>
+                                            <td className="border border-black p-0.5 text-right font-mono">{matUnit === 0 ? '-' : matUnit.toLocaleString()}</td>
+                                            <td className="border border-black p-0.5 text-right font-mono">{matTotal === 0 ? '-' : matTotal.toLocaleString()}</td>
+                                            <td className="border border-black p-0.5 text-right font-mono">{labUnit === 0 ? '-' : labUnit.toLocaleString()}</td>
+                                            <td className="border border-black p-0.5 text-right font-mono">{labTotal === 0 ? '-' : labTotal.toLocaleString()}</td>
+                                            <td className="border border-black p-0.5 text-right font-mono font-bold">{rowTotal === 0 ? '-' : rowTotal.toLocaleString()}</td>
+                                          </>
+                                        )}
+                                      </tr>
+                                    );
+                                  })
                                 )}
                               </React.Fragment>
                             );
@@ -1728,34 +1744,34 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
                           <tr className="font-bold bg-slate-50">
                             <td className="border border-black p-1 text-center">a</td>
-                            <td className="border border-black p-1" colSpan="5">รวมราคาค่าวัสดุและค่าแรงงาน (ไม่รวมภาษีฯ)</td>
+                            <td className="border border-black p-1" colSpan="7">รวมราคาค่าวัสดุและค่าแรงงาน (ไม่รวมภาษีฯ)</td>
                             <td className="border border-black p-1 text-right font-mono">{totalDirectCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                           </tr>
                           <tr className="font-bold bg-slate-50">
                             <td className="border border-black p-1 text-center">b</td>
-                            <td className="border border-black p-1" colSpan="5">Factor F : งานก่อสร้างทาง (รวมภาษีฯ)</td>
+                            <td className="border border-black p-1" colSpan="7">Factor F : งานก่อสร้างทาง (รวมภาษีฯ)</td>
                             <td className="border border-black p-1 text-right font-mono">{activeFactorF}</td>
                           </tr>
                           <tr className="font-bold bg-slate-100">
                             <td className="border border-black p-1 text-center">c</td>
-                            <td className="border border-black p-1" colSpan="5">รวมราคาค่าวัสดุและค่าแรงงาน x Factor F (ข้อ a x ข้อ b)</td>
+                            <td className="border border-black p-1" colSpan="7">รวมราคาค่าวัสดุและค่าแรงงาน x Factor F (ข้อ a x ข้อ b)</td>
                             <td className="border border-black p-1 text-right font-mono">{totalCostWithFactorF.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                           </tr>
 
                           <tr>
                             <td className="border border-black p-1 text-center">d</td>
-                            <td className="border border-black p-1 font-bold" colSpan="6">ค่าใช้จ่ายอื่นๆ : (ไม่คิด Factor F)</td>
+                            <td className="border border-black p-1 font-bold" colSpan="8">ค่าใช้จ่ายอื่นๆ : (ไม่คิด Factor F)</td>
                           </tr>
                           {otherExpenses.length === 0 ? (
                             <tr>
                               <td className="border border-black p-0.5 text-center">-</td>
-                              <td className="border border-black p-0.5 text-slate-400 italic" colSpan="6">ไม่มีรายการค่าใช้จ่ายอื่นๆ</td>
+                              <td className="border border-black p-0.5 text-slate-400 italic" colSpan="8">ไม่มีรายการค่าใช้จ่ายอื่นๆ</td>
                             </tr>
                           ) : (
                             otherExpenses.map((oth, oIdx) => (
                               <tr key={`pdf-oth-${oIdx}`}>
                                 <td className="border border-black p-0.5 text-center">d.{oIdx+1}</td>
-                                <td className="border border-black p-0.5" colSpan="5">{oth.name} ({oth.qty} {oth.unit} @ {oth.unitPrice})</td>
+                                <td className="border border-black p-0.5" colSpan="7">{oth.name} ({oth.qty} {oth.unit} @ {oth.unitPrice})</td>
                                 <td className="border border-black p-0.5 text-right font-mono">{oth.amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                               </tr>
                             ))
@@ -1763,38 +1779,38 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
                           <tr className="font-bold bg-slate-50">
                             <td className="border border-black p-1 text-center">e</td>
-                            <td className="border border-black p-1" colSpan="5">รวมราคาค่าใช้จ่ายอื่นๆ (ไม่รวมภาษีฯ) (รวมข้อ d)</td>
+                            <td className="border border-black p-1" colSpan="7">รวมราคาค่าใช้จ่ายอื่นๆ (ไม่รวมภาษีฯ) (รวมข้อ d)</td>
                             <td className="border border-black p-1 text-right font-mono">{sumOtherExpenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                           </tr>
                           <tr className="font-bold bg-slate-50">
                             <td className="border border-black p-1 text-center">f</td>
-                            <td className="border border-black p-1" colSpan="5">ภาษีมูลค่าเพิ่ม (Vat 7%)</td>
+                            <td className="border border-black p-1" colSpan="7">ภาษีมูลค่าเพิ่ม (Vat 7%)</td>
                             <td className="border border-black p-1 text-right font-mono">{vatAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                           </tr>
                           <tr className="font-bold bg-slate-50">
                             <td className="border border-black p-1 text-center">g</td>
-                            <td className="border border-black p-1" colSpan="5">รวมราคาค่าใช้จ่ายอื่นๆ (รวมภาษีฯ) (ข้อ e + ข้อ f)</td>
+                            <td className="border border-black p-1" colSpan="7">รวมราคาค่าใช้จ่ายอื่นๆ (รวมภาษีฯ) (ข้อ e + ข้อ f)</td>
                             <td className="border border-black p-1 text-right font-mono">{totalOtherWithVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                           </tr>
                           <tr className="font-bold bg-cyan-100 text-cyan-950">
                             <td className="border border-black p-1 text-center">h</td>
-                            <td className="border border-black p-1" colSpan="5">รวมราคาค่าดำเนินการซ่อมท่อ (รวมภาษีฯ) (ข้อ c + ข้อ g)</td>
+                            <td className="border border-black p-1" colSpan="7">รวมราคาค่าดำเนินการซ่อมท่อ (รวมภาษีฯ) (ข้อ c + ข้อ g)</td>
                             <td className="border border-black p-1 text-right font-mono text-[11px]">{grandTotalWithVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                           </tr>
 
                           <tr className="font-bold bg-slate-100">
                             <td className="border border-black p-1 text-center">i</td>
-                            <td className="border border-black p-1" colSpan="2">รูปแบบการจ้างเหมาซ่อมท่อฯ</td>
-                            <td className="border border-black p-1 text-center text-red-700 underline" colSpan="4">{applyFactorF ? 'นิติบุคคล' : 'บุคคลธรรมดา'}</td>
+                            <td className="border border-black p-1" colSpan="3">รูปแบบการจ้างเหมาซ่อมท่อฯ</td>
+                            <td className="border border-black p-1 text-center text-red-700 underline" colSpan="5">{applyFactorF ? 'นิติบุคคล' : 'บุคคลธรรมดา'}</td>
                           </tr>
                           <tr className="font-bold bg-slate-50">
                             <td className="border border-black p-1 text-center"></td>
-                            <td className="border border-black p-1" colSpan="5">{applyFactorF ? 'ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น (ไม่รวมภาษีมูลค่าเพิ่ม)' : 'ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น (ไม่รวมภาษีมูลค่าเพิ่ม)'}</td>
+                            <td className="border border-black p-1" colSpan="7">{applyFactorF ? 'ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น (ไม่รวมภาษีมูลค่าเพิ่ม)' : 'ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น (ไม่รวมภาษีมูลค่าเพิ่ม)'}</td>
                             <td className="border border-black p-1 text-right font-mono">{calcGrandTotalVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                           </tr>
                           <tr className="font-bold bg-emerald-100 text-emerald-950">
                             <td className="border border-black p-1 text-center">⭐</td>
-                            <td className="border border-black p-1 underline" colSpan="5">ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น</td>
+                            <td className="border border-black p-1 underline" colSpan="7">ค่าจ้างในการซ่อมท่อ เป็นเงินทั้งสิ้น</td>
                             <td className="border border-black p-1 text-right font-mono text-[11px] font-bold">{formattedGrandTotalFormatted}</td>
                           </tr>
                         </tbody>
