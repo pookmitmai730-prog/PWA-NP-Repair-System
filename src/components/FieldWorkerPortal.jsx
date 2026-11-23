@@ -81,25 +81,36 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
   // 📲 แจ้งเตือนรายงานไปยัง Telegram เฉพาะตอนช่างปิดงาน / บันทึกผลซ่อม (ไม่เรียกตอนแก้ไขใบงานที่ปิดแล้ว)
   const sendCloseJobTelegramReport = async (jobPayload) => {
     const statusLabel = jobPayload.status === 'UNREPAIRABLE'
-      ? '⚠️ รายงานซ่อมไม่ได้ (รอแก้ไข)'
-      : '✅ ปิดงานซ่อมท่อเรียบร้อยแล้ว';
+      ? '⚠️ *รายงานซ่อมไม่ได้ (ระบบ กปภ.)* ⚠️'
+      : '✅ *แจ้งปิดงานซ่อมสำเร็จ (กปภ.)* ✅';
 
     const latVal = jobPayload.latitude || '';
     const lngVal = jobPayload.longitude || '';
-    const mapLink = latVal && lngVal
-      ? `https://maps.google.com/?q=${latVal},${lngVal}`
-      : '-';
+    const mapLinkText = latVal && lngVal
+      ? `\n📍 [คลิกเปิดดูตำแหน่งบน Google Maps](https://www.google.com/maps?q=${latVal},${lngVal})`
+      : '';
+
+    const pipeSummaryText = jobPayload.pipeSize && jobPayload.pipeSize !== '-'
+      ? `${jobPayload.pipeType || '-'} (${jobPayload.pipeSize} มม.)`
+      : (jobPayload.pipeType || '-');
+
+    const firstPhoto = Array.isArray(jobPayload.afterImg) && jobPayload.afterImg.length > 0
+      ? jobPayload.afterImg[0]
+      : (typeof jobPayload.afterImg === 'string' && jobPayload.afterImg.trim() !== ''
+        ? jobPayload.afterImg.split(',')[0].trim()
+        : '');
 
     const messageLines = [
       statusLabel,
-      `เลขที่รับแจ้ง: ${jobPayload.receivedNo || '-'}`,
-      `หัวข้อ: ${jobPayload.issueType || '-'}`,
-      `สถานที่: ${jobPayload.location || '-'}`,
-      `ชนิด/ขนาดท่อ: ${jobPayload.pipeType || '-'} ${jobPayload.pipeSize && jobPayload.pipeSize !== '-' ? `${jobPayload.pipeSize} มม.` : ''}`.trim(),
-      `อุปกรณ์/หมายเหตุ: ${jobPayload.equipment || '-'}`,
-      `ทีมช่าง: ${jobPayload.technician || '-'}`,
-      `เวลาปิดงาน: ${jobPayload.closedAt || '-'}`,
-      ...(latVal && lngVal ? [`พิกัด: ${latVal}, ${lngVal}`, `แผนที่: ${mapLink}`] : [])
+      '',
+      `📌 *เลขที่รับแจ้ง:* \`${jobPayload.receivedNo || '-'}\``,
+      `📍 *สถานที่:* ${jobPayload.location || '-'}${mapLinkText}`,
+      `🔧 *ปัญหา:* ${jobPayload.issueType || '-'}`,
+      `🚰 *ชนิด/ขนาดท่อ:* ${pipeSummaryText}`,
+      `🛠 *อุปกรณ์/รายละเอียด:* ${jobPayload.equipment || '-'}`,
+      `👷‍♂️ *ทีมซ่อมผู้ปฏิบัติงาน:* ${jobPayload.technician || '-'}`,
+      `🕒 *เวลาปิดงาน:* ${jobPayload.closedAt || '-'}`,
+      ...(firstPhoto && firstPhoto.startsWith('http') ? ['', `🔗 [คลิกดูรูปภาพ/ผลการซ่อม](${firstPhoto})`] : [])
     ];
 
     try {
@@ -734,6 +745,7 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
 
     const jobDataPayload = {
       action: "archive_job",
+      fromWorkerClose: true,
       jobData: {
         id: targetJobId,
         JobID: targetJobId,
@@ -964,11 +976,9 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                   const uniqueJobKey = job.id || job.JobID || job.receivedNo || `worker-job-${index}`;
                   const currentStatus = normalizeStatus(job.status || job.Status);
                   
-                  // พิกัดจุดรั่ว (ถ้ามี)
                   const jobLat = job.latitude || job.Latitude;
                   const jobLng = job.longitude || job.Longitude;
 
-                  // 📸 รูปภาพที่เจ้าหน้าที่สำนักงานอัปโหลดมาตอนจ่ายงาน (หรือประชาชนแจ้งมา)
                   const rawCitizenImg = job.beforeImg || job.BeforeImg;
                   const parsedCitizenImages = parseImages(rawCitizenImg);
 
@@ -1025,7 +1035,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                           <span>{locationText}</span>
                         </p>
 
-                        {/* 📸 แสดงรูปภาพหน้างานที่เจ้าหน้าที่/แอดมินอัปโหลดมาตอนจ่ายงาน */}
                         {parsedCitizenImages.length > 0 && (
                           <div className="pt-2">
                             <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1 mb-1.5">
@@ -1050,7 +1059,6 @@ export default function FieldWorkerPortal({ jobs, onUpdateJobStatus, teams, onLo
                           </div>
                         )}
 
-                        {/* 🗺️ ปุ่มนำทางพิกัดแผนที่ (แสดงเฉพาะเมื่อมีข้อมูลพิกัด) */}
                         {jobLat && jobLng && (
                           <div className="pt-2 flex flex-wrap gap-1.5">
                             <a
