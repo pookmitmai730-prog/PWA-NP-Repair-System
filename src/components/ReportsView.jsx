@@ -439,7 +439,7 @@ export default function ReportsView({ jobs, currentUser }) {
             <div class="section-title">ภาพหลังซ่อมเสร็จ (${imagesAfter.length} รูป)</div>
             ${imagesAfter.length > 0 ? `<div class="img-grid">${imagesAfter.map(src => `<div class="img-card"><img src="${src}" /></div>`).join('')}</div>` : '<div class="no-img">ไม่มีรูปภาพหลังซ่อม</div>'}
           </div>
-          <div class="info-box section-block" style="margin-top: 15px;">
+          <div className="info-box section-block" style="margin-top: 15px;">
             <strong>รายละเอียด/อุปกรณ์ที่ใช้:</strong> ${job.Equipment || job.equipment || job.Description || job.Notes || '-'}
           </div>
           <div class="signature-section">
@@ -599,7 +599,7 @@ export default function ReportsView({ jobs, currentUser }) {
           {Object.keys(teamSummary).length === 0 ? (
             <p className="text-xs text-slate-400 py-2">ยังไม่มีข้อมูลงานที่ซ่อมเสร็จสิ้น</p>
           ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            <div className="space-y-2">
               {Object.entries(teamSummary).map(([teamName, count]) => (
                 <div key={teamName} className="bg-slate-50 border border-slate-200/80 p-3 rounded-2xl flex justify-between items-center shadow-2xs">
                   <span className="text-xs font-bold text-slate-700 truncate">{teamName}</span>
@@ -623,7 +623,7 @@ export default function ReportsView({ jobs, currentUser }) {
           {pipeSummaryEntries.length === 0 ? (
             <p className="text-xs text-slate-400 py-4 text-center">ยังไม่มีข้อมูลชนิดและขนาดท่อในช่วงเวลานี้</p>
           ) : (
-            <div className="space-y-3 max-h-56 overflow-y-auto pr-2">
+            <div className="space-y-3">
               {pipeSummaryEntries.map(([pipeInfo, data], idx) => {
                 const percentage = Math.round((data.count / maxPipeCount) * 100);
                 return (
