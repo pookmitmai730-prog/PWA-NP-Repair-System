@@ -473,7 +473,7 @@ export default function ReportsView({ jobs, currentUser }) {
           </h2>
           <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            การประปาส่วนภูมิภาคสาขานครพนม • เชื่อมต่อฐานข้อมูล Google Sheets สำเร็จ[cite: 8]
+            การประปาส่วนภูมิภาคสาขานครพนม • เชื่อมต่อฐานข้อมูล Google Sheets สำเร็จ
           </p>
         </div>
 
@@ -615,7 +615,7 @@ export default function ReportsView({ jobs, currentUser }) {
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
               <Layers className="w-4 h-4 text-orange-600" />
-              สรุปชนิดและขนาดท่อที่ใช้ซ่อม (เรียงจากท่อใหญ่ไปเล็ก) พร้อมกราฟแท่งแสดงผล[cite: 8]
+              สรุปชนิดและขนาดท่อที่ใช้ซ่อม (เรียงจากท่อใหญ่ไปเล็ก) พร้อมกราฟแท่งแสดงผล
             </h3>
             <span className="text-[10px] text-slate-400 bg-slate-100 px-2.5 py-1 rounded-xl font-bold">ตามเงื่อนไขที่เลือก</span>
           </div>
