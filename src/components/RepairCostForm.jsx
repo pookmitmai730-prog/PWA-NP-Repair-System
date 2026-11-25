@@ -1038,7 +1038,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
             {/* แถบเลือกหมวดหมู่ 1-6 */}
             <div className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
               {[
-                { key: 'cat1', label: 'หมวดที่ 1: งานทุบสกัดสิ่งก่อสร้างตามชนิดพื้นผิว' },
+                { key: 'cat1', label: 'หมวดที่ 1: งานทุบสกัดพื้นผิวเดิม' },
                 { key: 'cat2', label: 'หมวดที่ 2: งานวางท่อ' },
                 { key: 'cat3', label: 'หมวดที่ 3: อุปกรณ์ประกอบท่อ' },
                 { key: 'cat4', label: 'หมวดที่ 4: งานคืนสภาพผิวเดิม' },
@@ -1151,7 +1151,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
             {/* แสดงรายการที่เลือกแยกตามหมวด 1-6 */}
             <div className="space-y-3 pt-2">
               {[
-                { key: 'cat1', title: 'หมวดที่ 1: งานทุบสกัดสิ่งก่อสร้างตามชนิดพื้นผิว' },
+                { key: 'cat1', title: 'หมวดที่ 1: งานทุบสกัดพื้นผิวเดิม' },
                 { key: 'cat2', title: 'หมวดที่ 2: งานวางท่อ' },
                 { key: 'cat3', title: 'หมวดที่ 3: อุปกรณ์ประกอบท่อ' },
                 { key: 'cat4', title: 'หมวดที่ 4: งานคืนสภาพผิวเดิม' },
@@ -1687,8 +1687,8 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                         </thead>
                         <tbody>
                           {[
-                            { key: 'cat1', num: '1', title: 'หมวดที่ 1: งานสกัดพื้น' },
-                            { key: 'cat2', num: '2', title: 'หมวดที่ 2: งานทุบสกัดพื้นผิวเดิม' },
+                            { key: 'cat1', num: '1', title: 'หมวดที่ 1: งานทุบสกัดพื้นผิวเดิม' },
+                            { key: 'cat2', num: '2', title: 'หมวดที่ 2: งานวางท่อ' },
                             { key: 'cat3', num: '3', title: 'หมวดที่ 3: อุปกรณ์ประกอบท่อ' },
                             { key: 'cat4', num: '4', title: 'หมวดที่ 4: งานคืนสภาพผิวเดิม' },
                             { key: 'cat5', num: '5', title: 'หมวดที่ 5: ค่าแรงจ้างเหมาซ่อมท่อ (ต่อจุด)' },
