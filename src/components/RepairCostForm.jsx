@@ -1688,7 +1688,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                         <tbody>
                           {[
                             { key: 'cat1', num: '1', title: 'หมวดที่ 1: งานสกัดพื้น' },
-                            { key: 'cat2', num: '2', title: 'หมวดที่ 2: งานวางท่อ' },
+                            { key: 'cat2', num: '2', title: 'หมวดที่ 2: งานทุบสกัดพื้นผิวเดิม' },
                             { key: 'cat3', num: '3', title: 'หมวดที่ 3: อุปกรณ์ประกอบท่อ' },
                             { key: 'cat4', num: '4', title: 'หมวดที่ 4: งานคืนสภาพผิวเดิม' },
                             { key: 'cat5', num: '5', title: 'หมวดที่ 5: ค่าแรงจ้างเหมาซ่อมท่อ (ต่อจุด)' },
