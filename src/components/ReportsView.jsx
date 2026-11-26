@@ -4,7 +4,7 @@ import { Calendar, TrendingUp, CheckCircle2, Clock, Wrench, FileText, Eye, X, Do
 // 🌐 URL ของ Google Apps Script Web App หลัก
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbydqD3x19rIfyttJPLhZung7NxIBh4LXetkGlZbhW4GmqLtJ-LI6HQ0vX-p_vrJ-QsH9w/exec";
 
-export default function ReportsView({ jobs, currentUser }) {
+export default function ReportsView({ jobs, currentUser, teams = [], workerAccounts = [] }) {
   const [reportType, setReportType] = useState('all');
   
   // 📅 State สำหรับตัวเลือกช่วงวันที่ค้นหา (Custom Date Range)
@@ -26,6 +26,100 @@ export default function ReportsView({ jobs, currentUser }) {
   const [jobToDelete, setJobToDelete] = useState(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
+
+  const normalizeTeamKey = (name) => {
+    let clean = String(name || '').trim();
+    if (clean.includes('(')) {
+      clean = clean.split('(')[0].trim();
+    }
+    return clean.replace(/\s+/g, ' ').toLowerCase();
+  };
+
+  const isContractorEntry = (entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    if (entry.isContractor === true || entry.IsContractor === true) return true;
+
+    const combinedText = [
+      entry.teamName,
+      entry.TeamName,
+      entry.name,
+      entry.Name,
+      entry.role,
+      entry.Role,
+      entry.type,
+      entry.Type,
+      entry.teamType,
+      entry.TeamType,
+      entry.category,
+      entry.Category,
+      entry.status,
+      entry.Status,
+      entry.notes,
+      entry.Notes,
+      entry.remark,
+      entry.Remark
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return combinedText.includes('ผู้รับจ้าง') || combinedText.includes('contractor');
+  };
+
+  const getTeamsList = () => {
+    const rawSource = Array.isArray(teams) && teams.length > 0
+      ? teams
+      : (teams && typeof teams === 'object' && Object.keys(teams).length > 0
+        ? Object.values(teams)
+        : (Array.isArray(workerAccounts) && workerAccounts.length > 0
+          ? workerAccounts
+          : (workerAccounts && typeof workerAccounts === 'object' ? Object.values(workerAccounts) : [])));
+
+    return Array.isArray(rawSource) ? rawSource : [];
+  };
+
+  // 👷 ฟังก์ชันจัดรูปแบบชื่อทีมช่าง โดยตรวจสอบจากตาราง Teams และเติม "(ผู้รับจ้างซ่อมท่อ)" ต่อท้ายหากเป็นผู้รับจ้าง
+  const formatContractorTeamLabel = (rawTech, job = null) => {
+    let baseName = String(rawTech || 'ไม่ระบุทีม').trim();
+    if (!baseName) baseName = 'ไม่ระบุทีม';
+
+    if (baseName.includes('(')) {
+      baseName = baseName.split('(')[0].trim();
+    }
+
+    const normalizedTarget = normalizeTeamKey(baseName);
+    const teamsList = getTeamsList();
+
+    const matchedTeam = teamsList.find((t) => {
+      const candidateName = t?.teamName || t?.TeamName || t?.name || t?.Name || '';
+      return candidateName && normalizeTeamKey(candidateName) === normalizedTarget;
+    });
+
+    const matchedIsContractor = matchedTeam ? isContractorEntry(matchedTeam) : false;
+
+    const contractorFlag = String(
+      job?.isContractor ||
+      job?.IsContractor ||
+      job?.contractorType ||
+      job?.ContractorType ||
+      job?.teamType ||
+      job?.TeamType ||
+      ''
+    ).toLowerCase();
+
+    const isContractor =
+      matchedIsContractor ||
+      baseName.includes('ผู้รับจ้าง') ||
+      contractorFlag.includes('ผู้รับจ้าง') ||
+      contractorFlag.includes('contractor');
+
+    const suffix = ' (ผู้รับจ้างซ่อมท่อ)';
+    if (isContractor && !baseName.endsWith(suffix) && !baseName.includes('ผู้รับจ้างซ่อมท่อ')) {
+      return `${baseName}${suffix}`;
+    }
+
+    return baseName;
+  };
 
   // 📅 ฟังก์ชันแปลงวันที่ในรูปแบบ พ.ศ. สำหรับแสดงผลสวยๆ (เช่น 1 ก.ย. 2569)
   const formatShortThaiDate = (dateStr) => {
@@ -187,14 +281,13 @@ export default function ReportsView({ jobs, currentUser }) {
     setCurrentPage(1);
   };
 
+  // 👷 สรุปผลงานซ่อมเสร็จ แยกตามทีมช่าง (ตรวจสอบจากตาราง Teams และเติม "(ผู้รับจ้างซ่อมท่อ)" ต่อท้ายหากเป็นผู้รับจ้าง)
   const teamSummary = filteredJobs
     .filter(j => j.Status === 'COMPLETED' || j.status === 'COMPLETED')
     .reduce((acc, job) => {
-      let techName = job.Technician || job.technician || 'ไม่ระบุทีม';
-      if (techName.includes('(')) {
-        techName = techName.split('(')[0].trim();
-      }
-      acc[techName] = (acc[techName] || 0) + 1;
+      const rawTech = job.Technician || job.technician || 'ไม่ระบุทีม';
+      const formattedTeamName = formatContractorTeamLabel(rawTech, job);
+      acc[formattedTeamName] = (acc[formattedTeamName] || 0) + 1;
       return acc;
     }, {});
 
@@ -361,6 +454,16 @@ export default function ReportsView({ jobs, currentUser }) {
     const imagesInProg = parseImages(job.InProgImg || job.inProgImg);
     const imagesAfter = parseImages(job.AfterImg || job.afterImg);
 
+    const lat = job.Latitude || job.latitude || '';
+    const lng = job.Longitude || job.longitude || '';
+    const hasCoords = lat !== '' && lng !== '' && !isNaN(parseFloat(lat)) && !isNaN(parseFloat(lng));
+    const coordsText = hasCoords ? `${lat}, ${lng}` : 'ไม่ระบุพิกัด GPS';
+    const mapsLinkHtml = hasCoords
+      ? `<a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener noreferrer" style="color: #059669; text-decoration: underline; font-weight: bold;">${coordsText}</a>`
+      : `<span style="color: #64748b;">${coordsText}</span>`;
+
+    const displayTechnician = formatContractorTeamLabel(job.Technician || job.technician || '-', job);
+
     const newWindow = window.open('', '_blank');
     if (!newWindow) {
       alert("กรุณาอนุญาตให้เบราว์เซอร์เปิดหน้าต่างป๊อปอัป (Popup) เพื่อดูรายงาน A4");
@@ -379,23 +482,30 @@ export default function ReportsView({ jobs, currentUser }) {
           @page { size: A4 portrait; margin: 12mm; }
           body { font-family: 'Sarabun', 'Tahoma', sans-serif; margin: 0; padding: 15px; color: #1e293b; background: #fff; -webkit-print-color-adjust: exact; }
           .container { max-width: 750px; margin: 0 auto; background: white; }
-          .header-wrapper { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 15px; }
-          .logo { width: 60px; height: 60px; object-fit: contain; }
-          .header-text { flex-grow: 1; text-align: center; margin-right: 60px; }
+          .header-wrapper { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 14px; gap: 12px; }
+          .logo { width: 58px; height: 58px; object-fit: contain; flex-shrink: 0; }
+          .header-text { flex-grow: 1; text-align: center; }
           .header-text h1 { font-size: 18px; margin: 0; color: #0f172a; font-weight: bold; }
-          .header-text h2 { font-size: 14px; margin: 4px 0 0 0; color: #2563eb; font-weight: bold; }
+          .header-text h2 { font-size: 14px; margin: 3px 0 0 0; color: #2563eb; font-weight: bold; }
+          .header-coord-bar { margin-top: 8px; padding-top: 7px; border-top: 1px dashed #cbd5e1; font-size: 11.5px; color: #0f172a; display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+          .header-spacer { width: 58px; flex-shrink: 0; }
           .info-box { background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px 15px; border-radius: 8px; margin-bottom: 15px; font-size: 12px; line-height: 1.6; }
-          .info-row { display: flex; justify-content: space-between; margin-top: 6px; border-top: 1px solid #e2e8f0; padding-top: 6px; }
+          .info-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; border-top: 1px solid #e2e8f0; padding-top: 6px; }
           .section-block { page-break-inside: avoid; margin-bottom: 15px; }
-          .section-title { font-weight: bold; font-size: 12px; background: #e2e8f0; color: #1e293b; padding: 6px 10px; margin-bottom: 8px; border-radius: 5px; text-transform: uppercase; }
+          .section-title { font-weight: bold; font-size: 12px; background: #e2e8f0; color: #1e293b; padding: 6px 10px; margin-bottom: 8px; border-radius: 5px; }
           .img-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-          .img-card { border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; height: 130px; display: flex; align-items: center; justify-content: center; background: #f1f5f9; page-break-inside: avoid; }
-          .img-card img { width: 100%; height: 100%; object-fit: cover; }
+          .img-card { border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; min-height: 150px; padding: 6px; display: flex; align-items: center; justify-content: center; background: #f8fafc; page-break-inside: avoid; box-sizing: border-box; }
+          .img-card img { width: 100%; height: auto; max-height: 210px; object-fit: contain; display: block; border-radius: 4px; }
           .no-img { font-size: 11px; color: #94a3b8; text-align: center; padding: 12px; border: 1px dashed #cbd5e1; border-radius: 6px; }
           .signature-section { margin-top: 30px; display: flex; justify-content: flex-end; page-break-inside: avoid; }
           .signature-box { text-align: center; width: 240px; font-size: 12px; line-height: 1.8; }
           .print-btn { display: block; width: 100%; background: #059669; color: white; border: none; padding: 10px; font-size: 13px; font-weight: bold; border-radius: 8px; cursor: pointer; margin-bottom: 15px; text-align: center; }
-          @media print { .print-btn { display: none; } body { padding: 0; background: none; } .container { border: none; padding: 0; width: 100%; } }
+          @media print {
+            .print-btn { display: none; }
+            body { padding: 0; background: none; }
+            .container { border: none; padding: 0; width: 100%; max-width: 100%; }
+            .img-card img { max-height: 195px; }
+          }
         </style>
       </head>
       <body>
@@ -406,12 +516,18 @@ export default function ReportsView({ jobs, currentUser }) {
             <div class="header-text">
               <h1>การประปาส่วนภูมิภาคสาขานครพนม</h1>
               <h2>รายงานผลการปฏิบัติงานซ่อมท่อประปา</h2>
+              <div class="header-coord-bar">
+                <span><strong>เลขที่รับแจ้ง:</strong> <span style="font-family: monospace; color: #2563eb; font-weight: bold;">${job.JobID || job.receivedNo || '-'}</span></span>
+                <span><strong>พิกัดจุดซ่อมท่อ:</strong> ${mapsLinkHtml}</span>
+              </div>
             </div>
+            <div class="header-spacer"></div>
           </div>
           <div class="info-box">
             <div><strong>เลขที่รับแจ้ง:</strong> <span style="font-family: monospace; color: #2563eb; font-weight: bold;">${job.JobID || job.receivedNo}</span></div>
             ${job.smart1662No ? `<div><strong>เลขที่ปิดงานซ่อม Smart 1662:</strong> <span style="font-family: monospace; color: #0891b2; font-weight: bold;">${job.smart1662No}</span></div>` : ''}
             <div><strong>สถานที่ซ่อม:</strong> ${job.Location || '-'}</div>
+            <div><strong>พิกัดจุดซ่อมท่อ:</strong> ${mapsLinkHtml}</div>
             ${job.PipeType || job.PipeSize ? `
               <div style="margin-top: 6px; border-top: 1px solid #e2e8f0; padding-top: 6px;">
                 <strong>วัสดุท่อที่ซ่อม:</strong> 
@@ -420,7 +536,7 @@ export default function ReportsView({ jobs, currentUser }) {
             ` : ''}
             <div class="info-row">
               <span><strong>ผู้แจ้ง:</strong> ${job.ReporterName || '-'} (${job.Phone || '-'})</span>
-              <span><strong>ทีมช่างซ่อม:</strong> ${job.Technician || '-'}</span>
+              <span><strong>ทีมช่างซ่อม:</strong> ${displayTechnician}</span>
             </div>
             <div class="info-row">
               <span><strong>วันเวลาที่รับแจ้ง:</strong> ${formatThaiDate(job.Timestamp)}</span>
@@ -603,7 +719,7 @@ export default function ReportsView({ jobs, currentUser }) {
               {Object.entries(teamSummary).map(([teamName, count]) => (
                 <div key={teamName} className="bg-slate-50 border border-slate-200/80 p-3 rounded-2xl flex justify-between items-center shadow-2xs">
                   <span className="text-xs font-bold text-slate-700 truncate">{teamName}</span>
-                  <span className="bg-indigo-600 text-white text-xs font-bold px-2.5 py-1 rounded-xl shadow-2xs">{count} จุด</span>
+                  <span className="bg-indigo-600 text-white text-xs font-bold px-2.5 py-1 rounded-xl shadow-2xs shrink-0 ml-2">{count} จุด</span>
                 </div>
               ))}
             </div>
@@ -987,12 +1103,12 @@ export default function ReportsView({ jobs, currentUser }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 font-sans">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 space-y-4">
             <h3 className="font-bold text-slate-900 text-sm">ระบุเลขที่ปิดงานซ่อม Smart 1662</h3>
-            <p className="text-xs text-slate-500 font-mono">JobID: {selectedJobForPrint.JobID}</p>
+            <p className="text-xs text-slate-500 font-mono">เลขที่รับแจ้ง: {selectedJobForPrint.JobID}</p>
             <input
               type="text"
               value={smart1662Input}
               onChange={(e) => setSmart1662Input(e.target.value)}
-              placeholder="เช่น RXXXXXXXX"
+              placeholder="กรุณากรอกเลข R เช่น RXXXXXXXX"
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono"
               autoFocus
             />
