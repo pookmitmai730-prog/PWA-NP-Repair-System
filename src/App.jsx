@@ -516,7 +516,13 @@ export default function App() {
         </main>
       )}
 
-      {currentView === 'reports' && <ReportsView jobs={jobs} />}
+      {currentView === 'reports' && (
+        <ReportsView
+          jobs={jobs}
+          teams={workerAccounts}
+          workerAccounts={workerAccounts}
+        />
+      )}
       {currentView === 'report_repair_cost' && <RepairCostReportView jobs={jobs} />}
       {currentView === 'report_dma_repair' && <DMARepairReportView jobs={jobs} />}
 
