@@ -1534,7 +1534,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                 <p className="text-center text-slate-400 py-8 text-xs">ไม่พบประวัติการเบิกซ่อมที่ค้นหา</p>
               ) : (
                 filteredHistoryList.map((item, idx) => (
-                  <div key={`hist-${idx}`} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap justify-between items-center gap-3">
+                  <div key={`hist-${item.Job_ID || item.jobId || idx}-${idx}`} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap justify-between items-center gap-3">
                     <div className="space-y-1 text-xs">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-blue-600 font-mono">Job ID: {item.Job_ID || item.jobId || '-'}</span>
@@ -1553,18 +1553,22 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                         value={item.R_Number || ''}
                         onChange={(e) => {
                           const val = e.target.value;
-                          setSavedRepairCosts(savedRepairCosts.map((s, sIdx) => sIdx === idx ? { ...s, R_Number: val } : s));
+                          setSavedRepairCosts(prev => prev.map((s) => (
+                            s === item || String(s.Job_ID || s.jobId || '') === String(item.Job_ID || item.jobId || '')
+                              ? { ...s, R_Number: val }
+                              : s
+                          )));
                           if (selectedJob && String(selectedJob.JobID || selectedJob.id || selectedJob[0]) === String(item.Job_ID || item.jobId)) {
                             setRNumber(val);
                           }
                         }}
                         placeholder="เลขคำสั่งงาน (เช่น R...)"
-                        className="w-36 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 outline-none"
+                        className="w-36 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
                         title="แก้ไขคำสั่งงานเลขที่สำหรับรายการนี้"
                       />
                       <button
                         type="button"
-                        onClick={() => handleEditHistoryItem(item)}
+                        onClick={() => handleEditHistoryItem({ ...item, R_Number: item.R_Number || '' })}
                         className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
                       >
                         <Edit3 className="w-3.5 h-3.5"/> เลือกแก้ไข/พรีวิว
@@ -2001,8 +2005,12 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                   <div className="pl-3">
                     <p>จึงเรียนมาเพื่อโปรดแจ้งผู้เกี่ยวข้องดำเนินการต่อไป จะขอบคุณยิ่ง</p>
                   </div>
-                  <div className="pt-0.5 text-right pr-4 font-bold">
-                    ลงชื่อ.............................................................. (ผู้รับแจ้ง)
+                  <div className="pt-1 pr-6 flex justify-end">
+                    <div className="inline-block leading-snug">
+                      <p className="whitespace-nowrap">ลงชื่อ .................................................... (ผู้รับแจ้ง)</p>
+                      <p className="text-center">({selectedJob.ReceiverName || selectedJob.receiverName || 'นางวิริยา เพชรวิชิต'})</p>
+                      <p className="text-center">{selectedJob.ReceiverPosition || selectedJob.receiverPosition || 'พนักงานการเงินและบัญชี 6'}</p>
+                    </div>
                   </div>
                 </div>
 
