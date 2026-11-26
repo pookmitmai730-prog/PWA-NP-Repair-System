@@ -34,6 +34,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const tileLayerRef = useRef(null);
   const markerRef = useRef(null);
 
+  // 🔒 Ref ป้องกันการส่งแจ้งเตือน Telegram ซ้ำ 2 รอบในระยะเวลาใกล้กัน
+  const recentTelegramRef = useRef(new Map());
+
   const [pipelineSearch, setPipelineSearch] = useState('');
 
   // 📄 State สำหรับการแบ่งหน้าสถานะ "ซ่อมเสร็จสิ้น" (หน้าละ 10 รายการ)
@@ -328,9 +331,33 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     setIsMapModalOpen(false);
   };
 
+  // 🔔 ส่งแจ้งเตือนเข้า Telegram พร้อมตัวกันยิงซ้ำ 2 รอบ
   const sendTelegramNotification = async (jobPayload) => {
     if (!ENABLE_TELEGRAM_NOTIFY) return; 
     if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return;
+
+    const dedupKey = [
+      jobPayload.receivedNo || '',
+      jobPayload.status || jobPayload.Status || '',
+      jobPayload.technician || '',
+      jobPayload.urgency || '',
+      jobPayload.dispatchedAt || ''
+    ].join('|');
+
+    const now = Date.now();
+    const lastSentTime = recentTelegramRef.current.get(dedupKey);
+    // หากเพิ่งส่งข้อความเดียวกันภายใน 8 วินาที ให้ข้ามทันทีเพื่อกันยิงซ้ำ 2 รอบ
+    if (lastSentTime && now - lastSentTime < 8000) {
+      return;
+    }
+    recentTelegramRef.current.set(dedupKey, now);
+
+    // ล้างรายการเก่าที่เกิน 1 นาทีออกเพื่อไม่ให้ Map โตเกินไป
+    for (const [key, ts] of recentTelegramRef.current.entries()) {
+      if (now - ts > 60000) {
+        recentTelegramRef.current.delete(key);
+      }
+    }
     
     const displayPhone = jobPayload.phone ? String(jobPayload.phone).replace(/^'/, '') : '-';
 
@@ -363,6 +390,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         });
       }
     } catch (err) {
+      recentTelegramRef.current.delete(dedupKey);
       console.error("Telegram error:", err);
     }
   };
@@ -612,10 +640,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     alert("เปลี่ยนทีมช่างและอัปเดตข้อมูลเรียบร้อยแล้ว");
   };
 
+  // เปิด Modal แก้ไขข้อมูลได้ทุกสถานะ (รวมถึง COMPLETED)
   const handleOpenAdminEdit = (job) => {
-    // ล็อกสถานะซ่อมเสร็จสิ้น (COMPLETED) ไม่ให้เปิดแก้ไข
-    if (normalizeStatus(job.status || job.Status) === 'COMPLETED') return;
-
     setEditingAdminJob(job);
     const currentUrgency = job.Notes || job.notes || job.urgency || job.Urgency || job.urgencyLevel || 'ปกติ';
     const rawPhone = job.phone || job.Phone || '';
@@ -634,14 +660,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
   const handleSaveAdminEdit = async (e) => {
     e.preventDefault();
-    if (!editingAdminJob) return;
+    if (!editingAdminJob || isSavingAdminEdit) return;
 
     const currentJobStatus = editingAdminJob.status || editingAdminJob.Status || 'PENDING';
-    if (normalizeStatus(currentJobStatus) === 'COMPLETED') {
-      setEditingAdminJob(null);
-      return;
-    }
-
     const cleanNewReceivedNo = String(adminEditForm.receivedNo || '').trim();
     const cleanOldReceivedNo = String(adminEditForm.oldReceivedNo || '').trim();
 
@@ -698,7 +719,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
         })
       });
 
-      // 2. หากมีการแก้ไขเลขที่รับแจ้ง ให้ตรวจสอบและอัปเดตในตาราง RepairCosts (Repaircost) ด้วย
+      // 2. หากมีการแก้ไขเลขที่รับแจ้ง ให้ตรวจสอบและอัปเดตในตาราง RepairCost / RepairCosts ด้วย
       let repairCostSyncMsg = "";
       if (isJobIdChanged) {
         const syncRes = await fetch(WEB_APP_URL, {
@@ -711,11 +732,18 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
             newLocation: adminEditForm.location
           })
         });
-        const syncResult = await syncRes.json();
-        if (syncResult && syncResult.updatedCount > 0) {
-          repairCostSyncMsg = `\n(พบและอัปเดตเลขที่ใบงานในตาราง RepairCosts จำนวน ${syncResult.updatedCount} รายการเรียบร้อยแล้ว)`;
+
+        let syncResult = null;
+        try {
+          syncResult = await syncRes.json();
+        } catch (parseErr) {
+          console.warn("Non-JSON response from sync_repair_cost_job_id:", parseErr);
+        }
+
+        if (syncResult && Number(syncResult.updatedCount) > 0) {
+          repairCostSyncMsg = `\n(พบและอัปเดตเลขที่ใบงานในตาราง RepairCost จำนวน ${syncResult.updatedCount} รายการเรียบร้อยแล้ว)`;
         } else {
-          repairCostSyncMsg = `\n(ตรวจสอบตาราง RepairCosts แล้ว ยังไม่มีใบเบิกจ้างซ่อมของเลขที่เดิม)`;
+          repairCostSyncMsg = `\n(ตรวจสอบตาราง RepairCost แล้ว ไม่พบเลขที่รับแจ้งเดิมหรืออัปเดตเรียบร้อยแล้ว)`;
         }
       }
 
@@ -890,17 +918,15 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                     return (
                       <div key={uniqueJobKey} className={`bg-white p-4 rounded-2xl shadow-sm border transition space-y-2.5 relative ${isUnrepairable ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-100 hover:shadow-md'}`}>
                         
-                        {!isCompletedJob && (
-                          <button
-                            onClick={() => handleOpenAdminEdit(job)}
-                            className="absolute top-3 right-3 p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
-                            title="แก้ไขข้อมูล"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => handleOpenAdminEdit(job)}
+                          className="absolute top-3 right-3 p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                          title="แก้ไขข้อมูล"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
 
-                        <div className={`flex justify-between items-start ${!isCompletedJob ? 'pr-6' : ''}`}>
+                        <div className="flex justify-between items-start pr-6">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-mono font-bold text-blue-600 text-xs bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
                               {getDisplayReceivedNo(job)}
@@ -1481,7 +1507,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                 </div>
                 <div>
                   <h4 className="font-bold text-sm tracking-wide">แก้ไขข้อมูลใบงาน</h4>
-                  <p className="text-[11px] text-blue-100 opacity-90">แก้ไขข้อมูลรับแจ้ง (ระบบจะซิงค์เลขที่รับแจ้งกับตาราง RepairCosts อัตโนมัติ)</p>
+                  <p className="text-[11px] text-blue-100 opacity-90">แก้ไขข้อมูลรับแจ้ง (ระบบจะซิงค์เลขที่รับแจ้งกับตาราง RepairCost อัตโนมัติ)</p>
                 </div>
               </div>
               <button 
