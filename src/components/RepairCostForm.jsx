@@ -128,6 +128,11 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
 
   const [itemMaster, setItemMaster] = useState(DEFAULT_ITEMS_BY_CATEGORY);
   
+  const [officer, setOfficer] = useState({
+    name: 'นางวิริยา เพชรวิชิต',
+    position: 'พนักงานการเงินและบัญชี 6'
+  });
+
   const [signers, setSigners] = useState({
     committeeCheck: [
       { name: 'นายใหม่ ผูกมิตร', position: 'ประธานกรรมการฯ' },
@@ -248,6 +253,23 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
           const fetchedManagers = data.managers || [];
           const supervisor = fetchedManagers.find(m => String(m.position).includes('หัวหน้างาน') || String(m.position).includes('บริการ')) || fetchedManagers[1] || { name: 'นายราเมศร์ สันวิลาศ', position: 'หัวหน้างานบริการและควบคุมน้ำสูญเสีย' };
           const manager = fetchedManagers.find(m => String(m.position).includes('ผู้จัดการ')) || fetchedManagers[2] || { name: 'นายเกรียงศักดิ์ วรสุทธิ์', position: 'ผู้จัดการการประปาส่วนภูมิภาคสาขานครพนม' };
+
+          const allSigners = [
+            ...(Array.isArray(data.officer) ? data.officer : data.officer ? [data.officer] : []),
+            ...(Array.isArray(data.committeeCheck) ? data.committeeCheck : []),
+            ...(Array.isArray(data.committeeReceive) ? data.committeeReceive : []),
+            ...(Array.isArray(data.managers) ? data.managers : [])
+          ];
+          const foundOfficer = allSigners.find(
+            (item) => String(item?.category || '').trim().toLowerCase() === 'officer'
+          ) || (Array.isArray(data.officer) ? data.officer[0] : data.officer);
+
+          if (foundOfficer && (foundOfficer.name || foundOfficer.position)) {
+            setOfficer({
+              name: String(foundOfficer.name || '').trim() || 'นางวิริยา เพชรวิชิต',
+              position: String(foundOfficer.position || '').trim() || 'พนักงานการเงินและบัญชี 6'
+            });
+          }
 
           setSigners({
             committeeCheck: data.committeeCheck?.length ? data.committeeCheck : signers.committeeCheck,
@@ -780,7 +802,7 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
   const reporterPhone = selectedJob ? (selectedJob.Phone || selectedJob.phone || selectedJob[3] || '-') : '-';
   const jobLat = selectedJob ? (selectedJob.Latitude || selectedJob.latitude || selectedJob[17] || '17.4138') : '17.4138';
   const jobLng = selectedJob ? (selectedJob.Longitude || selectedJob.longitude || selectedJob[18] || '104.7944') : '104.7944';
-  const jobIssueType = selectedJob ? (selectedJob.Description || selectedJob.issueType || selectedJob[5] || 'ท่อแตก/ท่อรั่ว') : 'ท่อแตก/ท่อรั่ว';
+  const jobIssueType = selectedJob ? (selectedJob.IssueType || selectedJob.issueType || selectedJob[5] || 'ท่อแตก/ท่อรั่ว') : 'ท่อแตก/ท่อรั่ว';
   const jobTime = selectedJob ? (selectedJob.Time || selectedJob.time || '09:00') : '09:00';
   const jobClosedAtVal = selectedJob ? (selectedJob.ClosedAt || selectedJob.closedAt || selectedJob[15] || new Date()) : new Date();
 
@@ -2008,8 +2030,8 @@ export default function RepairCostForm({ jobs = [], onSubmitCost }) {
                   <div className="pt-1 pr-6 flex justify-end">
                     <div className="inline-block leading-snug">
                       <p className="whitespace-nowrap">ลงชื่อ .................................................... (ผู้รับแจ้ง)</p>
-                      <p className="text-center">({selectedJob.ReceiverName || selectedJob.receiverName || 'นางวิริยา เพชรวิชิต'})</p>
-                      <p className="text-center">{selectedJob.ReceiverPosition || selectedJob.receiverPosition || 'พนักงานการเงินและบัญชี 6'}</p>
+                      <p className="text-center">({officer.name})</p>
+                      <p className="text-center">{officer.position}</p>
                     </div>
                   </div>
                 </div>
