@@ -34,8 +34,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
   const tileLayerRef = useRef(null);
   const markerRef = useRef(null);
 
-  // 🔒 Ref ป้องกันการส่งแจ้งเตือน Telegram ซ้ำ 2 รอบในระยะเวลาใกล้กัน
-  const recentTelegramRef = useRef(new Map());
+  // 🔔 Ref กันการส่งแจ้งเตือน Telegram ซ้ำซ้อน
+  const sentTelegramKeysRef = useRef(new Set());
+  const inFlightTelegramKeysRef = useRef(new Set());
 
   const [pipelineSearch, setPipelineSearch] = useState('');
 
@@ -145,6 +146,10 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
   const getDisplayReceivedNo = (job) => {
     return job.receivedNo || job.JobID || job.id || '-';
+  };
+
+  const getDisplayOldJobId = (job) => {
+    return job.OldJobID || job.oldJobId || '';
   };
 
   // 🕒 ฟังก์ชันช่วยแปลงวันที่สำหรับนำมาเรียงลำดับ (จากปัจจุบันย้อนไปยังอดีต)
@@ -331,34 +336,23 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     setIsMapModalOpen(false);
   };
 
-  // 🔔 ส่งแจ้งเตือนเข้า Telegram พร้อมตัวกันยิงซ้ำ 2 รอบ
   const sendTelegramNotification = async (jobPayload) => {
     if (!ENABLE_TELEGRAM_NOTIFY) return; 
     if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return;
 
     const dedupKey = [
-      jobPayload.receivedNo || '',
-      jobPayload.status || jobPayload.Status || '',
-      jobPayload.technician || '',
-      jobPayload.urgency || '',
-      jobPayload.dispatchedAt || ''
+      String(jobPayload.receivedNo || '').trim(),
+      String(jobPayload.status || '').trim(),
+      String(jobPayload.technician || '').trim(),
+      String(jobPayload.dispatchedAt || '').trim(),
+      String(jobPayload.urgency || '').trim()
     ].join('|');
 
-    const now = Date.now();
-    const lastSentTime = recentTelegramRef.current.get(dedupKey);
-    // หากเพิ่งส่งข้อความเดียวกันภายใน 8 วินาที ให้ข้ามทันทีเพื่อกันยิงซ้ำ 2 รอบ
-    if (lastSentTime && now - lastSentTime < 8000) {
+    if (sentTelegramKeysRef.current.has(dedupKey) || inFlightTelegramKeysRef.current.has(dedupKey)) {
       return;
     }
-    recentTelegramRef.current.set(dedupKey, now);
 
-    // ล้างรายการเก่าที่เกิน 1 นาทีออกเพื่อไม่ให้ Map โตเกินไป
-    for (const [key, ts] of recentTelegramRef.current.entries()) {
-      if (now - ts > 60000) {
-        recentTelegramRef.current.delete(key);
-      }
-    }
-    
+    inFlightTelegramKeysRef.current.add(dedupKey);
     const displayPhone = jobPayload.phone ? String(jobPayload.phone).replace(/^'/, '') : '-';
 
     try {
@@ -389,9 +383,12 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
           })
         });
       }
+
+      sentTelegramKeysRef.current.add(dedupKey);
     } catch (err) {
-      recentTelegramRef.current.delete(dedupKey);
       console.error("Telegram error:", err);
+    } finally {
+      inFlightTelegramKeysRef.current.delete(dedupKey);
     }
   };
 
@@ -443,6 +440,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     
     const currentDateTime = getThaiTimestamp();
     const originalReceivedNo = getDisplayReceivedNo(selectedJobForDispatch);
+    const existingOldJobId = getDisplayOldJobId(selectedJobForDispatch);
 
     const rawPhone = selectedJobForDispatch.phone || selectedJobForDispatch.Phone || '-';
     const formattedPhone = formatPhoneForSheet(rawPhone);
@@ -455,6 +453,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       id: selectedJobForDispatch.id || selectedJobForDispatch.JobID || originalReceivedNo,
       JobID: originalReceivedNo,
       receivedNo: originalReceivedNo,
+      OldJobID: existingOldJobId,
+      oldJobId: existingOldJobId,
       reporterName: selectedJobForDispatch.reporterName || selectedJobForDispatch.ReporterName || 'ไม่ระบุชื่อ',
       ReporterName: selectedJobForDispatch.reporterName || selectedJobForDispatch.ReporterName || 'ไม่ระบุชื่อ',
       phone: formattedPhone,
@@ -501,6 +501,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
     onStatusChange(selectedJobForDispatch.id || selectedJobForDispatch.JobID, 'DISPATCHED', { 
       receivedNo: originalReceivedNo,
+      OldJobID: existingOldJobId,
+      oldJobId: existingOldJobId,
       technician: techDetails,
       techName: workerObj?.teamName || selectedTeam,
       techPhone: String(workerPhoneFormatted).replace(/^'/, ''),
@@ -567,6 +569,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
     const techDetails = workerObj ? `${workerObj.teamName} (${String(workerPhoneFormatted).replace(/^'/, '')})` : newSelectedTeam;
     const originalReceivedNo = getDisplayReceivedNo(editingTeamJob);
+    const existingOldJobId = getDisplayOldJobId(editingTeamJob);
     const currentDateTime = getThaiTimestamp();
     const existingInProgressAt = editingTeamJob.inProgressAt || editingTeamJob.InProgressAt
       ? formatThaiDateTimeString(editingTeamJob.inProgressAt || editingTeamJob.InProgressAt)
@@ -583,6 +586,8 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       id: editingTeamJob.id || editingTeamJob.JobID || originalReceivedNo,
       JobID: originalReceivedNo,
       receivedNo: originalReceivedNo,
+      OldJobID: existingOldJobId,
+      oldJobId: existingOldJobId,
       reporterName: editingTeamJob.reporterName || editingTeamJob.ReporterName || 'ไม่ระบุชื่อ',
       phone: formattedPhone,
       Phone: formattedPhone,
@@ -640,15 +645,15 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     alert("เปลี่ยนทีมช่างและอัปเดตข้อมูลเรียบร้อยแล้ว");
   };
 
-  // เปิด Modal แก้ไขข้อมูลได้ทุกสถานะ (รวมถึง COMPLETED)
   const handleOpenAdminEdit = (job) => {
     setEditingAdminJob(job);
     const currentUrgency = job.Notes || job.notes || job.urgency || job.Urgency || job.urgencyLevel || 'ปกติ';
     const rawPhone = job.phone || job.Phone || '';
     const currentReceivedNo = getDisplayReceivedNo(job);
+    const existingOldJobId = getDisplayOldJobId(job);
     
     setAdminEditForm({
-      oldReceivedNo: currentReceivedNo,
+      oldReceivedNo: existingOldJobId || currentReceivedNo,
       receivedNo: currentReceivedNo,
       reporterName: job.reporterName || job.ReporterName || '',
       phone: rawPhone ? String(rawPhone).replace(/^'/, '') : '',
@@ -660,11 +665,12 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
 
   const handleSaveAdminEdit = async (e) => {
     e.preventDefault();
-    if (!editingAdminJob || isSavingAdminEdit) return;
+    if (!editingAdminJob) return;
 
     const currentJobStatus = editingAdminJob.status || editingAdminJob.Status || 'PENDING';
     const cleanNewReceivedNo = String(adminEditForm.receivedNo || '').trim();
-    const cleanOldReceivedNo = String(adminEditForm.oldReceivedNo || '').trim();
+    const previousJobNo = String(getDisplayReceivedNo(editingAdminJob) || '').trim();
+    const existingOldJobId = String(getDisplayOldJobId(editingAdminJob) || '').trim();
 
     if (!cleanNewReceivedNo) {
       alert("กรุณาระบุเลขที่รับแจ้ง");
@@ -674,18 +680,24 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
     setIsSavingAdminEdit(true);
 
     const formattedPhone = formatPhoneForSheet(adminEditForm.phone);
-    // ใช้ ID เดิมในการค้นหาแถวในชีทงานแจ้งซ่อม
-    const targetId = editingAdminJob.id || editingAdminJob.JobID || cleanOldReceivedNo;
+    // คง id / เลขเดิมไว้เพื่ออัปเดตแถวเดิมในชีท ไม่สร้างเรคคอร์ดใหม่
+    const targetId = editingAdminJob.id || editingAdminJob.JobID || previousJobNo;
     const preservedTimestamp = editingAdminJob.receivedAt || editingAdminJob.Timestamp
       ? formatThaiDateTimeString(editingAdminJob.receivedAt || editingAdminJob.Timestamp)
       : getThaiTimestamp();
 
-    const isJobIdChanged = cleanOldReceivedNo !== cleanNewReceivedNo;
+    const preservedCompletedAt = editingAdminJob.completedAt || editingAdminJob.CompletedAt || editingAdminJob.closedAt || editingAdminJob.ClosedAt || '';
+    const isJobIdChanged = previousJobNo !== cleanNewReceivedNo;
+    const finalOldJobId = isJobIdChanged ? previousJobNo : existingOldJobId;
 
     const updatedData = {
-      action: "create_job",
+      action: "update_job",
       id: targetId,
-      oldJobId: cleanOldReceivedNo,
+      updateExistingOnly: true,
+      skipTelegramNotify: true,
+      previousJobId: previousJobNo,
+      oldJobId: finalOldJobId,
+      OldJobID: finalOldJobId,
       JobID: cleanNewReceivedNo,
       receivedNo: cleanNewReceivedNo,
       timestamp: preservedTimestamp,
@@ -705,21 +717,25 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
       Notes: adminEditForm.urgency, 
       status: currentJobStatus,
       Status: currentJobStatus,
-      technician: editingAdminJob.technician || editingAdminJob.Technician || '-'
+      technician: editingAdminJob.technician || editingAdminJob.Technician || '-',
+      completedAt: preservedCompletedAt,
+      CompletedAt: preservedCompletedAt,
+      closedAt: preservedCompletedAt,
+      ClosedAt: preservedCompletedAt
     };
 
     try {
-      // 1. อัปเดตข้อมูลใบงานหลัก
+      // 1. อัปเดตข้อมูลใบงานเดิมแทนเลขที่รับแจ้งเดิม และเก็บเลขเดิมไว้ที่คอลัมน์สุดท้าย OldJobID
       await fetch(WEB_APP_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
-          action: "create_job",
+          action: "update_job",
           jobData: updatedData
         })
       });
 
-      // 2. หากมีการแก้ไขเลขที่รับแจ้ง ให้ตรวจสอบและอัปเดตในตาราง RepairCost / RepairCosts ด้วย
+      // 2. หากมีการแก้ไขเลขที่รับแจ้ง ให้ตรวจสอบและอัปเดตในตาราง RepairCosts (Repaircost) ด้วย
       let repairCostSyncMsg = "";
       if (isJobIdChanged) {
         const syncRes = await fetch(WEB_APP_URL, {
@@ -727,23 +743,16 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({
             action: "sync_repair_cost_job_id",
-            oldJobId: cleanOldReceivedNo,
+            oldJobId: previousJobNo,
             newJobId: cleanNewReceivedNo,
             newLocation: adminEditForm.location
           })
         });
-
-        let syncResult = null;
-        try {
-          syncResult = await syncRes.json();
-        } catch (parseErr) {
-          console.warn("Non-JSON response from sync_repair_cost_job_id:", parseErr);
-        }
-
-        if (syncResult && Number(syncResult.updatedCount) > 0) {
-          repairCostSyncMsg = `\n(พบและอัปเดตเลขที่ใบงานในตาราง RepairCost จำนวน ${syncResult.updatedCount} รายการเรียบร้อยแล้ว)`;
+        const syncResult = await syncRes.json();
+        if (syncResult && syncResult.updatedCount > 0) {
+          repairCostSyncMsg = `\n(พบและอัปเดตเลขที่ใบงานในตาราง RepairCosts จำนวน ${syncResult.updatedCount} รายการเรียบร้อยแล้ว)`;
         } else {
-          repairCostSyncMsg = `\n(ตรวจสอบตาราง RepairCost แล้ว ไม่พบเลขที่รับแจ้งเดิมหรืออัปเดตเรียบร้อยแล้ว)`;
+          repairCostSyncMsg = `\n(ตรวจสอบตาราง RepairCosts แล้ว ยังไม่มีใบเบิกจ้างซ่อมของเลขที่เดิม)`;
         }
       }
 
@@ -836,12 +845,13 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
             if (!pipelineSearch.trim()) return true;
             const q = pipelineSearch.trim().toLowerCase();
             const receivedNo = String(getDisplayReceivedNo(j)).toLowerCase();
+            const oldJobId = String(getDisplayOldJobId(j)).toLowerCase();
             const reporterName = String(j.reporterName || j.ReporterName || '').toLowerCase();
             const phone = String(j.phone || j.Phone || '').toLowerCase();
             const location = String(j.location || j.Location || '').toLowerCase();
             const issue = String(j.complaintTopic || j.issueType || j.IssueType || '').toLowerCase();
 
-            return receivedNo.includes(q) || reporterName.includes(q) || phone.includes(q) || location.includes(q) || issue.includes(q);
+            return receivedNo.includes(q) || oldJobId.includes(q) || reporterName.includes(q) || phone.includes(q) || location.includes(q) || issue.includes(q);
           });
 
           if (col.id === 'IN_PROGRESS') {
@@ -1507,7 +1517,7 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
                 </div>
                 <div>
                   <h4 className="font-bold text-sm tracking-wide">แก้ไขข้อมูลใบงาน</h4>
-                  <p className="text-[11px] text-blue-100 opacity-90">แก้ไขข้อมูลรับแจ้ง (ระบบจะซิงค์เลขที่รับแจ้งกับตาราง RepairCost อัตโนมัติ)</p>
+                  <p className="text-[11px] text-blue-100 opacity-90">แก้ไขข้อมูลรับแจ้ง (ระบบจะซิงค์เลขที่รับแจ้งกับตาราง RepairCosts อัตโนมัติ)</p>
                 </div>
               </div>
               <button 
@@ -1523,9 +1533,9 @@ export default function JobPipeline({ jobs, onStatusChange, workerAccounts = [] 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
                   <span>เลขที่รับแจ้ง / Smart 1662 (สามารถแก้ไขได้) <span className="text-rose-500">*</span></span>
-                  {adminEditForm.oldReceivedNo !== adminEditForm.receivedNo && (
+                  {getDisplayReceivedNo(editingAdminJob) !== adminEditForm.receivedNo && (
                     <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                      เดิม: {adminEditForm.oldReceivedNo}
+                      เดิม (OldJobID): {getDisplayReceivedNo(editingAdminJob)}
                     </span>
                   )}
                 </label>
