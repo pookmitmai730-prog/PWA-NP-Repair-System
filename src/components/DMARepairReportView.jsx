@@ -191,10 +191,18 @@ const resolveZoneLabelFromRow = (rowValues, columns, geomIdx, rowIndex) => {
   };
 };
 
-// 🔴 Custom Marker สีแดงขนาดเล็ก
+// 🔴 Custom Marker สีแดงขนาดเล็ก (จุดซ่อมที่รอดำเนินการ / ยังไม่ได้ปิดงาน)
 const smallRedDotIcon = L.divIcon({
   className: 'custom-red-dot',
   html: `<div style="width: 12px; height: 12px; background-color: #ef4444; border: 2px solid #ffffff; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
+  iconSize: [12, 12],
+  iconAnchor: [6, 6]
+});
+
+// 🟢 Custom Marker สีเขียวขนาดเล็ก (จุดซ่อมที่ดำเนินการแล้ว / ปิดงานแล้ว)
+const smallGreenDotIcon = L.divIcon({
+  className: 'custom-green-dot',
+  html: `<div style="width: 12px; height: 12px; background-color: #10b981; border: 2px solid #ffffff; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
   iconSize: [12, 12],
   iconAnchor: [6, 6]
 });
@@ -450,6 +458,10 @@ export default function DmaMapReport({ jobs: propJobs }) {
   const [endDate, setEndDate] = useState('');
   const [clickedReport, setClickedReport] = useState(null);
 
+  // 📍 สถานะเปิด/ปิดสัญลักษณ์จุดซ่อมบนแผนที่ (เริ่มต้นแสดงพร้อมกันทั้งสองอย่าง)
+  const [showPendingMarkers, setShowPendingMarkers] = useState(true);
+  const [showCompletedMarkers, setShowCompletedMarkers] = useState(true);
+
   // 🗺️ State สำหรับสลับโหมดแผนที่ ( เริ่มต้นเป็นแผนที่ถนนมาตรฐาน )
   const [mapLayerMode, setMapLayerMode] = useState('streets');
 
@@ -557,6 +569,7 @@ export default function DmaMapReport({ jobs: propJobs }) {
     return dmaZones.filter((z) => isZoneFloatingVisible(z.id)).length;
   }, [dmaZones, visibleFloatingZones]);
 
+  // 🟢 ใบงานที่ดำเนินการแล้ว (สีเขียว)
   const filteredCompletedJobs = useMemo(() => {
     const now = new Date();
     return (jobsData || []).filter(job => {
@@ -590,6 +603,46 @@ export default function DmaMapReport({ jobs: propJobs }) {
           if (diffDays > 7) return false;
         } else if (reportType === 'monthly') {
           if (closedDate.getMonth() !== now.getMonth() || closedDate.getFullYear() !== now.getFullYear()) return false;
+        }
+      }
+      return true;
+    });
+  }, [jobsData, reportType, startDate, endDate, todayStr]);
+
+  // 🔴 ใบงานที่ยังไม่ได้ปิดงานซ่อม (สีแดง)
+  const filteredPendingJobs = useMemo(() => {
+    const now = new Date();
+    return (jobsData || []).filter(job => {
+      const status = (job.Status || job.status || '').toUpperCase();
+      if (status === 'COMPLETED' || status === 'UNREPAIRABLE') return false;
+
+      const lat = parseFloat(job.Latitude || job.latitude);
+      const lng = parseFloat(job.Longitude || job.longitude);
+      if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return false;
+
+      const rawReported = job.Timestamp || job.timestamp || job.ReceivedAt || job.receivedAt;
+
+      if (startDate || endDate) {
+        if (!rawReported || rawReported === '-') return false;
+        const reportedDate = parseJobDate(rawReported);
+        if (!reportedDate) return false;
+        const reportedDateStr = reportedDate.toISOString().split('T')[0];
+        if (startDate && reportedDateStr < startDate) return false;
+        if (endDate && reportedDateStr > endDate) return false;
+      } else if (reportType !== 'all') {
+        if (!rawReported || rawReported === '-') return false;
+        const reportedDate = parseJobDate(rawReported);
+        if (!reportedDate) return false;
+        const reportedDateStr = reportedDate.toISOString().split('T')[0];
+
+        if (reportType === 'daily') {
+          if (reportedDateStr !== todayStr) return false;
+        } else if (reportType === 'weekly') {
+          const diffTime = Math.abs(now - reportedDate);
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays > 7) return false;
+        } else if (reportType === 'monthly') {
+          if (reportedDate.getMonth() !== now.getMonth() || reportedDate.getFullYear() !== now.getFullYear()) return false;
         }
       }
       return true;
@@ -709,7 +762,7 @@ export default function DmaMapReport({ jobs: propJobs }) {
           </h2>
           <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5 font-medium flex-wrap">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-            แสดงหมุดจุดซ่อมที่ปิดงานแล้ว ({filteredCompletedJobs.length} จุด) • แรงดันอ้างอิง 1.0 บาร์ (รอเชื่อมต่อ ESP32 Realtime)
+            จุดซ่อมที่ดำเนินการแล้ว {filteredCompletedJobs.length} จุด (สีเขียว) • จุดซ่อมที่รอดำเนินการ {filteredPendingJobs.length} จุด (สีแดง) • แรงดันอ้างอิง 1.0 บาร์ (รอเชื่อมต่อ ESP32 Realtime)
             {loadingDma && <span>• กำลังโหลดขอบเขต DMA...</span>}
             {!loadingDma && dmaZones.length > 0 && <span>• ขอบเขต DMA ({dmaZones.length} พื้นที่)</span>}
             {dmaError && <span className="text-rose-600">• {dmaError}</span>}
@@ -722,7 +775,7 @@ export default function DmaMapReport({ jobs: propJobs }) {
           <div className="bg-slate-50 border border-slate-200 p-2 rounded-2xl flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1 px-1 text-slate-600 text-xs font-bold">
               <CalendarDays className="w-4 h-4 text-blue-600" />
-              <span>วันที่ซ่อมเสร็จ:</span>
+              <span>ช่วงวันที่:</span>
             </div>
             <input 
               type="date"
@@ -778,34 +831,68 @@ export default function DmaMapReport({ jobs: propJobs }) {
         </div>
       </div>
 
-      {/* 🗺️ แผนที่ Leaflet พร้อมแถบสลับโหมดแผนที่ด้านบน และเมนูควบคุมป๊อบอัพลอยด้านขวา */}
+      {/* 🗺️ แผนที่ Leaflet พร้อมแถบสลับโหมดแผนที่/สัญลักษณ์จุดซ่อมด้านบน และเมนูควบคุมป๊อบอัพลอยด้านขวา */}
       <div className="bg-white p-3 rounded-3xl shadow-sm border border-slate-100 space-y-3">
         
-        {/* 🎛️ แถบปุ่มสลับโหมดแผนที่ (วางไว้เหนือแผนที่ชัดเจน) */}
-        <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-2xl flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 px-1">
+        {/* 🎛️ แถบปุ่มสลับโหมดแผนที่ และสัญลักษณ์จุดซ่อม (เลือกแสดง/ซ่อนได้) */}
+        <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-2xl flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 px-1 flex-wrap">
             <Layers className="w-4 h-4 text-blue-600" />
             <span>เลือกรูปแบบแผนที่:</span>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { id: 'streets', label: '🗺️ แผนที่ถนน' },
+                { id: 'satellite', label: '🛰️ ดาวเทียม' },
+                { id: 'topo', label: '⛰️ ภูมิประเทศ' }
+              ].map((mode) => (
+                <button
+                  key={mode.id}
+                  onClick={() => setMapLayerMode(mode.id)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-2xs ${
+                    mapLayerMode === mode.id 
+                      ? 'bg-blue-600 text-white shadow-sm' 
+                      : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
-            {[
-              { id: 'streets', label: '🗺️ แผนที่ถนน' },
-              { id: 'satellite', label: '🛰️ ดาวเทียม' },
-              { id: 'topo', label: '⛰️ ภูมิประเทศ' }
-            ].map((mode) => (
-              <button
-                key={mode.id}
-                onClick={() => setMapLayerMode(mode.id)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-2xs ${
-                  mapLayerMode === mode.id 
-                    ? 'bg-blue-600 text-white shadow-sm' 
-                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                {mode.label}
-              </button>
-            ))}
+          {/* 📍 สัญลักษณ์และปุ่มเปิด/ปิดจุดซ่อมท่อ */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold text-slate-600">สัญลักษณ์จุดซ่อม:</span>
+
+            <button
+              type="button"
+              onClick={() => setShowPendingMarkers((prev) => !prev)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-2 cursor-pointer ${
+                showPendingMarkers
+                  ? 'bg-red-50 border-red-200 text-red-700 shadow-2xs'
+                  : 'bg-white border-slate-200 text-slate-500 opacity-75 hover:opacity-100'
+              }`}
+              title="คลิกเพื่อแสดงหรือซ่อนจุดซ่อมที่รอดำเนินการ (สีแดง)"
+            >
+              <span className="w-3 h-3 rounded-full bg-red-500 border-2 border-white shadow-xs shrink-0" />
+              <span>จุดซ่อมที่รอดำเนินการ ({filteredPendingJobs.length})</span>
+              {showPendingMarkers ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowCompletedMarkers((prev) => !prev)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-2 cursor-pointer ${
+                showCompletedMarkers
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-2xs'
+                  : 'bg-white border-slate-200 text-slate-500 opacity-75 hover:opacity-100'
+              }`}
+              title="คลิกเพื่อแสดงหรือซ่อนจุดซ่อมที่ดำเนินการแล้ว (สีเขียว)"
+            >
+              <span className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow-xs shrink-0" />
+              <span>จุดซ่อมที่ดำเนินการแล้ว ({filteredCompletedJobs.length})</span>
+              {showCompletedMarkers ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
           </div>
         </div>
 
@@ -864,13 +951,13 @@ export default function DmaMapReport({ jobs: propJobs }) {
                 );
               })}
 
-              {/* 2. หมุดจุดซ่อมสีแดงขนาดเล็ก */}
-              {filteredCompletedJobs.map((job, idx) => {
+              {/* 2. หมุดจุดซ่อมที่ดำเนินการแล้ว (สีเขียวขนาดเล็ก) */}
+              {showCompletedMarkers && filteredCompletedJobs.map((job, idx) => {
                 const lat = parseFloat(job.Latitude || job.latitude);
                 const lng = parseFloat(job.Longitude || job.longitude);
                 const technicianName = job.Technician || job.technician || job.Team || '-';
                 return (
-                  <Marker key={job.JobID || idx} position={[lat, lng]} icon={smallRedDotIcon}>
+                  <Marker key={`done-${job.JobID || idx}`} position={[lat, lng]} icon={smallGreenDotIcon}>
                     <Popup>
                       <div className="p-1 space-y-1 text-xs font-sans text-slate-800">
                         <div className="flex items-center justify-between gap-2 border-b pb-1">
@@ -878,7 +965,7 @@ export default function DmaMapReport({ jobs: propJobs }) {
                             {job.JobID || job.receivedNo || '-'}
                           </span>
                           <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                            ปิดงานแล้ว
+                            ดำเนินการแล้ว
                           </span>
                         </div>
                         <p><strong>สถานที่:</strong> {job.Location || '-'}</p>
@@ -892,6 +979,40 @@ export default function DmaMapReport({ jobs: propJobs }) {
                         </p>
                         <p className="text-[11px] text-slate-500"><strong>แจ้ง:</strong> {formatThaiDateTime(job.Timestamp || job.timestamp)}</p>
                         <p className="text-[11px] text-slate-500"><strong>ซ่อมเสร็จ:</strong> {formatThaiDateTime(job.ClosedAt || job.closedAt)}</p>
+                        <p className="text-[11px] text-slate-700"><strong>ทีมซ่อม:</strong> {technicianName}</p>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+
+              {/* 3. หมุดจุดซ่อมที่รอดำเนินการ / ยังไม่ได้ปิดงานซ่อม (สีแดงขนาดเล็ก) */}
+              {showPendingMarkers && filteredPendingJobs.map((job, idx) => {
+                const lat = parseFloat(job.Latitude || job.latitude);
+                const lng = parseFloat(job.Longitude || job.longitude);
+                const technicianName = job.Technician || job.technician || job.Team || '-';
+                return (
+                  <Marker key={`pending-${job.JobID || idx}`} position={[lat, lng]} icon={smallRedDotIcon}>
+                    <Popup>
+                      <div className="p-1 space-y-1 text-xs font-sans text-slate-800">
+                        <div className="flex items-center justify-between gap-2 border-b pb-1">
+                          <span className="font-mono font-bold text-blue-600">
+                            {job.JobID || job.receivedNo || '-'}
+                          </span>
+                          <span className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            รอดำเนินการ
+                          </span>
+                        </div>
+                        <p><strong>สถานที่:</strong> {job.Location || '-'}</p>
+                        <p>
+                          <strong>ชนิด/ขนาดท่อ:</strong>{' '}
+                          <span className="text-orange-600 font-bold">
+                            {job.PipeType && job.PipeType !== '-' && job.PipeSize && job.PipeSize !== '-'
+                              ? `${job.PipeType} (${job.PipeSize} มม.)`
+                              : (job.Equipment || job.equipment || 'อื่นๆ')}
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-slate-500"><strong>แจ้ง:</strong> {formatThaiDateTime(job.Timestamp || job.timestamp)}</p>
                         <p className="text-[11px] text-slate-700"><strong>ทีมซ่อม:</strong> {technicianName}</p>
                       </div>
                     </Popup>
